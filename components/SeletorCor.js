@@ -70,14 +70,20 @@ export default function SeletorCor({ perfil, onChange }) {
   const ref = useRef(null);
   const wheelRef = useRef(null);
   const arrastando = useRef(false);
+  const hueRef = useRef(207);
+  const satRef = useRef(60);
+  const lightnessRef = useRef(46); // tom médio usado como padrão ao arrastar no círculo
 
   useEffect(() => {
     const atual = perfil?.cor_accent || PADRAO_JMACEDO;
     if (atual && atual !== PADRAO_JMACEDO) {
-      const { h, s } = hexToHsl(atual);
+      const { h, s, l } = hexToHsl(atual);
       setHue(h);
       setSat(s);
       setTomAtivo(atual);
+      hueRef.current = h;
+      satRef.current = s;
+      lightnessRef.current = l;
     } else {
       setTomAtivo(null);
     }
@@ -113,12 +119,21 @@ export default function SeletorCor({ perfil, onChange }) {
     mover(e);
   }
   function onPointerUp() {
-    arrastando.current = false;
+    if (arrastando.current) {
+      arrastando.current = false;
+      // solta o mouse = confirma a cor que estava sendo pré-visualizada
+      const hexFinal = hslToHex(hueRef.current, satRef.current, lightnessRef.current);
+      aplicarEsalvar(hexFinal, false);
+    }
   }
   function mover(e) {
     const { h, s } = posicaoParaHueSat(e.clientX, e.clientY);
     setHue(h);
     setSat(s);
+    hueRef.current = h;
+    satRef.current = s;
+    // pré-visualiza a cor em tempo real, ainda sem salvar
+    aplicarAccent(hslToHex(h, s, lightnessRef.current));
   }
 
   useEffect(() => {
@@ -132,14 +147,21 @@ export default function SeletorCor({ perfil, onChange }) {
 
   function onKeyDownWheel(e) {
     const passo = 5;
-    if (e.key === "ArrowLeft") { setHue((h) => (h - passo + 360) % 360); e.preventDefault(); }
-    if (e.key === "ArrowRight") { setHue((h) => (h + passo) % 360); e.preventDefault(); }
-    if (e.key === "ArrowUp") { setSat((s) => Math.min(100, s + passo)); e.preventDefault(); }
-    if (e.key === "ArrowDown") { setSat((s) => Math.max(0, s - passo)); e.preventDefault(); }
+    let novoHue = hue, novoSat = sat;
+    if (e.key === "ArrowLeft") { novoHue = (hue - passo + 360) % 360; e.preventDefault(); }
+    else if (e.key === "ArrowRight") { novoHue = (hue + passo) % 360; e.preventDefault(); }
+    else if (e.key === "ArrowUp") { novoSat = Math.min(100, sat + passo); e.preventDefault(); }
+    else if (e.key === "ArrowDown") { novoSat = Math.max(0, sat - passo); e.preventDefault(); }
+    else return;
+    setHue(novoHue);
+    setSat(novoSat);
+    hueRef.current = novoHue;
+    satRef.current = novoSat;
+    aplicarAccent(hslToHex(novoHue, novoSat, lightnessRef.current));
   }
 
-  async function aplicarEsalvar(hex) {
-    aplicarAccent(hex);
+  async function aplicarEsalvar(hex, jaAplicada) {
+    if (!jaAplicada) aplicarAccent(hex);
     setTomAtivo(hex === PADRAO_JMACEDO ? null : hex);
     if (perfil?.id) {
       await supabase.from("perfis").update({ cor_accent: hex }).eq("id", perfil.id);
@@ -211,7 +233,7 @@ export default function SeletorCor({ perfil, onChange }) {
               return (
                 <button
                   key={i}
-                  onClick={() => aplicarEsalvar(hex)}
+                  onClick={() => { lightnessRef.current = l; aplicarEsalvar(hex); }}
                   title={`Tom ${i + 1}`}
                   className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-mono font-semibold transition"
                   style={{

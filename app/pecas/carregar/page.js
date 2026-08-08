@@ -43,12 +43,7 @@ export default function CarregarBasesPage() {
     (async () => setPerfil(await getPerfilAtual()))();
   }, []);
 
-  function confirmarEProcessar() {
-    const ok = window.confirm(
-      "Isso vai apagar a base de peças atual e substituir pelos dois arquivos selecionados. Essa mudança fica visível pra todo mundo que usa o sistema. Continuar?"
-    );
-    if (ok) processar();
-  }
+  const [confirmando, setConfirmando] = useState(false);
 
   function fecharPopupResultado() {
     setResultado(null);
@@ -161,6 +156,7 @@ export default function CarregarBasesPage() {
         if (!modelo) continue;
         let cat = categoria(grow[idxBH]);
         if (modelo.toUpperCase().startsWith("DW")) cat = "WSM";
+        if (modelo.toUpperCase().startsWith("NP") || modelo.toUpperCase().startsWith("XE")) cat = "NPC";
         modelosSet.add(modelo);
         for (const slot of slots) {
           const codigo = String(grow[slot.cod] || "").trim();
@@ -168,8 +164,7 @@ export default function CarregarBasesPage() {
           const descPeca = grow[slot.desc];
           const resumida = classifyDesc(descPeca);
           if (resumida === "Outros / Não Classificado") naoClassificados++;
-          let catFinal = cat;
-          if (codigo.toUpperCase().startsWith("NP")) catFinal = "NPC";
+          const catFinal = cat;
           const uKey = modelo.toUpperCase() + "||" + codigo.toUpperCase();
           if (uniqueMap.has(uKey)) continue;
           const preco = precoMap.get(codigo.toUpperCase());
@@ -276,7 +271,7 @@ export default function CarregarBasesPage() {
         <button
           className="btn-primary"
           disabled={!arquivoPecas || !arquivoGspn || processando || concluido}
-          onClick={confirmarEProcessar}
+          onClick={() => setConfirmando(true)}
         >
           <UploadCloud size={16} />
           {processando ? "Processando..." : concluido ? "Base processada" : "Processar bases"}
@@ -295,9 +290,31 @@ export default function CarregarBasesPage() {
       </div>
 
       <Modal
+        open={confirmando}
+        onClose={() => setConfirmando(false)}
+        title="Substituir base de peças?"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setConfirmando(false)}>Cancelar</button>
+            <button
+              className="btn-primary"
+              onClick={() => { setConfirmando(false); processar(); }}
+            >
+              Sim, processar
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted">
+          Isso vai apagar a base de peças atual e substituir pelos dois arquivos selecionados. Essa mudança fica
+          visível pra todo mundo que usa o sistema imediatamente.
+        </p>
+      </Modal>
+
+      <Modal
         open={!!resultado}
         onClose={fecharPopupResultado}
-        title="Processamento concluído"
+        title="Base de peças atualizada com sucesso"
         footer={
           <button className="btn-primary" onClick={fecharPopupResultado}>
             Fechar
