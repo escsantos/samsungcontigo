@@ -20,7 +20,9 @@ export default function BotaoTema({ className = "" }) {
     <button
       onClick={alternar}
       aria-label={escuro ? "Ativar modo claro" : "Ativar modo escuro"}
-      className={`w-9 h-9 flex items-center justify-center rounded-full border border-line text-muted hover:text-ink hover:border-brand-400 transition ${className}`}
+      className={`w-9 h-9 flex items-center justify-center rounded-full border border-line text-muted hover:text-ink transition ${className}`}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "")}
     >
       {escuro ? <Sun size={16} /> : <Moon size={16} />}
     </button>

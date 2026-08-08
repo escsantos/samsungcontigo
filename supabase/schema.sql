@@ -10,6 +10,7 @@ create table if not exists perfis (
   login text unique not null,
   nome text not null,
   cargo text not null check (cargo in ('Administrador','Diretor','Supervisao','Gerencia','Vendedor')),
+  cor_accent text default '#4A90D9',
   criado_em timestamptz default now()
 );
 

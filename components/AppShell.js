@@ -2,9 +2,10 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, UploadCloud, LogOut } from "lucide-react";
+import { Search, UploadCloud, LogOut, Home } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
+import SeletorCor, { aplicarAccent } from "./SeletorCor";
 
 const ITENS_MENU = [
   { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null },
@@ -26,6 +27,9 @@ export default function AppShell({ titulo, children }) {
       }
       const p = await getPerfilAtual();
       setPerfil(p);
+      if (p?.cor_accent) {
+        aplicarAccent(p.cor_accent);
+      }
       setCarregando(false);
     })();
   }, [router]);
@@ -43,10 +47,18 @@ export default function AppShell({ titulo, children }) {
     <div className="h-screen flex bg-canvas">
       <aside
         className="w-60 shrink-0 flex flex-col text-white"
-        style={{ background: "linear-gradient(180deg, #132D44, #235685)" }}
+        style={{ background: "linear-gradient(180deg, var(--accent-dark), var(--accent))" }}
       >
-        <div className="px-5 py-6">
+        <div className="px-5 py-6 flex items-center gap-3">
           <img src="/logos/grupo-jmacedo.png" alt="Grupo J.Macedo" className="h-9 w-auto brightness-0 invert opacity-90" />
+          <Link
+            href="/pecas"
+            aria-label="Início"
+            title="Início"
+            className="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/15 hover:text-white transition"
+          >
+            <Home size={16} />
+          </Link>
         </div>
         <nav className="flex-1 px-3 space-y-1">
           {ITENS_MENU.filter((item) => !item.cargos || item.cargos.includes(perfil?.cargo)).map((item) => {
@@ -78,11 +90,12 @@ export default function AppShell({ titulo, children }) {
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-line bg-surface">
           <h1 className="font-display font-semibold text-[15px] text-ink">{titulo}</h1>
-          <div className="flex items-center gap-4">
-            <div className="text-right leading-tight">
+          <div className="flex items-center gap-3">
+            <div className="text-right leading-tight mr-1">
               <p className="text-sm font-medium text-ink">{perfil?.nome || "-"}</p>
               <p className="text-[11.5px] text-muted">{perfil?.cargo || "-"}</p>
             </div>
+            <SeletorCor perfil={perfil} />
             <BotaoTema />
           </div>
         </header>

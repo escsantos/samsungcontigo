@@ -1,18 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Search, Clock } from "lucide-react";
+import { Search, Info, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
-
-const CORES_CATEGORIA = {
-  DTV: { bg: "rgba(74,144,217,0.14)", fg: "#2E6DA8" },
-  Celulares: { bg: "rgba(176,132,232,0.14)", fg: "#7A4FB0" },
-  WSM: { bg: "rgba(63,167,150,0.14)", fg: "#2C7C6E" },
-  REF: { bg: "rgba(139,195,74,0.14)", fg: "#5A8A2E" },
-  ACN: { bg: "rgba(88,183,214,0.14)", fg: "#2E7F97" },
-  CKT: { bg: "rgba(201,123,74,0.14)", fg: "#9C5A34" },
-  Outros: { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" }
-};
+import { corCategoria, iconeCategoria } from "../../lib/categorias";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -100,102 +91,144 @@ export default function ConsultaPecasPage() {
     }));
   }, [resultados, margem]);
 
+  function limparPesquisa() {
+    setTermo("");
+    setCategoriaAtiva(null);
+  }
+
+  const temFiltro = termo || categoriaAtiva;
+
   return (
     <AppShell titulo="Consulta de Peças">
-      <div className="card p-5 mb-4">
-        <div className="flex gap-3 flex-wrap items-center mb-4">
+      <div className="card p-4 mb-4">
+        <div className="flex gap-3 flex-wrap items-center">
           <div className="flex-1 min-w-[260px] relative">
-            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
             <input
-              className="field-input pl-10"
+              className="field-input pl-10 pr-9"
               placeholder="Ex: bateria sm-g — combina termos em qualquer campo"
               value={termo}
               onChange={(e) => setTermo(e.target.value)}
             />
+            {termo && (
+              <button
+                onClick={() => setTermo("")}
+                aria-label="Limpar texto"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
+
+          {temFiltro && (
+            <button onClick={limparPesquisa} className="btn-secondary text-xs py-2">
+              <X size={13} />
+              Limpar pesquisa
+            </button>
+          )}
+
           <div className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5">
             <label className="text-xs text-muted whitespace-nowrap">Margem</label>
             <input
               type="number"
-              className="w-14 bg-transparent outline-none text-brand-500 font-semibold text-right"
+              className="w-14 bg-transparent outline-none font-semibold text-right"
+              style={{ color: "var(--accent)" }}
               value={margem}
               onChange={(e) => setMargem(parseFloat(e.target.value) || 0)}
             />
             <span className="text-xs text-muted">%</span>
           </div>
+
+          <div className="tooltip-trigger">
+            <span className="w-9 h-9 flex items-center justify-center rounded-full border border-line text-muted cursor-default">
+              <Info size={15} />
+            </span>
+            <div className="tooltip-bubble">
+              {totalGeral.toLocaleString("pt-BR")} peças cadastradas no total
+              {ultimaAtualizacao && (
+                <>
+                  <br />
+                  Atualizada em {new Date(ultimaAtualizacao.processado_em).toLocaleDateString("pt-BR")} às{" "}
+                  {new Date(ultimaAtualizacao.processado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  {ultimaAtualizacao.perfis?.nome ? ` por ${ultimaAtualizacao.perfis.nome}` : ""}
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="flex gap-2 flex-wrap mb-2">
+        <div className="flex gap-2 flex-wrap mt-3">
           <button
             onClick={() => setCategoriaAtiva(null)}
-            className={`text-xs font-mono px-3 py-1.5 rounded-full border ${!categoriaAtiva ? "border-brand-400 text-brand-500 bg-brand-50" : "border-line text-muted"}`}
+            className={`chip ${!categoriaAtiva ? "chip-active" : ""}`}
           >
             Todas
           </button>
-          {categorias.map(([cat, n]) => (
-            <button
-              key={cat}
-              onClick={() => setCategoriaAtiva(cat === categoriaAtiva ? null : cat)}
-              className={`text-xs font-mono px-3 py-1.5 rounded-full border ${categoriaAtiva === cat ? "border-brand-400 text-brand-500 bg-brand-50" : "border-line text-muted"}`}
-            >
-              {cat} ({n})
-            </button>
-          ))}
+          {categorias.map(([cat, n]) => {
+            const Icone = iconeCategoria(cat);
+            return (
+              <button
+                key={cat}
+                onClick={() => setCategoriaAtiva(cat === categoriaAtiva ? null : cat)}
+                className={`chip ${categoriaAtiva === cat ? "chip-active" : ""}`}
+              >
+                <Icone size={12} />
+                {cat} ({n})
+              </button>
+            );
+          })}
         </div>
 
-        <p className="text-xs text-muted">
-          {totalGeral.toLocaleString("pt-BR")} peças cadastradas no total
-          {buscando ? " · buscando..." : termo || categoriaAtiva ? ` · ${resultados.length.toLocaleString("pt-BR")} resultado(s)` : ""}
-        </p>
-        {ultimaAtualizacao && (
-          <p className="text-xs text-muted flex items-center gap-1.5 mt-1">
-            <Clock size={12} />
-            Base atualizada em {new Date(ultimaAtualizacao.processado_em).toLocaleDateString("pt-BR")} às{" "}
-            {new Date(ultimaAtualizacao.processado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-            {ultimaAtualizacao.perfis?.nome ? ` por ${ultimaAtualizacao.perfis.nome}` : ""}
-          </p>
+        {buscando && <p className="text-xs text-muted mt-2">buscando...</p>}
+        {!buscando && temFiltro && (
+          <p className="text-xs text-muted mt-2">{resultados.length.toLocaleString("pt-BR")} resultado(s)</p>
         )}
       </div>
 
       <div className="card overflow-hidden">
         {linhas.length === 0 ? (
           <div className="text-center py-16 text-muted text-sm">
-            {termo || categoriaAtiva ? "Nenhuma peça encontrada para essa busca." : "Digite um ou mais termos para buscar em código, descrição, peça ou modelo."}
+            {temFiltro ? "Nenhuma peça encontrada para essa busca." : "Digite um ou mais termos para buscar em código, descrição, peça ou modelo."}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-canvas border-b border-line text-[10.5px] uppercase tracking-wide text-muted font-mono">
-                <th className="text-left px-4 py-2.5">Modelo</th>
-                <th className="text-left px-4 py-2.5">Categoria</th>
-                <th className="text-left px-4 py-2.5">Código</th>
-                <th className="text-left px-4 py-2.5">Descrição resumida</th>
-                <th className="text-left px-4 py-2.5">Descrição da peça</th>
-                <th className="text-right px-4 py-2.5">Custo</th>
-                <th className="text-right px-4 py-2.5">Venda sugerida</th>
-              </tr>
-            </thead>
-            <tbody>
-              {linhas.map((r) => {
-                const cor = CORES_CATEGORIA[r.categoria] || CORES_CATEGORIA.Outros;
-                return (
-                  <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas">
-                    <td className="px-4 py-2.5 font-mono font-medium">{r.modelo}</td>
-                    <td className="px-4 py-2.5">
-                      <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded" style={{ background: cor.bg, color: cor.fg }}>
-                        {r.categoria}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-brand-500">{r.codigo}</td>
-                    <td className="px-4 py-2.5">{r.descricao_resumida}</td>
-                    <td className="px-4 py-2.5 text-muted text-xs max-w-[240px]">{r.descricao_peca}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(r.valor_unitario)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono font-semibold text-success">{fmtBRL(r.venda)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="max-h-[calc(100vh-280px)] overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-canvas border-b border-line text-[10.5px] uppercase tracking-wide text-muted font-mono">
+                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Modelo</th>
+                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Categoria</th>
+                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Código</th>
+                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição resumida</th>
+                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição da peça</th>
+                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Custo</th>
+                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Venda sugerida</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map((r) => {
+                  const cor = corCategoria(r.categoria);
+                  const Icone = iconeCategoria(r.categoria);
+                  return (
+                    <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas">
+                      <td className="px-4 py-2.5 font-mono font-medium">{r.modelo}</td>
+                      <td className="px-4 py-2.5">
+                        <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1" style={{ background: cor.bg, color: cor.fg }}>
+                          <Icone size={11} />
+                          {r.categoria}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 font-mono" style={{ color: "var(--accent)" }}>{r.codigo}</td>
+                      <td className="px-4 py-2.5">{r.descricao_resumida}</td>
+                      <td className="px-4 py-2.5 text-muted text-xs max-w-[240px]">{r.descricao_peca}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(r.valor_unitario)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono font-semibold text-success">{fmtBRL(r.venda)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </AppShell>

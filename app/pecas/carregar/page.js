@@ -159,7 +159,8 @@ export default function CarregarBasesPage() {
         if (!grow || grow.length === 0) continue;
         const modelo = String(grow[idxModelo] || "").trim();
         if (!modelo) continue;
-        const cat = categoria(grow[idxBH]);
+        let cat = categoria(grow[idxBH]);
+        if (modelo.toUpperCase().startsWith("DW")) cat = "WSM";
         modelosSet.add(modelo);
         for (const slot of slots) {
           const codigo = String(grow[slot.cod] || "").trim();
@@ -167,13 +168,15 @@ export default function CarregarBasesPage() {
           const descPeca = grow[slot.desc];
           const resumida = classifyDesc(descPeca);
           if (resumida === "Outros / Não Classificado") naoClassificados++;
+          let catFinal = cat;
+          if (codigo.toUpperCase().startsWith("NP")) catFinal = "NPC";
           const uKey = modelo.toUpperCase() + "||" + codigo.toUpperCase();
           if (uniqueMap.has(uKey)) continue;
           const preco = precoMap.get(codigo.toUpperCase());
           if (!preco) semCusto++;
           uniqueMap.set(uKey, {
             modelo,
-            categoria: cat,
+            categoria: catFinal,
             codigo: codigo.toUpperCase(),
             descricao_resumida: resumida,
             descricao_peca: descPeca ? String(descPeca).trim() : "",
