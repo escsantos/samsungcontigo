@@ -105,19 +105,34 @@ body {
   .chip {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11.5px;
-    padding: 6px 12px;
+    font-weight: 600;
+    padding: 7px 13px;
     border-radius: 999px;
     border: 1px solid var(--line);
-    color: var(--muted);
-    background: transparent;
+    color: var(--ink);
+    background: var(--surface);
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.05), 0 2px 4px rgba(20,24,31,0.06);
+    transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  }
+  .chip:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 2px rgba(0,0,0,0.05), 0 4px 8px rgba(20,24,31,0.10);
+  }
+  .chip:active {
+    transform: translateY(0px);
+    box-shadow: 0 1px 0 rgba(0,0,0,0.05), 0 1px 2px rgba(20,24,31,0.08);
   }
   .chip-active {
     border-color: var(--accent);
-    color: var(--accent);
-    background: var(--accent-soft);
+    color: #FFFFFF;
+    background: linear-gradient(160deg, var(--accent), var(--accent-dark));
+    box-shadow: 0 1px 0 rgba(0,0,0,0.08), 0 3px 8px var(--accent-soft), 0 0 0 1px var(--accent);
+  }
+  .chip-active .chip-icone {
+    color: #FFFFFF !important;
   }
 
   .tooltip-trigger { position: relative; display: inline-flex; }

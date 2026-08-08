@@ -134,7 +134,10 @@ export default function ConsultaPecasPage() {
           )}
 
           {perfil?.cargo !== "Cliente" && (
-            <div className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5">
+            <div
+              className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5"
+              style={{ background: "var(--surface)", boxShadow: "0 1px 0 rgba(0,0,0,0.05), 0 2px 4px rgba(20,24,31,0.06)" }}
+            >
               <label className="text-xs text-muted whitespace-nowrap">Margem</label>
               <input
                 type="number"
@@ -148,7 +151,10 @@ export default function ConsultaPecasPage() {
           )}
 
           <div className="tooltip-trigger">
-            <span className="w-9 h-9 flex items-center justify-center rounded-full border border-line text-muted cursor-default">
+            <span
+              className="w-9 h-9 flex items-center justify-center rounded-full border border-line cursor-default transition"
+              style={{ background: "var(--surface)", color: "var(--accent)", boxShadow: "0 1px 0 rgba(0,0,0,0.05), 0 2px 4px rgba(20,24,31,0.06)" }}
+            >
               <Info size={15} />
             </span>
             <div className="tooltip-bubble">
@@ -174,13 +180,15 @@ export default function ConsultaPecasPage() {
           </button>
           {categorias.map(([cat, n]) => {
             const Icone = iconeCategoria(cat);
+            const cor = corCategoria(cat);
+            const ativo = categoriaAtiva === cat;
             return (
               <button
                 key={cat}
                 onClick={() => setCategoriaAtiva(cat === categoriaAtiva ? null : cat)}
-                className={`chip ${categoriaAtiva === cat ? "chip-active" : ""}`}
+                className={`chip ${ativo ? "chip-active" : ""}`}
               >
-                <Icone size={12} />
+                <Icone size={13} className="chip-icone" style={{ color: ativo ? "#FFFFFF" : cor.fg }} />
                 {cat} ({n})
               </button>
             );
