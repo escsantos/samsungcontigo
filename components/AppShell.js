@@ -6,6 +6,7 @@ import { Search, UploadCloud, LogOut, Home, Settings, Users } from "lucide-react
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
+import Avatar from "./Avatar";
 
 const ITENS_MENU = [
   { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null }
@@ -127,10 +128,13 @@ export default function AppShell({ titulo, children }) {
         <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-line bg-surface">
           <h1 className="font-display font-semibold text-[15px] text-ink">{titulo}</h1>
           <div className="flex items-center gap-3">
-            <div className="text-right leading-tight mr-1">
-              <p className="text-sm font-medium text-ink">{perfil?.nome || "-"}</p>
-              <p className="text-[11.5px] text-muted">{perfil?.cargo || "-"}</p>
-            </div>
+            <Link href="/perfil" className="flex items-center gap-2.5 hover:opacity-80 transition">
+              <div className="text-right leading-tight">
+                <p className="text-sm font-medium text-ink">{perfil?.nome || "-"}</p>
+                <p className="text-[11.5px] text-muted">{perfil?.cargo || "-"}</p>
+              </div>
+              <Avatar nome={perfil?.nome} fotoUrl={perfil?.foto_url} tamanho={34} />
+            </Link>
             <SeletorCor perfil={perfil} />
             <BotaoTema />
           </div>

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { Search, Info, X } from "lucide-react";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { corCategoria, iconeCategoria } from "../../lib/categorias";
 
@@ -41,6 +41,11 @@ export default function ConsultaPecasPage() {
   const [categorias, setCategorias] = useState([]);
   const [buscando, setBuscando] = useState(false);
   const [totalGeral, setTotalGeral] = useState(0);
+  const [perfil, setPerfil] = useState(null);
+
+  useEffect(() => {
+    getPerfilAtual().then(setPerfil);
+  }, []);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null);
 
   useEffect(() => {
@@ -128,17 +133,19 @@ export default function ConsultaPecasPage() {
             </button>
           )}
 
-          <div className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5">
-            <label className="text-xs text-muted whitespace-nowrap">Margem</label>
-            <input
-              type="number"
-              className="w-14 bg-transparent outline-none font-semibold text-right"
-              style={{ color: "var(--accent)" }}
-              value={margem}
-              onChange={(e) => setMargem(parseFloat(e.target.value) || 0)}
-            />
-            <span className="text-xs text-muted">%</span>
-          </div>
+          {perfil?.cargo !== "Cliente" && (
+            <div className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5">
+              <label className="text-xs text-muted whitespace-nowrap">Margem</label>
+              <input
+                type="number"
+                className="w-14 bg-transparent outline-none font-semibold text-right"
+                style={{ color: "var(--accent)" }}
+                value={margem}
+                onChange={(e) => setMargem(parseFloat(e.target.value) || 0)}
+              />
+              <span className="text-xs text-muted">%</span>
+            </div>
+          )}
 
           <div className="tooltip-trigger">
             <span className="w-9 h-9 flex items-center justify-center rounded-full border border-line text-muted cursor-default">
@@ -201,7 +208,9 @@ export default function ConsultaPecasPage() {
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Código</th>
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição resumida</th>
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição da peça</th>
-                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Custo</th>
+                  {perfil?.cargo !== "Cliente" && (
+                    <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Custo</th>
+                  )}
                   <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Venda sugerida</th>
                 </tr>
               </thead>
@@ -221,7 +230,9 @@ export default function ConsultaPecasPage() {
                       <td className="px-4 py-2.5 font-mono" style={{ color: "var(--accent)" }}>{r.codigo}</td>
                       <td className="px-4 py-2.5">{r.descricao_resumida}</td>
                       <td className="px-4 py-2.5 text-muted text-xs max-w-[240px]">{r.descricao_peca}</td>
-                      <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(r.valor_unitario)}</td>
+                      {perfil?.cargo !== "Cliente" && (
+                        <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(r.valor_unitario)}</td>
+                      )}
                       <td className="px-4 py-2.5 text-right font-mono font-semibold text-success">{fmtBRL(r.venda)}</td>
                     </tr>
                   );

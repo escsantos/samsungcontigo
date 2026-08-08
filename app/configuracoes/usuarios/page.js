@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { UserPlus, KeyRound, Lock, Unlock, Trash2, ShieldAlert } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { CARGOS } from "../../../lib/usuarios";
 import AppShell from "../../../components/AppShell";
+import Avatar from "../../../components/Avatar";
 import Modal from "../../../components/Modal";
 import CredenciaisModal from "../../../components/CredenciaisModal";
 
@@ -23,6 +25,7 @@ async function chamarApi(path, options = {}) {
 }
 
 export default function UsuariosPage() {
+  const router = useRouter();
   const [perfil, setPerfil] = useState(undefined);
   const [lista, setLista] = useState([]);
   const [carregandoLista, setCarregandoLista] = useState(true);
@@ -145,10 +148,19 @@ export default function UsuariosPage() {
             </thead>
             <tbody>
               {lista.map((u) => (
-                <tr key={u.id} className="border-b border-line last:border-0 hover:bg-canvas">
-                  <td className="px-4 py-2.5 font-medium">{u.nome}</td>
+                <tr
+                  key={u.id}
+                  className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
+                  onClick={() => router.push(`/configuracoes/usuarios/${u.id}`)}
+                >
+                  <td className="px-4 py-2.5 font-medium">
+                    <div className="flex items-center gap-2.5">
+                      <Avatar nome={u.nome} fotoUrl={u.foto_url} tamanho={26} />
+                      {u.nome}
+                    </div>
+                  </td>
                   <td className="px-4 py-2.5 font-mono text-muted">{u.login}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <select
                       className="field-input py-1.5 text-xs w-36"
                       value={u.cargo}
@@ -168,7 +180,7 @@ export default function UsuariosPage() {
                       {u.bloqueado ? "Bloqueado" : "Ativo"}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1.5">
                       <button
                         title="Resetar senha"

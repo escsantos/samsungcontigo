@@ -14,6 +14,9 @@ create table if not exists perfis (
   cor_accent text default '#4A90D9',
   bloqueado boolean default false,
   visto_em timestamptz,
+  email text,
+  telefone text,
+  foto_url text,
   criado_em timestamptz default now()
 );
 
@@ -75,6 +78,27 @@ $$;
 create trigger trg_bloquear_autopromocao
   before update on perfis
   for each row execute function bloquear_autopromocao();
+
+-- Bucket de avatares (público para leitura, cada usuário só mexe na própria foto)
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+create policy "avatars leitura publica"
+  on storage.objects for select
+  using (bucket_id = 'avatars');
+
+create policy "usuario sobe sua propria foto"
+  on storage.objects for insert
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "usuario atualiza sua propria foto"
+  on storage.objects for update
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "usuario remove sua propria foto"
+  on storage.objects for delete
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
 
 -- 2. Tabela de peças (resultado do cruzamento Base Peças x Base GSPN)
 create table if not exists pecas (
