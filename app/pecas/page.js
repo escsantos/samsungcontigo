@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Clock } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 
@@ -23,6 +23,25 @@ function normKey(s) {
   return String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 }
 
+// Busca TODAS as linhas de uma coluna, contornando o limite padrão de 1000
+// linhas por requisição do Supabase, paginando em blocos.
+async function buscarColunaCompleta(tabela, coluna) {
+  const PAGINA = 1000;
+  let inicio = 0;
+  let tudo = [];
+  while (true) {
+    const { data, error } = await supabase
+      .from(tabela)
+      .select(coluna)
+      .range(inicio, inicio + PAGINA - 1);
+    if (error || !data) break;
+    tudo = tudo.concat(data);
+    if (data.length < PAGINA) break;
+    inicio += PAGINA;
+  }
+  return tudo;
+}
+
 export default function ConsultaPecasPage() {
   const [termo, setTermo] = useState("");
   const [margem, setMargem] = useState(30);
@@ -31,15 +50,25 @@ export default function ConsultaPecasPage() {
   const [categorias, setCategorias] = useState([]);
   const [buscando, setBuscando] = useState(false);
   const [totalGeral, setTotalGeral] = useState(0);
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null);
 
   useEffect(() => {
     (async () => {
       const { count } = await supabase.from("pecas").select("*", { count: "exact", head: true });
       setTotalGeral(count || 0);
-      const { data } = await supabase.from("pecas").select("categoria");
+
+      const linhas = await buscarColunaCompleta("pecas", "categoria");
       const contagem = {};
-      (data || []).forEach((r) => { contagem[r.categoria] = (contagem[r.categoria] || 0) + 1; });
+      linhas.forEach((r) => { contagem[r.categoria] = (contagem[r.categoria] || 0) + 1; });
       setCategorias(Object.entries(contagem).sort((a, b) => a[0].localeCompare(b[0])));
+
+      const { data: log } = await supabase
+        .from("pecas_processamentos")
+        .select("processado_em, total_registros, perfis(nome)")
+        .order("processado_em", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (log) setUltimaAtualizacao(log);
     })();
   }, []);
 
@@ -118,6 +147,14 @@ export default function ConsultaPecasPage() {
           {totalGeral.toLocaleString("pt-BR")} peças cadastradas no total
           {buscando ? " · buscando..." : termo || categoriaAtiva ? ` · ${resultados.length.toLocaleString("pt-BR")} resultado(s)` : ""}
         </p>
+        {ultimaAtualizacao && (
+          <p className="text-xs text-muted flex items-center gap-1.5 mt-1">
+            <Clock size={12} />
+            Base atualizada em {new Date(ultimaAtualizacao.processado_em).toLocaleDateString("pt-BR")} às{" "}
+            {new Date(ultimaAtualizacao.processado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            {ultimaAtualizacao.perfis?.nome ? ` por ${ultimaAtualizacao.perfis.nome}` : ""}
+          </p>
+        )}
       </div>
 
       <div className="card overflow-hidden">

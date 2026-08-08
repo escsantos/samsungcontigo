@@ -85,9 +85,9 @@ create table if not exists pecas_processamentos (
 
 alter table pecas_processamentos enable row level security;
 
-create policy "admin/diretor leem log de processamento"
+create policy "usuarios logados leem log de processamento"
   on pecas_processamentos for select
-  using (is_admin_ou_diretor());
+  using (auth.role() = 'authenticated');
 
 create policy "admin/diretor inserem log de processamento"
   on pecas_processamentos for insert

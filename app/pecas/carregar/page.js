@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { classifyDesc, categoria, normKey, parseBRDate, findExact } from "../../../lib/classificacao";
 import AppShell from "../../../components/AppShell";
+import Modal from "../../../components/Modal";
 
 function sleep(ms) {
   return new Promise((res) => setTimeout(res, ms));
@@ -33,6 +34,7 @@ export default function CarregarBasesPage() {
   const [arquivoPecas, setArquivoPecas] = useState(null);
   const [arquivoGspn, setArquivoGspn] = useState(null);
   const [processando, setProcessando] = useState(false);
+  const [concluido, setConcluido] = useState(false);
   const [progresso, setProgresso] = useState({ pct: 0, texto: "" });
   const [resultado, setResultado] = useState(null);
   const [erro, setErro] = useState("");
@@ -41,9 +43,23 @@ export default function CarregarBasesPage() {
     (async () => setPerfil(await getPerfilAtual()))();
   }, []);
 
+  function confirmarEProcessar() {
+    const ok = window.confirm(
+      "Isso vai apagar a base de peças atual e substituir pelos dois arquivos selecionados. Essa mudança fica visível pra todo mundo que usa o sistema. Continuar?"
+    );
+    if (ok) processar();
+  }
+
+  function fecharPopupResultado() {
+    setResultado(null);
+    setArquivoPecas(null);
+    setArquivoGspn(null);
+    setConcluido(false);
+    setProgresso({ pct: 0, texto: "" });
+  }
+
   async function processar() {
     setErro("");
-    setResultado(null);
     setProcessando(true);
     try {
       setProgresso({ pct: 5, texto: "Lendo Base Peças..." });
@@ -207,6 +223,7 @@ export default function CarregarBasesPage() {
         naoClassificados,
         semCusto
       });
+      setConcluido(true);
     } catch (e) {
       setErro(e.message);
     }
@@ -255,11 +272,11 @@ export default function CarregarBasesPage() {
 
         <button
           className="btn-primary"
-          disabled={!arquivoPecas || !arquivoGspn || processando}
-          onClick={processar}
+          disabled={!arquivoPecas || !arquivoGspn || processando || concluido}
+          onClick={confirmarEProcessar}
         >
           <UploadCloud size={16} />
-          {processando ? "Processando..." : "Processar bases"}
+          {processando ? "Processando..." : concluido ? "Base processada" : "Processar bases"}
         </button>
 
         {processando && (
@@ -272,16 +289,28 @@ export default function CarregarBasesPage() {
         )}
 
         {erro && <div className="mt-4 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
+      </div>
 
+      <Modal
+        open={!!resultado}
+        onClose={fecharPopupResultado}
+        title="Processamento concluído"
+        footer={
+          <button className="btn-primary" onClick={fecharPopupResultado}>
+            Fechar
+          </button>
+        }
+      >
         {resultado && (
-          <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Stat n={resultado.totalRegistros} label="combinações peça/modelo" />
             <Stat n={resultado.totalModelos} label="modelos distintos" />
             <Stat n={resultado.duplicadosRemovidos} label="duplicados removidos" />
             <Stat n={resultado.naoClassificados} label="não classificadas" />
+            <Stat n={resultado.semCusto} label="sem custo encontrado" />
           </div>
         )}
-      </div>
+      </Modal>
     </AppShell>
   );
 }
