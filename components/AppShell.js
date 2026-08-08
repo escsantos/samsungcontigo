@@ -2,14 +2,18 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, UploadCloud, LogOut, Home } from "lucide-react";
+import { Search, UploadCloud, LogOut, Home, Settings, Users } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
 
 const ITENS_MENU = [
-  { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null },
-  { href: "/pecas/carregar", label: "Carregar Bases", icone: UploadCloud, cargos: ["Administrador", "Diretor"] }
+  { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null }
+];
+
+const ITENS_CONFIGURACOES = [
+  { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cargos: ["Administrador"] },
+  { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cargos: ["Administrador", "Diretor", "Gerente"] }
 ];
 
 export default function AppShell({ titulo, children }) {
@@ -26,6 +30,11 @@ export default function AppShell({ titulo, children }) {
         return;
       }
       const p = await getPerfilAtual();
+      if (p?.bloqueado) {
+        await supabase.auth.signOut();
+        router.replace("/login?bloqueado=1");
+        return;
+      }
       setPerfil(p);
       if (p?.cor_accent) {
         aplicarAccent(p.cor_accent);
@@ -42,6 +51,8 @@ export default function AppShell({ titulo, children }) {
   if (carregando) {
     return <div className="h-screen flex items-center justify-center bg-canvas text-muted text-sm">Carregando...</div>;
   }
+
+  const subItensVisiveis = ITENS_CONFIGURACOES.filter((item) => item.cargos.includes(perfil?.cargo));
 
   return (
     <div className="h-screen flex bg-canvas">
@@ -77,6 +88,31 @@ export default function AppShell({ titulo, children }) {
               </Link>
             );
           })}
+
+          {subItensVisiveis.length > 0 && (
+            <>
+              <div className="flex items-center gap-2 px-3 pt-4 pb-1.5 text-[11px] font-semibold tracking-wide text-white/50 uppercase">
+                <Settings size={13} />
+                Configurações
+              </div>
+              {subItensVisiveis.map((item) => {
+                const Icone = item.icone;
+                const ativo = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-3 pl-6 pr-3 py-2.5 rounded-lg text-sm font-medium transition ${
+                      ativo ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    <Icone size={16} />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </>
+          )}
         </nav>
         <button
           onClick={sair}

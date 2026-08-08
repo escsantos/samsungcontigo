@@ -10,7 +10,8 @@ Online: Next.js + Supabase, deploy no Vercel.
 |---|---|---|
 | `/login` | Login (nome.sobrenome) | Todos |
 | `/pecas` | Consulta de custo de peças | Todos os usuários logados |
-| `/pecas/carregar` | Upload e processamento das bases | Administrador / Diretor |
+| `/configuracoes/carregar-bases` | Upload e processamento das bases | Administrador |
+| `/configuracoes/usuarios` | Criar/editar/bloquear/excluir usuários | Administrador, Diretor, Gerente |
 
 ## 1. Criar o projeto no Supabase
 
@@ -34,12 +35,13 @@ insert into perfis (id, login, nome, cargo) values
 ('COLE-O-UUID-AQUI', 'joao.macedo', 'João Macedo', 'Administrador');
 ```
 
-Os próximos usuários podem ser criados do mesmo jeito (Admin cria pelo
-Supabase por enquanto — uma tela de cadastro de usuários pela interface,
-como existe no Caixa, pode ser adicionada depois).
+Esse é o único usuário que precisa ser criado manualmente pelo Supabase —
+todos os demais são criados pela própria tela **Configurações → Usuários**
+dentro do sistema, já com senha inicial `samsungcontigo001`.
 
-Cargos aceitos: `Administrador`, `Diretor`, `Supervisao`, `Gerencia`,
-`Vendedor`. Só `Administrador` e `Diretor` acessam `/pecas/carregar`.
+Cargos aceitos: `Administrador`, `Diretor`, `Gerente`, `Vendedor`, `Estoque`,
+`Cliente`. Só `Administrador` acessa Carregar Bases. Administrador, Diretor
+e Gerente acessam Usuários.
 
 ## 3. Configurar as variáveis de ambiente
 
@@ -48,10 +50,9 @@ Cargos aceitos: `Administrador`, `Diretor`, `Supervisao`, `Gerencia`,
    aba "Legacy anon, service_role API keys"):
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-
-   (O processamento das bases roda no navegador — arquivos grandes não passam
-   por servidor nenhum, então só a `anon key` pública é necessária, protegida
-   pelas políticas de RLS do banco.)
+   - `SUPABASE_SERVICE_ROLE_KEY` (fica só no servidor — nunca aparece no
+     navegador. Necessária para criar/excluir usuários e resetar senhas,
+     operações administrativas do Supabase Auth.)
 
 ## 4. Rodar localmente
 
@@ -73,7 +74,8 @@ Coloque os arquivos reais do Caixa Online em `public/logos/`:
 1. Suba este projeto para um repositório no GitHub.
 2. No [vercel.com](https://vercel.com) → **New Project** → importe o
    repositório.
-3. Em **Environment Variables**, adicione as duas variáveis do passo 3.
+3. Em **Environment Variables**, adicione as três variáveis do passo 3
+   (incluindo a `SUPABASE_SERVICE_ROLE_KEY`).
 4. Deploy. A partir daí, todo `git push` atualiza o site sozinho.
 
 ## O que já está pronto

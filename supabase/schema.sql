@@ -1,6 +1,7 @@
 -- ============================================================
 -- SISTEMA CONSULTA DE PEÇAS — GRUPO J.MACEDO
--- Schema inicial: perfis de usuário + tabela de peças processadas
+-- Schema completo: perfis de usuário, controle de acesso e
+-- tabela de peças processadas.
 -- Rode este arquivo inteiro no SQL Editor do Supabase (New query)
 -- ============================================================
 
@@ -9,35 +10,71 @@ create table if not exists perfis (
   id uuid primary key references auth.users(id) on delete cascade,
   login text unique not null,
   nome text not null,
-  cargo text not null check (cargo in ('Administrador','Diretor','Supervisao','Gerencia','Vendedor')),
+  cargo text not null check (cargo in ('Administrador','Diretor','Gerente','Vendedor','Estoque','Cliente')),
   cor_accent text default '#4A90D9',
+  bloqueado boolean default false,
+  visto_em timestamptz,
   criado_em timestamptz default now()
 );
 
 alter table perfis enable row level security;
 
+-- Funções de permissão (SECURITY DEFINER, evita recursão de RLS)
+create or replace function is_administrador()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo = 'Administrador');
+$$;
+
+create or replace function pode_gerenciar_usuarios()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (
+    select 1 from perfis
+    where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente')
+  );
+$$;
+
 create policy "usuario le seu proprio perfil"
   on perfis for select
   using (auth.uid() = id);
 
--- Função auxiliar (SECURITY DEFINER) para checar cargo sem disparar
--- recursão infinita nas políticas de RLS da própria tabela perfis.
-create or replace function is_admin_ou_diretor()
-returns boolean
-language sql
-security definer
-set search_path = public
-stable
-as $$
-  select exists (
-    select 1 from perfis
-    where id = auth.uid() and cargo in ('Administrador','Diretor')
-  );
+create policy "gerentes leem todos os perfis"
+  on perfis for select
+  using (pode_gerenciar_usuarios());
+
+create policy "gerentes atualizam perfis"
+  on perfis for update
+  using (pode_gerenciar_usuarios())
+  with check (pode_gerenciar_usuarios());
+
+create policy "gerentes excluem perfis"
+  on perfis for delete
+  using (pode_gerenciar_usuarios());
+
+create policy "usuario atualiza seu proprio perfil"
+  on perfis for update
+  using (auth.uid() = id)
+  with check (auth.uid() = id);
+
+-- Trava: usuário comum não pode alterar o próprio cargo/bloqueio
+-- (só quem já é gestor pode mudar cargo/bloqueio de qualquer um)
+create or replace function bloquear_autopromocao()
+returns trigger language plpgsql security definer as $$
+begin
+  if not pode_gerenciar_usuarios() then
+    if new.cargo is distinct from old.cargo then
+      raise exception 'Você não tem permissão para alterar seu próprio cargo.';
+    end if;
+    if new.bloqueado is distinct from old.bloqueado then
+      raise exception 'Você não tem permissão para alterar seu próprio bloqueio.';
+    end if;
+  end if;
+  return new;
+end;
 $$;
 
-create policy "admin/diretor leem todos os perfis"
-  on perfis for select
-  using (is_admin_ou_diretor());
+create trigger trg_bloquear_autopromocao
+  before update on perfis
+  for each row execute function bloquear_autopromocao();
 
 -- 2. Tabela de peças (resultado do cruzamento Base Peças x Base GSPN)
 create table if not exists pecas (
@@ -65,11 +102,11 @@ create policy "usuarios logados consultam pecas"
   on pecas for select
   using (auth.role() = 'authenticated');
 
--- só Administrador/Diretor podem inserir/alterar/excluir (recarregar bases)
-create policy "admin/diretor gerenciam pecas"
+-- só Administrador pode inserir/alterar/excluir (recarregar bases)
+create policy "administrador gerencia pecas"
   on pecas for all
-  using (is_admin_ou_diretor())
-  with check (is_admin_ou_diretor());
+  using (is_administrador())
+  with check (is_administrador());
 
 -- 3. Log de processamento de bases (auditoria de cada upload)
 create table if not exists pecas_processamentos (
@@ -90,6 +127,6 @@ create policy "usuarios logados leem log de processamento"
   on pecas_processamentos for select
   using (auth.role() = 'authenticated');
 
-create policy "admin/diretor inserem log de processamento"
+create policy "administrador insere log de processamento"
   on pecas_processamentos for insert
-  with check (is_admin_ou_diretor());
+  with check (is_administrador());

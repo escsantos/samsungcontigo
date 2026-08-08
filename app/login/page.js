@@ -1,15 +1,32 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import { supabase, loginParaEmail } from "../../lib/supabaseClient";
 import BotaoTema from "../../components/BotaoTema";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const [login, setLogin] = useState("");
   const [senha, setSenha] = useState("");
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
   const router = useRouter();
+  const params = useSearchParams();
+
+  useEffect(() => {
+    if (params.get("bloqueado") === "1") {
+      setErro("Seu acesso foi bloqueado. Fale com o Administrador do sistema.");
+    }
+  }, [params]);
 
   async function entrar(e) {
     e.preventDefault();
@@ -19,11 +36,21 @@ export default function LoginPage() {
       email: loginParaEmail(login),
       password: senha
     });
-    setCarregando(false);
     if (error) {
+      setCarregando(false);
       setErro("Login ou senha inválidos.");
       return;
     }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: perfil } = await supabase.from("perfis").select("bloqueado").eq("id", user.id).single();
+    if (perfil?.bloqueado) {
+      await supabase.auth.signOut();
+      setCarregando(false);
+      setErro("Seu acesso foi bloqueado. Fale com o Administrador do sistema.");
+      return;
+    }
+
     router.push("/pecas");
   }
 
@@ -65,12 +92,22 @@ export default function LoginPage() {
           </div>
           <div className="mb-5">
             <label className="field-label">Senha</label>
-            <input
-              className="field-input"
-              type="password"
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
-            />
+            <div className="relative">
+              <input
+                className="field-input pr-10"
+                type={mostrarSenha ? "text" : "password"}
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => setMostrarSenha((v) => !v)}
+                aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+              >
+                {mostrarSenha ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
 
           {erro && (
