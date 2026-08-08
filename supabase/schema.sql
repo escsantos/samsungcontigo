@@ -19,14 +19,24 @@ create policy "usuario le seu proprio perfil"
   on perfis for select
   using (auth.uid() = id);
 
+-- Função auxiliar (SECURITY DEFINER) para checar cargo sem disparar
+-- recursão infinita nas políticas de RLS da própria tabela perfis.
+create or replace function is_admin_ou_diretor()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from perfis
+    where id = auth.uid() and cargo in ('Administrador','Diretor')
+  );
+$$;
+
 create policy "admin/diretor leem todos os perfis"
   on perfis for select
-  using (
-    exists (
-      select 1 from perfis p
-      where p.id = auth.uid() and p.cargo in ('Administrador','Diretor')
-    )
-  );
+  using (is_admin_ou_diretor());
 
 -- 2. Tabela de peças (resultado do cruzamento Base Peças x Base GSPN)
 create table if not exists pecas (
@@ -57,18 +67,8 @@ create policy "usuarios logados consultam pecas"
 -- só Administrador/Diretor podem inserir/alterar/excluir (recarregar bases)
 create policy "admin/diretor gerenciam pecas"
   on pecas for all
-  using (
-    exists (
-      select 1 from perfis p
-      where p.id = auth.uid() and p.cargo in ('Administrador','Diretor')
-    )
-  )
-  with check (
-    exists (
-      select 1 from perfis p
-      where p.id = auth.uid() and p.cargo in ('Administrador','Diretor')
-    )
-  );
+  using (is_admin_ou_diretor())
+  with check (is_admin_ou_diretor());
 
 -- 3. Log de processamento de bases (auditoria de cada upload)
 create table if not exists pecas_processamentos (
@@ -87,18 +87,8 @@ alter table pecas_processamentos enable row level security;
 
 create policy "admin/diretor leem log de processamento"
   on pecas_processamentos for select
-  using (
-    exists (
-      select 1 from perfis p
-      where p.id = auth.uid() and p.cargo in ('Administrador','Diretor')
-    )
-  );
+  using (is_admin_ou_diretor());
 
 create policy "admin/diretor inserem log de processamento"
   on pecas_processamentos for insert
-  with check (
-    exists (
-      select 1 from perfis p
-      where p.id = auth.uid() and p.cargo in ('Administrador','Diretor')
-    )
-  );
+  with check (is_admin_ou_diretor());

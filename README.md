@@ -44,11 +44,14 @@ Cargos aceitos: `Administrador`, `Diretor`, `Supervisao`, `Gerencia`,
 ## 3. Configurar as variáveis de ambiente
 
 1. Copie `.env.local.example` para `.env.local`.
-2. Preencha com os dados do seu projeto (Supabase → Project Settings → API):
+2. Preencha com os dados do seu projeto (Supabase → Project Settings → API →
+   aba "Legacy anon, service_role API keys"):
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY` (fica só no servidor — nunca aparece no
-     navegador nem deve ir para um repositório público)
+
+   (O processamento das bases roda no navegador — arquivos grandes não passam
+   por servidor nenhum, então só a `anon key` pública é necessária, protegida
+   pelas políticas de RLS do banco.)
 
 ## 4. Rodar localmente
 
@@ -70,22 +73,23 @@ Coloque os arquivos reais do Caixa Online em `public/logos/`:
 1. Suba este projeto para um repositório no GitHub.
 2. No [vercel.com](https://vercel.com) → **New Project** → importe o
    repositório.
-3. Em **Environment Variables**, adicione as três variáveis do passo 3
-   (incluindo a `SUPABASE_SERVICE_ROLE_KEY`).
+3. Em **Environment Variables**, adicione as duas variáveis do passo 3.
 4. Deploy. A partir daí, todo `git push` atualiza o site sozinho.
 
 ## O que já está pronto
 
 - Login com Supabase Auth (padrão `nome.sobrenome`).
 - Modo claro/escuro (botão no cabeçalho, salvo no navegador).
-- Processamento das bases no servidor (`/api/processar-bases`): remove
-  duplicados da Base Peças, classifica a Descrição Resumida por
-  palavra-chave, deriva a Categoria, cruza com a Base GSPN e grava o valor
-  unitário sempre pela **compra mais recente**.
+- Processamento das bases **no navegador** (evita o limite de tamanho de
+  requisição de funções de servidor no Vercel): remove duplicados da Base
+  Peças, classifica a Descrição Resumida por palavra-chave, deriva a
+  Categoria, cruza com a Base GSPN e grava o valor unitário sempre pela
+  **compra mais recente** direto no Supabase.
 - Consulta com busca combinada (vários termos, qualquer campo) e filtro por
   categoria, com margem editável e preço de venda sugerido em `R$ 0.000,00`.
 - Controle de acesso: só Administrador/Diretor processam bases; qualquer
-  usuário logado consulta preços.
+  usuário logado consulta preços. As permissões são garantidas pelo RLS do
+  Postgres (função `is_admin_ou_diretor()`), não só pela interface.
 - Log de auditoria de cada processamento (`pecas_processamentos`): quem
   processou, quando, quantos registros, quantos duplicados removidos etc.
 
