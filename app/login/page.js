@@ -117,8 +117,79 @@ function LoginForm() {
           <button className="btn-primary w-full" type="submit" disabled={carregando}>
             {carregando ? "Entrando…" : "Entrar"}
           </button>
+
+          <EsqueciSenha loginAtual={login} />
         </form>
       </div>
     </div>
+  );
+}
+
+function EsqueciSenha({ loginAtual }) {
+  const [aberto, setAberto] = useState(false);
+  const [login, setLogin] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [enviado, setEnviado] = useState(false);
+
+  function abrir(e) {
+    e.preventDefault();
+    setLogin(loginAtual || "");
+    setEnviado(false);
+    setAberto(true);
+  }
+
+  async function enviar() {
+    if (!login.trim()) return;
+    setEnviando(true);
+    await supabase.from("notificacoes").insert({
+      tipo: "esqueci_senha",
+      usuario_login: login.trim(),
+      mensagem: `${login.trim()} solicitou redefinição de senha na tela de login.`
+    });
+    setEnviando(false);
+    setEnviado(true);
+  }
+
+  return (
+    <>
+      <button type="button" onClick={abrir} className="w-full text-center text-xs text-muted hover:text-ink mt-4">
+        Esqueci minha senha
+      </button>
+
+      {aberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setAberto(false)} />
+          <div className="card relative w-full max-w-sm p-6 shadow-2xl">
+            {enviado ? (
+              <>
+                <p className="font-display font-semibold text-[15px] mb-2">Solicitação enviada</p>
+                <p className="text-sm text-muted mb-5">
+                  Um administrador foi avisado e vai redefinir sua senha em breve. Aguarde o contato.
+                </p>
+                <button className="btn-primary w-full" onClick={() => setAberto(false)}>Fechar</button>
+              </>
+            ) : (
+              <>
+                <p className="font-display font-semibold text-[15px] mb-2">Esqueci minha senha</p>
+                <p className="text-sm text-muted mb-4">Digite seu login. Um administrador vai ser avisado para redefinir sua senha.</p>
+                <input
+                  className="field-input mb-4"
+                  value={login}
+                  onChange={(e) => setLogin(e.target.value)}
+                  placeholder="samara.oliveira"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button className="btn-secondary flex-1" onClick={() => setAberto(false)}>Cancelar</button>
+                  <button className="btn-primary flex-1" disabled={!login.trim() || enviando} onClick={enviar}>
+                    {enviando ? "Enviando..." : "Enviar"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

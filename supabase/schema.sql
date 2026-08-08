@@ -100,6 +100,41 @@ create policy "usuario remove sua propria foto"
   on storage.objects for delete
   using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
 
+-- 3. Notificações
+create table if not exists notificacoes (
+  id bigint generated always as identity primary key,
+  tipo text not null check (tipo in ('esqueci_senha')),
+  usuario_login text,
+  mensagem text not null,
+  lida boolean default false,
+  criado_em timestamptz default now()
+);
+
+alter table notificacoes enable row level security;
+
+create policy "gestores leem notificacoes"
+  on notificacoes for select
+  using (pode_gerenciar_usuarios());
+
+create policy "gestores atualizam notificacoes"
+  on notificacoes for update
+  using (pode_gerenciar_usuarios())
+  with check (pode_gerenciar_usuarios());
+
+create policy "qualquer um solicita esqueci senha"
+  on notificacoes for insert
+  with check (tipo = 'esqueci_senha');
+
+-- 4. Função de presença online (expõe só nome/foto, nada sensível)
+create or replace function usuarios_online()
+returns table(id uuid, nome text, foto_url text)
+language sql security definer set search_path = public stable as $$
+  select id, nome, foto_url from perfis
+  where visto_em > now() - interval '2 minutes'
+    and coalesce(bloqueado, false) = false
+  order by nome;
+$$;
+
 -- 2. Tabela de peças (resultado do cruzamento Base Peças x Base GSPN)
 create table if not exists pecas (
   id bigint generated always as identity primary key,

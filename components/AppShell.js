@@ -1,15 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, UploadCloud, LogOut, Home, Settings, Users } from "lucide-react";
+import { Search, UploadCloud, LogOut, Home, Settings, Users, Bell } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
 import Avatar from "./Avatar";
+import SininhoNotificacoes from "./SininhoNotificacoes";
+import IndicadorOnline from "./IndicadorOnline";
 
 const ITENS_MENU = [
-  { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null }
+  { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null },
+  { href: "/notificacoes", label: "Notificações", icone: Bell, cargos: ["Administrador", "Diretor", "Gerente"] }
 ];
 
 const ITENS_CONFIGURACOES = [
@@ -22,6 +25,7 @@ export default function AppShell({ titulo, children }) {
   const [carregando, setCarregando] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
+  const heartbeatRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -41,7 +45,16 @@ export default function AppShell({ titulo, children }) {
         aplicarAccent(p.cor_accent);
       }
       setCarregando(false);
+
+      // presença online: atualiza visto_em ao entrar e a cada ~30s
+      const marcarPresenca = () => supabase.from("perfis").update({ visto_em: new Date().toISOString() }).eq("id", p.id);
+      marcarPresenca();
+      heartbeatRef.current = setInterval(marcarPresenca, 30000);
     })();
+
+    return () => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    };
   }, [router]);
 
   async function sair() {
@@ -126,8 +139,12 @@ export default function AppShell({ titulo, children }) {
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-line bg-surface">
-          <h1 className="font-display font-semibold text-[15px] text-ink">{titulo}</h1>
           <div className="flex items-center gap-3">
+            <SininhoNotificacoes visivel={["Administrador", "Diretor", "Gerente"].includes(perfil?.cargo)} />
+            <h1 className="font-display font-semibold text-[15px] text-ink">{titulo}</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <IndicadorOnline />
             <Link href="/perfil" className="flex items-center gap-2.5 hover:opacity-80 transition">
               <div className="text-right leading-tight">
                 <p className="text-sm font-medium text-ink">{perfil?.nome || "-"}</p>
