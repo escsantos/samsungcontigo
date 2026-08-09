@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, UploadCloud, LogOut, Home, Settings, Users, Bell } from "lucide-react";
+import { Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
@@ -17,6 +17,7 @@ const ITENS_MENU = [
 
 const ITENS_CONFIGURACOES = [
   { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cargos: ["Administrador"] },
+  { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cargos: ["Administrador"] },
   { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cargos: ["Administrador", "Diretor", "Gerente"] }
 ];
 

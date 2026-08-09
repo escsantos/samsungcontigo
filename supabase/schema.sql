@@ -189,3 +189,25 @@ create policy "usuarios logados leem log de processamento"
 create policy "administrador insere log de processamento"
   on pecas_processamentos for insert
   with check (is_administrador());
+
+-- 4. Impostos (usados no cálculo Custo / Imposto / Lucro Líquido / Venda Sugerida)
+create table if not exists impostos (
+  id bigint generated always as identity primary key,
+  nome text not null,
+  percentual numeric(5,2) not null check (percentual >= 0 and percentual <= 100),
+  ativo boolean default true,
+  criado_em timestamptz default now()
+);
+
+alter table impostos enable row level security;
+
+create policy "usuarios logados leem impostos"
+  on impostos for select
+  using (auth.role() = 'authenticated');
+
+create policy "administrador gerencia impostos"
+  on impostos for all
+  using (is_administrador())
+  with check (is_administrador());
+
+insert into impostos (nome, percentual, ativo) values ('ICMS Peças', 8.45, true);

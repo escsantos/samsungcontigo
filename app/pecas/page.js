@@ -4,6 +4,7 @@ import { Search, Info, X } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { corCategoria, iconeCategoria } from "../../lib/categorias";
+import { calcularPreco, corMargem } from "../../lib/precos";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -36,17 +37,18 @@ async function buscarColunaCompleta(tabela, coluna) {
 export default function ConsultaPecasPage() {
   const [termo, setTermo] = useState("");
   const [margem, setMargem] = useState(30);
+  const [impostoTotal, setImpostoTotal] = useState(0);
   const [categoriaAtiva, setCategoriaAtiva] = useState(null);
   const [resultados, setResultados] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [buscando, setBuscando] = useState(false);
   const [totalGeral, setTotalGeral] = useState(0);
   const [perfil, setPerfil] = useState(null);
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null);
 
   useEffect(() => {
     getPerfilAtual().then(setPerfil);
   }, []);
-  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -65,6 +67,10 @@ export default function ConsultaPecasPage() {
         .limit(1)
         .maybeSingle();
       if (log) setUltimaAtualizacao(log);
+
+      const { data: impostos } = await supabase.from("impostos").select("percentual, ativo");
+      const soma = (impostos || []).filter((i) => i.ativo).reduce((s, i) => s + Number(i.percentual), 0);
+      setImpostoTotal(soma);
     })();
   }, []);
 
@@ -89,12 +95,14 @@ export default function ConsultaPecasPage() {
     return () => clearTimeout(timer);
   }, [termo, categoriaAtiva]);
 
+  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : margem;
+
   const linhas = useMemo(() => {
-    return resultados.map((r) => ({
-      ...r,
-      venda: r.valor_unitario !== null ? r.valor_unitario * (1 + margem / 100) : null
-    }));
-  }, [resultados, margem]);
+    return resultados.map((r) => {
+      const { venda, imposto, lucroLiquido } = calcularPreco(r.valor_unitario, margemEfetiva, impostoTotal);
+      return { ...r, venda, imposto, lucroLiquido };
+    });
+  }, [resultados, margemEfetiva, impostoTotal]);
 
   function limparPesquisa() {
     setTermo("");
@@ -102,6 +110,9 @@ export default function ConsultaPecasPage() {
   }
 
   const temFiltro = termo || categoriaAtiva;
+  const statusMargem = corMargem(margemEfetiva);
+  const margemBaixa = margemEfetiva < 20;
+  const mostraCusto = perfil?.cargo !== "Cliente";
 
   return (
     <AppShell titulo="Consulta de Peças">
@@ -133,11 +144,19 @@ export default function ConsultaPecasPage() {
             </button>
           )}
 
-          {perfil?.cargo !== "Cliente" && (
+          {mostraCusto && (
             <div
-              className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5"
+              className="flex items-center gap-2.5 border border-line rounded-[10px] px-3.5 py-2.5"
               style={{ background: "var(--surface)", boxShadow: "0 1px 0 rgba(0,0,0,0.05), 0 2px 4px rgba(20,24,31,0.06)" }}
+              title={statusMargem.label}
             >
+              <span
+                className="w-3 h-3 rounded-full shrink-0"
+                style={{
+                  background: `radial-gradient(circle at 30% 30%, ${statusMargem.cor}, ${statusMargem.cor}dd)`,
+                  boxShadow: `0 1px 2px rgba(0,0,0,0.3), 0 0 0 2px ${statusMargem.cor}33`
+                }}
+              />
               <label className="text-xs text-muted whitespace-nowrap">Margem</label>
               <input
                 type="number"
@@ -159,6 +178,7 @@ export default function ConsultaPecasPage() {
             </span>
             <div className="tooltip-bubble">
               {totalGeral.toLocaleString("pt-BR")} peças cadastradas no total
+              {mostraCusto && <><br />Imposto aplicado no cálculo: {impostoTotal.toFixed(2)}%</>}
               {ultimaAtualizacao && (
                 <>
                   <br />
@@ -216,16 +236,22 @@ export default function ConsultaPecasPage() {
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Código</th>
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição resumida</th>
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição da peça</th>
-                  {perfil?.cargo !== "Cliente" && (
-                    <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Custo</th>
+                  {mostraCusto && (
+                    <>
+                      <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Custo</th>
+                      <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Imposto</th>
+                      <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Lucro Líquido</th>
+                      <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Margem</th>
+                    </>
                   )}
-                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Venda sugerida</th>
+                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Venda Sugerida</th>
                 </tr>
               </thead>
               <tbody>
                 {linhas.map((r) => {
                   const cor = corCategoria(r.categoria);
                   const Icone = iconeCategoria(r.categoria);
+                  const corLinha = mostraCusto && margemBaixa ? "var(--danger)" : undefined;
                   return (
                     <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas">
                       <td className="px-4 py-2.5 font-mono font-medium">{r.modelo}</td>
@@ -238,10 +264,20 @@ export default function ConsultaPecasPage() {
                       <td className="px-4 py-2.5 font-mono" style={{ color: "var(--accent)" }}>{r.codigo}</td>
                       <td className="px-4 py-2.5">{r.descricao_resumida}</td>
                       <td className="px-4 py-2.5 text-muted text-xs max-w-[240px]">{r.descricao_peca}</td>
-                      {perfil?.cargo !== "Cliente" && (
-                        <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(r.valor_unitario)}</td>
+                      {mostraCusto && (
+                        <>
+                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.valor_unitario)}</td>
+                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.imposto)}</td>
+                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.lucroLiquido)}</td>
+                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha || statusMargem.cor }}>{margemEfetiva}%</td>
+                        </>
                       )}
-                      <td className="px-4 py-2.5 text-right font-mono font-semibold text-success">{fmtBRL(r.venda)}</td>
+                      <td
+                        className="px-4 py-2.5 text-right font-mono font-semibold"
+                        style={{ color: corLinha || "#2C7C6E" }}
+                      >
+                        {fmtBRL(r.venda)}
+                      </td>
                     </tr>
                   );
                 })}
