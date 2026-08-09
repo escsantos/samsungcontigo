@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, KeyRound, Lock, Unlock, Trash2, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
+import { ArrowLeft, KeyRound, Lock, Unlock, Trash2, ShieldAlert, ShieldCheck, ShieldX, Save, Check } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../../lib/supabaseClient";
 import { CARGOS } from "../../../../lib/usuarios";
 import { calcularCompletude, permissoesAtivas } from "../../../../lib/perfilUtils";
@@ -30,6 +30,10 @@ export default function DetalheUsuarioPage() {
   const router = useRouter();
   const [gestor, setGestor] = useState(undefined);
   const [usuario, setUsuario] = useState(undefined);
+  const [nomeEditado, setNomeEditado] = useState("");
+  const [cargoEditado, setCargoEditado] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [salvo, setSalvo] = useState(false);
   const [confirmar, setConfirmar] = useState(null);
   const [processando, setProcessando] = useState(false);
   const [credenciais, setCredenciais] = useState(null);
@@ -40,12 +44,32 @@ export default function DetalheUsuarioPage() {
       setGestor(await getPerfilAtual());
       const { data } = await supabase.from("perfis").select("*").eq("id", id).single();
       setUsuario(data);
+      setNomeEditado(data?.nome || "");
+      setCargoEditado(data?.cargo || "");
     })();
   }, [id]);
 
-  async function mudarCargo(novoCargo) {
-    await supabase.from("perfis").update({ cargo: novoCargo }).eq("id", id);
-    setUsuario((u) => ({ ...u, cargo: novoCargo }));
+  const houveMudanca = usuario && (nomeEditado !== usuario.nome || cargoEditado !== usuario.cargo);
+
+  async function salvarAlteracoes() {
+    if (!nomeEditado.trim()) {
+      setErro("O nome não pode ficar em branco.");
+      return;
+    }
+    setErro("");
+    setSalvando(true);
+    const { error } = await supabase
+      .from("perfis")
+      .update({ nome: nomeEditado.trim(), cargo: cargoEditado })
+      .eq("id", id);
+    setSalvando(false);
+    if (error) {
+      setErro("Não consegui salvar: " + error.message);
+      return;
+    }
+    setUsuario((u) => ({ ...u, nome: nomeEditado.trim(), cargo: cargoEditado }));
+    setSalvo(true);
+    setTimeout(() => setSalvo(false), 2500);
   }
 
   async function alternarBloqueio() {
@@ -116,7 +140,6 @@ export default function DetalheUsuarioPage() {
             <div className="flex items-center gap-4">
               <Avatar nome={usuario.nome} fotoUrl={usuario.foto_url} tamanho={64} />
               <div>
-                <p className="font-display font-semibold text-lg">{usuario.nome}</p>
                 <p className="text-sm text-muted font-mono">{usuario.login}</p>
                 <span
                   className="inline-block mt-1 text-[10.5px] font-mono font-bold px-2 py-0.5 rounded"
@@ -142,12 +165,34 @@ export default function DetalheUsuarioPage() {
             </div>
           </div>
 
-          <div className="mt-5">
-            <label className="field-label">Cargo</label>
-            <select className="field-input w-48" value={usuario.cargo} onChange={(e) => mudarCargo(e.target.value)}>
-              {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+          <div className="mt-5 grid grid-cols-2 gap-4">
+            <div>
+              <label className="field-label">Nome</label>
+              <input className="field-input" value={nomeEditado} onChange={(e) => setNomeEditado(e.target.value)} />
+            </div>
+            <div>
+              <label className="field-label">Cargo</label>
+              <select className="field-input" value={cargoEditado} onChange={(e) => setCargoEditado(e.target.value)}>
+                {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
           </div>
+
+          {erro && <div className="mt-3 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
+          {salvo && (
+            <div className="mt-3 flex items-center gap-1.5 text-sm" style={{ color: "#2C7C6E" }}>
+              <Check size={14} /> Alterações salvas!
+            </div>
+          )}
+
+          <button
+            className="btn-primary mt-4"
+            disabled={!houveMudanca || salvando}
+            onClick={salvarAlteracoes}
+          >
+            <Save size={15} />
+            {salvando ? "Salvando..." : "Salvar alterações"}
+          </button>
 
           <div className="mt-5">
             <div className="flex justify-between text-xs text-muted mb-1.5">

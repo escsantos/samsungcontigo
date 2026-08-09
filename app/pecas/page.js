@@ -5,6 +5,7 @@ import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { corCategoria, iconeCategoria } from "../../lib/categorias";
 import { calcularPreco, corMargem } from "../../lib/precos";
+import DetalhePecaModal from "../../components/DetalhePecaModal";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -45,6 +46,8 @@ export default function ConsultaPecasPage() {
   const [totalGeral, setTotalGeral] = useState(0);
   const [perfil, setPerfil] = useState(null);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null);
+  const [qtds, setQtds] = useState({});
+  const [pecaSelecionada, setPecaSelecionada] = useState(null);
 
   useEffect(() => {
     getPerfilAtual().then(setPerfil);
@@ -99,10 +102,25 @@ export default function ConsultaPecasPage() {
 
   const linhas = useMemo(() => {
     return resultados.map((r) => {
+      const qtd = qtds[r.id] ?? 1;
       const { venda, imposto, lucroLiquido } = calcularPreco(r.valor_unitario, margemEfetiva, impostoTotal);
-      return { ...r, venda, imposto, lucroLiquido };
+      return {
+        ...r,
+        qtd,
+        custoUnit: r.valor_unitario,
+        vendaUnit: venda,
+        custoTotal: r.valor_unitario !== null ? r.valor_unitario * qtd : null,
+        impostoTotal: imposto !== null ? imposto * qtd : null,
+        lucroLiquidoTotal: lucroLiquido !== null ? lucroLiquido * qtd : null,
+        vendaTotal: venda !== null ? venda * qtd : null
+      };
     });
-  }, [resultados, margemEfetiva, impostoTotal]);
+  }, [resultados, margemEfetiva, impostoTotal, qtds]);
+
+  function mudarQtd(id, valor) {
+    const n = Math.max(1, parseInt(valor, 10) || 1);
+    setQtds((q) => ({ ...q, [id]: n }));
+  }
 
   function limparPesquisa() {
     setTermo("");
@@ -236,6 +254,7 @@ export default function ConsultaPecasPage() {
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Código</th>
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição resumida</th>
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição da peça</th>
+                  <th className="sticky top-0 bg-canvas text-center px-4 py-2.5 z-10">Qtd</th>
                   {mostraCusto && (
                     <>
                       <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Custo</th>
@@ -244,7 +263,9 @@ export default function ConsultaPecasPage() {
                       <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Margem</th>
                     </>
                   )}
-                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Venda Sugerida</th>
+                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">
+                    {mostraCusto ? "Venda Sugerida" : "Valor de Venda"}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -253,7 +274,11 @@ export default function ConsultaPecasPage() {
                   const Icone = iconeCategoria(r.categoria);
                   const corLinha = mostraCusto && margemBaixa ? "var(--danger)" : undefined;
                   return (
-                    <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas">
+                    <tr
+                      key={r.id}
+                      className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
+                      onClick={() => setPecaSelecionada(r)}
+                    >
                       <td className="px-4 py-2.5 font-mono font-medium">{r.modelo}</td>
                       <td className="px-4 py-2.5">
                         <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1" style={{ background: cor.bg, color: cor.fg }}>
@@ -264,11 +289,20 @@ export default function ConsultaPecasPage() {
                       <td className="px-4 py-2.5 font-mono" style={{ color: "var(--accent)" }}>{r.codigo}</td>
                       <td className="px-4 py-2.5">{r.descricao_resumida}</td>
                       <td className="px-4 py-2.5 text-muted text-xs max-w-[240px]">{r.descricao_peca}</td>
+                      <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="number"
+                          min={1}
+                          className="field-input py-1 px-1.5 text-center font-mono w-14 mx-auto"
+                          value={r.qtd}
+                          onChange={(e) => mudarQtd(r.id, e.target.value)}
+                        />
+                      </td>
                       {mostraCusto && (
                         <>
-                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.valor_unitario)}</td>
-                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.imposto)}</td>
-                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.lucroLiquido)}</td>
+                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.custoTotal)}</td>
+                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.impostoTotal)}</td>
+                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.lucroLiquidoTotal)}</td>
                           <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha || statusMargem.cor }}>{margemEfetiva}%</td>
                         </>
                       )}
@@ -276,7 +310,7 @@ export default function ConsultaPecasPage() {
                         className="px-4 py-2.5 text-right font-mono font-semibold"
                         style={{ color: corLinha || "#2C7C6E" }}
                       >
-                        {fmtBRL(r.venda)}
+                        {fmtBRL(r.vendaTotal)}
                       </td>
                     </tr>
                   );
@@ -286,6 +320,13 @@ export default function ConsultaPecasPage() {
           </div>
         )}
       </div>
+
+      <DetalhePecaModal
+        peca={pecaSelecionada}
+        qtd={pecaSelecionada?.qtd ?? 1}
+        mostraCusto={mostraCusto}
+        onClose={() => setPecaSelecionada(null)}
+      />
     </AppShell>
   );
 }

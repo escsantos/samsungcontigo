@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, KeyRound, Lock, Unlock, Trash2, ShieldAlert } from "lucide-react";
+import { UserPlus, KeyRound, Lock, Unlock, Trash2, ShieldAlert, Pencil } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { CARGOS } from "../../../lib/usuarios";
 import AppShell from "../../../components/AppShell";
@@ -182,6 +182,13 @@ export default function UsuariosPage() {
                   </td>
                   <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1.5">
+                      <button
+                        title="Editar"
+                        onClick={() => router.push(`/configuracoes/usuarios/${u.id}`)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas"
+                      >
+                        <Pencil size={15} />
+                      </button>
                       <button
                         title="Resetar senha"
                         onClick={() => setConfirmar({ tipo: "resetar", usuario: u })}
