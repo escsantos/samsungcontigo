@@ -56,25 +56,15 @@ function LoginForm() {
 
   return (
     <div className="h-screen overflow-hidden flex bg-canvas">
-      <div className="hidden lg:flex flex-1 flex-col bg-surface relative">
-        <div className="px-10 pt-6">
-          <p className="text-[11px] tracking-[0.15em] text-muted uppercase font-display font-semibold">
-            Consulta de Peças — Custo &amp; Orçamento
-          </p>
-        </div>
-
-        <div className="flex-1 flex items-center justify-center gap-10 px-12">
-          <img src="/logos/grupo-jmacedo.png" alt="Grupo J.Macedo Eletrônica" className="max-w-[240px] h-auto" />
-          <div className="w-1.5 h-40 rounded-full" style={{ background: "linear-gradient(180deg, #1B4162, #6FA8E1)" }} />
-          <img src="/logos/grupo-macedo-maschetti.png" alt="Grupo Macedo &amp; Maschetti" className="max-w-[240px] h-auto" />
-        </div>
+      <div className="hidden lg:flex flex-1 items-center justify-center bg-surface relative">
+        <img src="/logos/samsung-contigo.png" alt="Samsung Contigo — Grupo J.Macedo" className="w-full max-w-2xl h-auto px-16" />
       </div>
 
       <div className="w-full lg:w-[440px] bg-canvas flex items-center justify-center p-8 relative">
         <BotaoTema className="absolute top-6 right-6" />
         <form onSubmit={entrar} className="w-full max-w-sm">
           <div className="lg:hidden mb-8 flex justify-center">
-            <img src="/logos/grupo-jmacedo.png" alt="Grupo J.Macedo Eletrônica" className="h-14 w-auto" />
+            <img src="/logos/samsung-contigo.png" alt="Samsung Contigo — Grupo J.Macedo" className="h-20 w-auto" />
           </div>
 
           <h1 className="font-display text-xl font-semibold text-ink mb-1">Entrar</h1>

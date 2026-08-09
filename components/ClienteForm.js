@@ -62,6 +62,7 @@ export default function ClienteForm({ inicial, vendedores, onSalvar, salvando, o
 
   function validar() {
     if (!dados.nome.trim()) return "Preencha o nome/razão social.";
+    if (!dados.vendedor_id) return "Todo cliente precisa ter um vendedor responsável vinculado.";
     if (dados.tipo_pessoa === "fisica" && dados.cpf && !validarCPF(dados.cpf)) {
       return "CPF inválido. Confira os números digitados.";
     }
@@ -241,7 +242,7 @@ export default function ClienteForm({ inicial, vendedores, onSalvar, salvando, o
         <p className="font-display font-semibold text-[15px] mb-4">Comercial</p>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="field-label">Vendedor responsável</label>
+            <label className="field-label">Vendedor responsável *</label>
             <select className="field-input" value={dados.vendedor_id || ""} onChange={(e) => set("vendedor_id", e.target.value || null)}>
               <option value="">-</option>
               {(vendedores || []).map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}

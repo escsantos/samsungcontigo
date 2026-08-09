@@ -18,10 +18,10 @@ const ITENS_MENU = [
   { href: "/notificacoes", label: "Notificações", icone: Bell, cargos: ["Administrador", "Diretor", "Gerente"] }
 ];
 
-const ITENS_CONFIGURACOES = [
-  { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cargos: ["Administrador"] },
-  { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cargos: ["Administrador"] },
-  { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cargos: ["Administrador", "Diretor", "Gerente"] }
+export const ITENS_CONFIGURACOES = [
+  { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cargos: ["Administrador"], descricao: "Suba as planilhas de peças e ordens de serviço para atualizar a base de custos." },
+  { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cargos: ["Administrador"], descricao: "Cadastre e gerencie os impostos usados no cálculo do preço de venda." },
+  { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cargos: ["Administrador", "Diretor", "Gerente"], descricao: "Crie logins, defina cargos, resete senhas e controle o acesso ao sistema." }
 ];
 
 export default function AppShell({ titulo, children }) {
@@ -56,7 +56,15 @@ export default function AppShell({ titulo, children }) {
       setCarregando(false);
 
       // presença online: atualiza visto_em ao entrar e a cada ~30s
-      const marcarPresenca = () => supabase.from("perfis").update({ visto_em: new Date().toISOString() }).eq("id", p.id);
+      async function marcarPresenca() {
+        const { error } = await supabase
+          .from("perfis")
+          .update({ visto_em: new Date().toISOString() })
+          .eq("id", p.id);
+        if (error) {
+          console.error("[presenca online] falha ao atualizar visto_em:", error.message, error);
+        }
+      }
       marcarPresenca();
       heartbeatRef.current = setInterval(marcarPresenca, 30000);
     })();
@@ -114,28 +122,15 @@ export default function AppShell({ titulo, children }) {
           })}
 
           {subItensVisiveis.length > 0 && (
-            <>
-              <div className="flex items-center gap-2 px-3 pt-4 pb-1.5 text-[11px] font-semibold tracking-wide text-white/50 uppercase">
-                <Settings size={13} />
-                Configurações
-              </div>
-              {subItensVisiveis.map((item) => {
-                const Icone = item.icone;
-                const ativo = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 pl-6 pr-3 py-2.5 rounded-lg text-sm font-medium transition ${
-                      ativo ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
-                    }`}
-                  >
-                    <Icone size={16} />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </>
+            <Link
+              href="/configuracoes"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
+                pathname.startsWith("/configuracoes") ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <Settings size={17} />
+              Configurações
+            </Link>
           )}
         </nav>
         <button
