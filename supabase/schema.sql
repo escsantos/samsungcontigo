@@ -211,3 +211,63 @@ create policy "administrador gerencia impostos"
   with check (is_administrador());
 
 insert into impostos (nome, percentual, ativo) values ('ICMS Peças', 8.45, true);
+
+-- 5. Clientes
+create table if not exists clientes (
+  id bigint generated always as identity primary key,
+  tipo_pessoa text not null check (tipo_pessoa in ('fisica','juridica')),
+  nome text not null,
+  nome_fantasia text,
+  cpf text,
+  rg text,
+  data_nascimento date,
+  cnpj text,
+  inscricao_estadual text,
+  ie_isento boolean default false,
+  inscricao_municipal text,
+  contato_responsavel text,
+  email text,
+  email_secundario text,
+  telefone_fixo text,
+  celular text,
+  cep text,
+  logradouro text,
+  numero text,
+  complemento text,
+  bairro text,
+  cidade text,
+  estado text,
+  referencia text,
+  vendedor_id uuid references perfis(id) on delete set null,
+  categoria text check (categoria in ('Revenda','Assistência Técnica','Consumidor Final','Atacado')),
+  condicao_pagamento text,
+  status text not null default 'Ativo' check (status in ('Ativo','Inativo','Bloqueado')),
+  observacoes text,
+  origem text,
+  criado_por uuid references perfis(id) on delete set null,
+  criado_em timestamptz default now()
+);
+
+create unique index if not exists idx_clientes_cpf on clientes (cpf) where cpf is not null and cpf <> '';
+create unique index if not exists idx_clientes_cnpj on clientes (cnpj) where cnpj is not null and cnpj <> '';
+create index if not exists idx_clientes_busca on clientes
+  using gin (to_tsvector('simple', coalesce(nome,'') || ' ' || coalesce(nome_fantasia,'') || ' ' || coalesce(cpf,'') || ' ' || coalesce(cnpj,'')));
+
+alter table clientes enable row level security;
+
+create or replace function pode_gerenciar_clientes()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (
+    select 1 from perfis
+    where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Vendedor')
+  );
+$$;
+
+create policy "gestores de clientes leem"
+  on clientes for select
+  using (pode_gerenciar_clientes());
+
+create policy "gestores de clientes gerenciam"
+  on clientes for all
+  using (pode_gerenciar_clientes())
+  with check (pode_gerenciar_clientes());

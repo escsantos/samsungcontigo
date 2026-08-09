@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent } from "lucide-react";
+import { Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
@@ -12,6 +12,7 @@ import IndicadorOnline from "./IndicadorOnline";
 
 const ITENS_MENU = [
   { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null },
+  { href: "/clientes", label: "Clientes", icone: Contact, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
   { href: "/notificacoes", label: "Notificações", icone: Bell, cargos: ["Administrador", "Diretor", "Gerente"] }
 ];
 
