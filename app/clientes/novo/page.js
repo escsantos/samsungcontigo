@@ -5,6 +5,7 @@ import { ArrowLeft, ShieldAlert } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import ClienteForm from "../../../components/ClienteForm";
+import Modal from "../../../components/Modal";
 
 export default function NovoClientePage() {
   const router = useRouter();
@@ -12,6 +13,8 @@ export default function NovoClientePage() {
   const [vendedores, setVendedores] = useState([]);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState(false);
+  const [chaveForm, setChaveForm] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -29,7 +32,7 @@ export default function NovoClientePage() {
     if (!payload.vendedor_id) payload.vendedor_id = null;
     if (!payload.data_nascimento) payload.data_nascimento = null;
 
-    const { data, error } = await supabase.from("clientes").insert(payload).select().single();
+    const { error } = await supabase.from("clientes").insert(payload);
     setSalvando(false);
     if (error) {
       if (error.message.includes("idx_clientes_cpf")) setErro("Já existe um cliente cadastrado com esse CPF.");
@@ -37,7 +40,12 @@ export default function NovoClientePage() {
       else setErro("Não consegui salvar: " + error.message);
       return;
     }
-    router.push(`/clientes/${data.id}`);
+    setSucesso(true);
+  }
+
+  function novoCadastro() {
+    setSucesso(false);
+    setChaveForm((k) => k + 1); // força o ClienteForm a remontar limpo
   }
 
   if (perfil === undefined) {
@@ -63,8 +71,31 @@ export default function NovoClientePage() {
         Voltar para Clientes
       </button>
       <div className="max-w-3xl">
-        <ClienteForm vendedores={vendedores} onSalvar={salvar} salvando={salvando} erro={erro} />
+        <ClienteForm key={chaveForm} vendedores={vendedores} onSalvar={salvar} salvando={salvando} onErro={setErro} />
       </div>
+
+      <Modal
+        open={!!erro}
+        onClose={() => setErro("")}
+        title="Não foi possível salvar"
+        footer={<button className="btn-primary" onClick={() => setErro("")}>Entendi</button>}
+      >
+        <p className="text-sm text-muted">{erro}</p>
+      </Modal>
+
+      <Modal
+        open={sucesso}
+        onClose={novoCadastro}
+        title="Cliente cadastrado!"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => router.push("/clientes")}>Ver lista de clientes</button>
+            <button className="btn-primary" onClick={novoCadastro}>Cadastrar outro cliente</button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted">O cadastro foi salvo com sucesso.</p>
+      </Modal>
     </AppShell>
   );
 }

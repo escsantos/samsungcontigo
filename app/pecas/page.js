@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Search, Info, X } from "lucide-react";
+import { Search, Info, X, ShoppingCart, User2, Check } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { corCategoria, iconeCategoria } from "../../lib/categorias";
 import { calcularPreco, corMargem } from "../../lib/precos";
 import DetalhePecaModal from "../../components/DetalhePecaModal";
+import Modal from "../../components/Modal";
+import { useCarrinho } from "../../contexts/CarrinhoContext";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -48,10 +50,34 @@ export default function ConsultaPecasPage() {
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null);
   const [qtds, setQtds] = useState({});
   const [pecaSelecionada, setPecaSelecionada] = useState(null);
+  const [seletorClienteAberto, setSeletorClienteAberto] = useState(false);
+  const [buscaCliente, setBuscaCliente] = useState("");
+  const [clientesEncontrados, setClientesEncontrados] = useState([]);
+  const [itemAdicionado, setItemAdicionado] = useState(null);
+  const carrinho = useCarrinho();
 
   useEffect(() => {
     getPerfilAtual().then(setPerfil);
   }, []);
+
+  // Cliente logado: o carrinho já é dele automaticamente
+  useEffect(() => {
+    if (perfil?.cargo === "Cliente" && perfil.cliente_id && carrinho && carrinho.clienteId !== perfil.cliente_id) {
+      carrinho.selecionarCliente(perfil.cliente_id, perfil.nome);
+    }
+  }, [perfil, carrinho]);
+
+  useEffect(() => {
+    if (!seletorClienteAberto) return;
+    const t = setTimeout(async () => {
+      const termoBusca = normKey(buscaCliente);
+      let query = supabase.from("clientes").select("id, nome, nome_fantasia").eq("status", "Ativo").order("nome").limit(20);
+      if (termoBusca) query = query.ilike("nome", `%${buscaCliente}%`);
+      const { data } = await query;
+      setClientesEncontrados(data || []);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [buscaCliente, seletorClienteAberto]);
 
   useEffect(() => {
     (async () => {
@@ -127,6 +153,17 @@ export default function ConsultaPecasPage() {
     setCategoriaAtiva(null);
   }
 
+  function adicionarAoCarrinho(r, e) {
+    e.stopPropagation();
+    carrinho.adicionarItem(r, r.qtd);
+    setItemAdicionado(r.id);
+    setTimeout(() => setItemAdicionado(null), 1200);
+  }
+
+  const staffPodeEscolherCliente = ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo);
+  const podeComprar = staffPodeEscolherCliente || perfil?.cargo === "Cliente";
+  const carrinhoPronto = podeComprar && !!carrinho?.clienteId;
+
   const temFiltro = termo || categoriaAtiva;
   const statusMargem = corMargem(margemEfetiva);
   const margemBaixa = margemEfetiva < 20;
@@ -134,6 +171,22 @@ export default function ConsultaPecasPage() {
 
   return (
     <AppShell titulo="Consulta de Peças">
+      {staffPodeEscolherCliente && (
+        <div className="card p-3.5 mb-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5 text-sm">
+            <User2 size={16} style={{ color: "var(--accent)" }} />
+            {carrinho?.clienteId ? (
+              <span>Montando orçamento para: <b>{carrinho.clienteNome}</b></span>
+            ) : (
+              <span className="text-muted">Nenhum cliente selecionado — escolha um para poder adicionar peças ao carrinho.</span>
+            )}
+          </div>
+          <button className="btn-secondary text-xs py-2" onClick={() => setSeletorClienteAberto(true)}>
+            {carrinho?.clienteId ? "Trocar cliente" : "Selecionar cliente"}
+          </button>
+        </div>
+      )}
+
       <div className="card p-4 mb-4">
         <div className="flex gap-3 flex-wrap items-center">
           <div className="flex-1 min-w-[260px] relative">
@@ -266,6 +319,7 @@ export default function ConsultaPecasPage() {
                   <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">
                     {mostraCusto ? "Venda Sugerida" : "Valor de Venda"}
                   </th>
+                  {podeComprar && <th className="sticky top-0 bg-canvas text-center px-4 py-2.5 z-10"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -312,6 +366,19 @@ export default function ConsultaPecasPage() {
                       >
                         {fmtBRL(r.vendaTotal)}
                       </td>
+                      {podeComprar && (
+                        <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => adicionarAoCarrinho(r, e)}
+                            disabled={!carrinhoPronto}
+                            title={carrinhoPronto ? "Adicionar ao carrinho" : "Selecione um cliente primeiro"}
+                            className="w-8 h-8 flex items-center justify-center rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
+                            style={{ color: itemAdicionado === r.id ? "#2C7C6E" : "var(--accent)" }}
+                          >
+                            {itemAdicionado === r.id ? <Check size={16} /> : <ShoppingCart size={16} />}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -327,6 +394,38 @@ export default function ConsultaPecasPage() {
         mostraCusto={mostraCusto}
         onClose={() => setPecaSelecionada(null)}
       />
+
+      <Modal
+        open={seletorClienteAberto}
+        onClose={() => setSeletorClienteAberto(false)}
+        title="Selecionar cliente"
+      >
+        <input
+          className="field-input mb-3"
+          placeholder="Buscar por nome..."
+          value={buscaCliente}
+          onChange={(e) => setBuscaCliente(e.target.value)}
+          autoFocus
+        />
+        <div className="max-h-72 overflow-auto -mx-2">
+          {clientesEncontrados.length === 0 ? (
+            <p className="text-sm text-muted px-2 py-3">Nenhum cliente encontrado.</p>
+          ) : (
+            clientesEncontrados.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => {
+                  carrinho.selecionarCliente(c.id, c.nome);
+                  setSeletorClienteAberto(false);
+                }}
+                className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-canvas text-sm"
+              >
+                {c.nome} {c.nome_fantasia ? <span className="text-muted text-xs">({c.nome_fantasia})</span> : null}
+              </button>
+            ))
+          )}
+        </div>
+      </Modal>
     </AppShell>
   );
 }

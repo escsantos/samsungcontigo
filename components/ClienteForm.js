@@ -38,10 +38,9 @@ const VAZIO = {
   origem: ""
 };
 
-export default function ClienteForm({ inicial, vendedores, onSalvar, salvando, erro }) {
+export default function ClienteForm({ inicial, vendedores, onSalvar, salvando, onErro }) {
   const [dados, setDados] = useState({ ...VAZIO, ...inicial });
   const [buscandoCep, setBuscandoCep] = useState(false);
-  const [erroDoc, setErroDoc] = useState("");
 
   useEffect(() => {
     if (inicial) setDados({ ...VAZIO, ...inicial });
@@ -62,22 +61,22 @@ export default function ClienteForm({ inicial, vendedores, onSalvar, salvando, e
   }
 
   function validar() {
-    setErroDoc("");
     if (!dados.nome.trim()) return "Preencha o nome/razão social.";
     if (dados.tipo_pessoa === "fisica" && dados.cpf && !validarCPF(dados.cpf)) {
-      setErroDoc("CPF inválido.");
-      return "CPF inválido.";
+      return "CPF inválido. Confira os números digitados.";
     }
     if (dados.tipo_pessoa === "juridica" && dados.cnpj && !validarCNPJ(dados.cnpj)) {
-      setErroDoc("CNPJ inválido.");
-      return "CNPJ inválido.";
+      return "CNPJ inválido. Confira os números digitados.";
     }
     return null;
   }
 
   function salvar() {
     const msg = validar();
-    if (msg) return;
+    if (msg) {
+      onErro?.(msg);
+      return;
+    }
     onSalvar(dados);
   }
 
@@ -165,8 +164,6 @@ export default function ClienteForm({ inicial, vendedores, onSalvar, salvando, e
           </div>
         </div>
       )}
-
-      {erroDoc && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erroDoc}</div>}
 
       <div className="card p-6">
         <p className="font-display font-semibold text-[15px] mb-4">Contato</p>
@@ -291,8 +288,6 @@ export default function ClienteForm({ inicial, vendedores, onSalvar, salvando, e
           <textarea className="field-input" rows={3} value={dados.observacoes} onChange={(e) => set("observacoes", e.target.value)} />
         </div>
       </div>
-
-      {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
 
       <button className="btn-primary" onClick={salvar} disabled={salvando}>
         {salvando ? "Salvando..." : "Salvar cliente"}

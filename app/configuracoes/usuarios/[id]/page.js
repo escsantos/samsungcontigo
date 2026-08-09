@@ -32,6 +32,8 @@ export default function DetalheUsuarioPage() {
   const [usuario, setUsuario] = useState(undefined);
   const [nomeEditado, setNomeEditado] = useState("");
   const [cargoEditado, setCargoEditado] = useState("");
+  const [clienteIdEditado, setClienteIdEditado] = useState("");
+  const [clientesDisponiveis, setClientesDisponiveis] = useState([]);
   const [salvando, setSalvando] = useState(false);
   const [salvo, setSalvo] = useState(false);
   const [confirmar, setConfirmar] = useState(null);
@@ -46,10 +48,17 @@ export default function DetalheUsuarioPage() {
       setUsuario(data);
       setNomeEditado(data?.nome || "");
       setCargoEditado(data?.cargo || "");
+      setClienteIdEditado(data?.cliente_id || "");
+      const { data: clientes } = await supabase.from("clientes").select("id, nome").order("nome");
+      setClientesDisponiveis(clientes || []);
     })();
   }, [id]);
 
-  const houveMudanca = usuario && (nomeEditado !== usuario.nome || cargoEditado !== usuario.cargo);
+  const houveMudanca =
+    usuario &&
+    (nomeEditado !== usuario.nome ||
+      cargoEditado !== usuario.cargo ||
+      (clienteIdEditado || null) !== (usuario.cliente_id || null));
 
   async function salvarAlteracoes() {
     if (!nomeEditado.trim()) {
@@ -60,14 +69,14 @@ export default function DetalheUsuarioPage() {
     setSalvando(true);
     const { error } = await supabase
       .from("perfis")
-      .update({ nome: nomeEditado.trim(), cargo: cargoEditado })
+      .update({ nome: nomeEditado.trim(), cargo: cargoEditado, cliente_id: clienteIdEditado || null })
       .eq("id", id);
     setSalvando(false);
     if (error) {
       setErro("Não consegui salvar: " + error.message);
       return;
     }
-    setUsuario((u) => ({ ...u, nome: nomeEditado.trim(), cargo: cargoEditado }));
+    setUsuario((u) => ({ ...u, nome: nomeEditado.trim(), cargo: cargoEditado, cliente_id: clienteIdEditado || null }));
     setSalvo(true);
     setTimeout(() => setSalvo(false), 2500);
   }
@@ -176,6 +185,16 @@ export default function DetalheUsuarioPage() {
                 {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+            {cargoEditado === "Cliente" && (
+              <div className="col-span-2">
+                <label className="field-label">Vincular ao cadastro de Cliente</label>
+                <select className="field-input" value={clienteIdEditado} onChange={(e) => setClienteIdEditado(e.target.value)}>
+                  <option value="">Nenhum vínculo</option>
+                  {clientesDisponiveis.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+                <p className="text-[11px] text-muted mt-1">Necessário para esse login conseguir montar carrinho e ver seus próprios orçamentos.</p>
+              </div>
+            )}
           </div>
 
           {erro && <div className="mt-3 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}

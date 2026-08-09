@@ -13,6 +13,7 @@ create table if not exists perfis (
   cargo text not null check (cargo in ('Administrador','Diretor','Gerente','Vendedor','Estoque','Cliente')),
   cor_accent text default '#4A90D9',
   bloqueado boolean default false,
+  senha_temporaria boolean default true,
   visto_em timestamptz,
   email text,
   telefone text,
@@ -271,3 +272,79 @@ create policy "gestores de clientes gerenciam"
   on clientes for all
   using (pode_gerenciar_clientes())
   with check (pode_gerenciar_clientes());
+
+-- 6. Vínculo login <-> cadastro de cliente, e módulo de Orçamentos
+alter table perfis add column if not exists cliente_id bigint references clientes(id) on delete set null;
+
+create or replace function meu_cliente_id()
+returns bigint language sql security definer set search_path = public stable as $$
+  select cliente_id from perfis where id = auth.uid();
+$$;
+
+create or replace function pode_ver_todos_orcamentos()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente'));
+$$;
+
+create table if not exists orcamentos (
+  id bigint generated always as identity primary key,
+  cliente_id bigint not null references clientes(id),
+  vendedor_id uuid references perfis(id),
+  criado_por uuid references perfis(id),
+  status text not null default 'Pendente' check (status in ('Pendente','Aprovado','Rejeitado')),
+  motivo_rejeicao text,
+  valor_total numeric(12,2),
+  margem numeric(5,2),
+  imposto_total numeric(5,2),
+  revisado_por uuid references perfis(id),
+  revisado_em timestamptz,
+  criado_em timestamptz default now()
+);
+
+alter table orcamentos enable row level security;
+
+create policy "ver orcamentos"
+  on orcamentos for select
+  using (cliente_id = meu_cliente_id() or vendedor_id = auth.uid() or pode_ver_todos_orcamentos());
+
+create policy "criar orcamentos"
+  on orcamentos for insert
+  with check (criado_por = auth.uid() and (cliente_id = meu_cliente_id() or pode_gerenciar_clientes()));
+
+create policy "revisar orcamentos"
+  on orcamentos for update
+  using (vendedor_id = auth.uid() or pode_ver_todos_orcamentos())
+  with check (vendedor_id = auth.uid() or pode_ver_todos_orcamentos());
+
+create table if not exists orcamento_itens (
+  id bigint generated always as identity primary key,
+  orcamento_id bigint not null references orcamentos(id) on delete cascade,
+  peca_id bigint references pecas(id) on delete set null,
+  modelo text,
+  categoria text,
+  codigo text,
+  descricao_resumida text,
+  descricao_peca text,
+  qtd integer not null default 1,
+  custo_unitario numeric(12,2),
+  venda_unitario numeric(12,2),
+  venda_total numeric(12,2)
+);
+
+alter table orcamento_itens enable row level security;
+
+create policy "ver itens de orcamento"
+  on orcamento_itens for select
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.cliente_id = meu_cliente_id() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos())));
+
+create policy "criar itens de orcamento"
+  on orcamento_itens for insert
+  with check (exists (select 1 from orcamentos o where o.id = orcamento_id and o.criado_por = auth.uid()));
+
+create policy "editar itens de orcamento"
+  on orcamento_itens for update
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos())));
+
+create policy "excluir itens de orcamento"
+  on orcamento_itens for delete
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos())));

@@ -15,6 +15,7 @@ export default function EditarClientePage() {
   const [vendedores, setVendedores] = useState([]);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState(false);
   const [confirmarExcluir, setConfirmarExcluir] = useState(false);
 
   useEffect(() => {
@@ -45,7 +46,7 @@ export default function EditarClientePage() {
       else setErro("Não consegui salvar: " + error.message);
       return;
     }
-    router.push("/clientes");
+    setSucesso(true);
   }
 
   async function excluir() {
@@ -90,8 +91,26 @@ export default function EditarClientePage() {
         </button>
       </div>
       <div className="max-w-3xl">
-        <ClienteForm inicial={cliente} vendedores={vendedores} onSalvar={salvar} salvando={salvando} erro={erro} />
+        <ClienteForm inicial={cliente} vendedores={vendedores} onSalvar={salvar} salvando={salvando} onErro={setErro} />
       </div>
+
+      <Modal
+        open={!!erro}
+        onClose={() => setErro("")}
+        title="Não foi possível salvar"
+        footer={<button className="btn-primary" onClick={() => setErro("")}>Entendi</button>}
+      >
+        <p className="text-sm text-muted">{erro}</p>
+      </Modal>
+
+      <Modal
+        open={sucesso}
+        onClose={() => router.push("/clientes")}
+        title="Alterações salvas!"
+        footer={<button className="btn-primary" onClick={() => router.push("/clientes")}>Voltar para Clientes</button>}
+      >
+        <p className="text-sm text-muted">Os dados de {cliente.nome} foram atualizados.</p>
+      </Modal>
 
       <Modal
         open={confirmarExcluir}

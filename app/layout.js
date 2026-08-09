@@ -1,4 +1,5 @@
 import "./globals.css";
+import { CarrinhoProvider } from "../contexts/CarrinhoContext";
 
 export const metadata = {
   title: "Consulta de Peças — Grupo J.Macedo",
@@ -28,7 +29,7 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
-      <body>{children}</body>
+      <body><CarrinhoProvider>{children}</CarrinhoProvider></body>
     </html>
   );
 }

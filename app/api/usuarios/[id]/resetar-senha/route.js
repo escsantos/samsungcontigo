@@ -36,6 +36,8 @@ export async function POST(req, { params }) {
     return NextResponse.json({ erro: "Falha ao resetar senha: " + error.message }, { status: 500 });
   }
 
+  await supabaseAdmin.from("perfis").update({ senha_temporaria: true }).eq("id", params.id);
+
   return NextResponse.json({
     login: perfilAlvo.login,
     senha: SENHA_INICIAL,

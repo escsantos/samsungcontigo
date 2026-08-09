@@ -2,17 +2,19 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact } from "lucide-react";
+import { Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact, ShoppingCart, ClipboardList } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
 import Avatar from "./Avatar";
 import SininhoNotificacoes from "./SininhoNotificacoes";
 import IndicadorOnline from "./IndicadorOnline";
+import { useCarrinho } from "../contexts/CarrinhoContext";
 
 const ITENS_MENU = [
   { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null },
   { href: "/clientes", label: "Clientes", icone: Contact, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
+  { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"] },
   { href: "/notificacoes", label: "Notificações", icone: Bell, cargos: ["Administrador", "Diretor", "Gerente"] }
 ];
 
@@ -28,6 +30,7 @@ export default function AppShell({ titulo, children }) {
   const pathname = usePathname();
   const router = useRouter();
   const heartbeatRef = useRef(null);
+  const carrinho = useCarrinho();
 
   useEffect(() => {
     (async () => {
@@ -40,6 +43,10 @@ export default function AppShell({ titulo, children }) {
       if (p?.bloqueado) {
         await supabase.auth.signOut();
         router.replace("/login?bloqueado=1");
+        return;
+      }
+      if (p?.senha_temporaria && pathname !== "/trocar-senha") {
+        router.replace("/trocar-senha");
         return;
       }
       setPerfil(p);
@@ -69,6 +76,7 @@ export default function AppShell({ titulo, children }) {
   }
 
   const subItensVisiveis = ITENS_CONFIGURACOES.filter((item) => item.cargos.includes(perfil?.cargo));
+  const podeComprar = ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"].includes(perfil?.cargo);
 
   return (
     <div className="h-screen flex bg-canvas">
@@ -146,6 +154,21 @@ export default function AppShell({ titulo, children }) {
             <h1 className="font-display font-semibold text-[15px] text-ink">{titulo}</h1>
           </div>
           <div className="flex items-center gap-3">
+            {podeComprar && (
+              <Link
+                href="/carrinho"
+                className="relative w-9 h-9 flex items-center justify-center rounded-full border border-line text-muted hover:text-ink transition"
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "")}
+              >
+                <ShoppingCart size={16} />
+                {carrinho?.totalItens > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center">
+                    {carrinho.totalItens > 9 ? "9+" : carrinho.totalItens}
+                  </span>
+                )}
+              </Link>
+            )}
             <IndicadorOnline />
             <Link href="/perfil" className="flex items-center gap-2.5 hover:opacity-80 transition">
               <div className="text-right leading-tight">

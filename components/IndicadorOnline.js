@@ -9,7 +9,11 @@ export default function IndicadorOnline() {
   const ref = useRef(null);
 
   async function carregar() {
-    const { data } = await supabase.rpc("usuarios_online");
+    const { data, error } = await supabase.rpc("usuarios_online");
+    if (error) {
+      console.error("Falha ao buscar usuarios_online:", error.message);
+      return;
+    }
     setLista(data || []);
   }
 
