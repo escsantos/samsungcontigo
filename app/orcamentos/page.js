@@ -3,17 +3,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getPerfilAtual, supabase } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
+import { CORES_STATUS } from "../../lib/estoque";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-const CORES_STATUS = {
-  Pendente: { bg: "rgba(232,163,61,0.14)", fg: "#C2801F" },
-  Aprovado: { bg: "rgba(63,167,150,0.14)", fg: "#2C7C6E" },
-  Rejeitado: { bg: "var(--danger-soft)", fg: "var(--danger)" }
-};
+const CORES_STATUS_FALLBACK = { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
 
 export default function OrcamentosPage() {
   const router = useRouter();
@@ -60,7 +57,7 @@ export default function OrcamentosPage() {
             </thead>
             <tbody>
               {lista.map((o) => {
-                const cor = CORES_STATUS[o.status] || CORES_STATUS.Pendente;
+                const cor = CORES_STATUS[o.status] || CORES_STATUS_FALLBACK;
                 return (
                   <tr
                     key={o.id}

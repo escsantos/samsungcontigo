@@ -70,6 +70,7 @@ export default function CarregarBasesPage() {
       const idxDocConta = findExact(pHeaders, "documento de conta");
       const idxItemNro = findExact(pHeaders, "item nro.");
       const idxArrived = findExact(pHeaders, "arrived date");
+      const idxEntrega = findExact(pHeaders, "no. da entrega");
 
       const faltando = [];
       if (idxDataNF < 0) faltando.push("Data NF");
@@ -104,6 +105,7 @@ export default function CarregarBasesPage() {
             qtd: Number(row[idxQtd]) || 0,
             valor: Number(row[idxValor]) || 0,
             dataNF: idxDataNF >= 0 ? row[idxDataNF] : "",
+            entrega: idxEntrega >= 0 ? String(row[idxEntrega] || "").trim() : "",
             _completo: completo
           });
         }
@@ -111,7 +113,7 @@ export default function CarregarBasesPage() {
       const pecasDedup = Array.from(dedupMap.values());
       const duplicadosRemovidos = (pecasRows.length - 1) - pecasDedup.length;
 
-      setProgresso({ pct: 35, texto: "Calculando valor unitário mais recente por código..." });
+      setProgresso({ pct: 32, texto: "Calculando valor unitário mais recente por código..." });
       await sleep(0);
       const precoMap = new Map();
       for (const p of pecasDedup) {
@@ -122,6 +124,24 @@ export default function CarregarBasesPage() {
           precoMap.set(p.codigo, { valor: p.valor / p.qtd, ts });
         }
       }
+
+      setProgresso({ pct: 38, texto: "Montando lotes por Delivery (custo exato por remessa)..." });
+      await sleep(0);
+      const lotesMap = new Map();
+      let semEntrega = 0;
+      for (const p of pecasDedup) {
+        if (!p.qtd || !p.valor) continue;
+        if (!p.entrega) { semEntrega++; continue; }
+        const chave = `${p.codigo}||${p.entrega}`;
+        lotesMap.set(chave, {
+          codigo: p.codigo,
+          no_entrega: p.entrega,
+          valor_unitario: Math.round((p.valor / p.qtd) * 100) / 100,
+          qtd: p.qtd,
+          data_nf: p.dataNF
+        });
+      }
+      const lotes = Array.from(lotesMap.values());
 
       setProgresso({ pct: 50, texto: "Lendo Base GSPN..." });
       await sleep(0);
@@ -211,6 +231,16 @@ export default function CarregarBasesPage() {
         sem_custo: semCusto
       });
 
+      setProgresso({ pct: 96, texto: "Salvando lotes por Delivery..." });
+      await sleep(0);
+      const { error: delLotesError } = await supabase.from("lotes_pecas").delete().gte("id", 0);
+      if (delLotesError) throw new Error("Falha ao limpar lotes antigos: " + delLotesError.message);
+      for (let i = 0; i < lotes.length; i += LOTE) {
+        const bloco = lotes.slice(i, i + LOTE);
+        const { error: insLotesError } = await supabase.from("lotes_pecas").insert(bloco);
+        if (insLotesError) throw new Error("Falha ao gravar lotes: " + insLotesError.message);
+      }
+
       setProgresso({ pct: 100, texto: "Concluído." });
       await sleep(150);
 
@@ -219,7 +249,9 @@ export default function CarregarBasesPage() {
         totalModelos: modelosSet.size,
         duplicadosRemovidos,
         naoClassificados,
-        semCusto
+        semCusto,
+        totalLotes: lotes.length,
+        semEntrega
       });
       setConcluido(true);
     } catch (e) {
@@ -328,6 +360,8 @@ export default function CarregarBasesPage() {
             <Stat n={resultado.duplicadosRemovidos} label="duplicados removidos" />
             <Stat n={resultado.naoClassificados} label="não classificadas" />
             <Stat n={resultado.semCusto} label="sem custo encontrado" />
+            <Stat n={resultado.totalLotes} label="lotes por Delivery gravados" />
+            <Stat n={resultado.semEntrega} label="compras sem nº de Delivery" />
           </div>
         )}
       </Modal>

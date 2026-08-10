@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Search, Contact, ClipboardList, ShoppingCart, Bell, UploadCloud, Percent, Users, ChevronRight
+  Search, Contact, ClipboardList, ShoppingCart, Bell, UploadCloud, Percent, Users, ChevronRight, Warehouse, FileBarChart
 } from "lucide-react";
 import { getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
@@ -41,6 +41,14 @@ const CARDS = [
     cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"]
   },
   {
+    href: "/estoque",
+    label: "Estoque",
+    icone: Warehouse,
+    cor: "#2E7F97",
+    descricao: "Acompanhe a linha do tempo dos pedidos e libere peças por Delivery.",
+    cargos: ["Administrador", "Diretor", "Gerente", "Estoque"]
+  },
+  {
     href: "/notificacoes",
     label: "Notificações",
     icone: Bell,
@@ -70,6 +78,14 @@ const CARDS = [
     icone: Users,
     cor: "#7A4FB0",
     descricao: "Crie logins, defina cargos e controle o acesso ao sistema.",
+    cargos: ["Administrador", "Diretor", "Gerente"]
+  },
+  {
+    href: "/estoque/relatorio",
+    label: "Relatório de Custo",
+    icone: FileBarChart,
+    cor: "#4338CA",
+    descricao: "Custo real, imposto e lucro líquido das peças já liberadas.",
     cargos: ["Administrador", "Diretor", "Gerente"]
   }
 ];

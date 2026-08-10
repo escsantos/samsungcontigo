@@ -6,17 +6,14 @@ import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
+import { CORES_STATUS } from "../../../lib/estoque";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-const CORES_STATUS = {
-  Pendente: { bg: "rgba(232,163,61,0.14)", fg: "#C2801F" },
-  Aprovado: { bg: "rgba(63,167,150,0.14)", fg: "#2C7C6E" },
-  Rejeitado: { bg: "var(--danger-soft)", fg: "var(--danger)" }
-};
+const CORES_STATUS_FALLBACK = { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
 
 export default function DetalheOrcamentoPage() {
   const { id } = useParams();
@@ -78,7 +75,7 @@ export default function DetalheOrcamentoPage() {
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from("orcamentos")
-      .update({ status: "Aprovado", revisado_por: user.id, revisado_em: new Date().toISOString() })
+      .update({ status: "Validado pelo Vendedor", revisado_por: user.id, revisado_em: new Date().toISOString() })
       .eq("id", id);
     setProcessando(false);
     if (error) {
@@ -118,8 +115,8 @@ export default function DetalheOrcamentoPage() {
     return <AppShell titulo="Orçamento"><p className="text-sm text-muted">Orçamento não encontrado.</p></AppShell>;
   }
 
-  const podeRevisar = orcamento.status === "Pendente" && ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo);
-  const cor = CORES_STATUS[orcamento.status] || CORES_STATUS.Pendente;
+  const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo);
+  const cor = CORES_STATUS[orcamento.status] || CORES_STATUS_FALLBACK;
 
   return (
     <AppShell titulo={`Orçamento #${orcamento.id}`}>
@@ -142,6 +139,15 @@ export default function DetalheOrcamentoPage() {
           <div className="mt-4 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">
             Motivo: {orcamento.motivo_rejeicao}
           </div>
+        )}
+        {orcamento.status !== "Pendente de Análise" && orcamento.status !== "Rejeitado" && ["Administrador", "Diretor", "Gerente", "Estoque"].includes(perfil?.cargo) && (
+          <button
+            onClick={() => router.push(`/estoque/${orcamento.id}`)}
+            className="text-sm mt-4 hover:underline"
+            style={{ color: "var(--accent)" }}
+          >
+            Ver acompanhamento no Estoque →
+          </button>
         )}
       </div>
 

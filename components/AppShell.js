@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact, ShoppingCart, ClipboardList } from "lucide-react";
+import { Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact, ShoppingCart, ClipboardList, Warehouse, FileBarChart } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
@@ -15,13 +15,15 @@ const ITENS_MENU = [
   { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null },
   { href: "/clientes", label: "Clientes", icone: Contact, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
   { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"] },
+  { href: "/estoque", label: "Estoque", icone: Warehouse, cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
   { href: "/notificacoes", label: "Notificações", icone: Bell, cargos: ["Administrador", "Diretor", "Gerente"] }
 ];
 
 export const ITENS_CONFIGURACOES = [
   { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cargos: ["Administrador"], descricao: "Suba as planilhas de peças e ordens de serviço para atualizar a base de custos." },
   { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cargos: ["Administrador"], descricao: "Cadastre e gerencie os impostos usados no cálculo do preço de venda." },
-  { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cargos: ["Administrador", "Diretor", "Gerente"], descricao: "Crie logins, defina cargos, resete senhas e controle o acesso ao sistema." }
+  { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cargos: ["Administrador", "Diretor", "Gerente"], descricao: "Crie logins, defina cargos, resete senhas e controle o acesso ao sistema." },
+  { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cargos: ["Administrador", "Diretor", "Gerente"], descricao: "Custo real, imposto, lucro líquido e margem das peças já liberadas." }
 ];
 
 export default function AppShell({ titulo, children }) {

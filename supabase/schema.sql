@@ -348,3 +348,59 @@ create policy "editar itens de orcamento"
 create policy "excluir itens de orcamento"
   on orcamento_itens for delete
   using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos())));
+
+-- 7. Estoque: lotes de compra por Delivery (custo exato) e fluxo de status
+create table if not exists lotes_pecas (
+  id bigint generated always as identity primary key,
+  codigo text not null,
+  no_entrega text not null,
+  valor_unitario numeric(12,2),
+  qtd numeric(12,2),
+  data_nf text,
+  criado_em timestamptz default now(),
+  unique (codigo, no_entrega)
+);
+
+create index if not exists idx_lotes_codigo on lotes_pecas (codigo);
+
+alter table lotes_pecas enable row level security;
+
+create or replace function pode_gerenciar_estoque()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Estoque'));
+$$;
+
+create policy "estoque le lotes"
+  on lotes_pecas for select
+  using (pode_gerenciar_estoque());
+
+create policy "administrador gerencia lotes"
+  on lotes_pecas for all
+  using (is_administrador())
+  with check (is_administrador());
+
+alter table orcamentos drop constraint if exists orcamentos_status_check;
+alter table orcamentos add constraint orcamentos_status_check
+  check (status in (
+    'Pendente de Análise','Validado pelo Vendedor','Rejeitado',
+    'Aguardando Separação/Compra','Peças Compradas - Aguardando Chegada',
+    'Em Estoque - Aguardando Faturamento','Faturamento Efetuado','Liberado para Retirada/Entrega'
+  ));
+alter table orcamentos alter column status set default 'Pendente de Análise';
+
+drop policy if exists "revisar orcamentos" on orcamentos;
+create policy "revisar orcamentos"
+  on orcamentos for update
+  using (vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())
+  with check (vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque());
+
+alter table orcamento_itens add column if not exists no_entrega text;
+alter table orcamento_itens add column if not exists custo_real numeric(12,2);
+alter table orcamento_itens add column if not exists liberado boolean default false;
+alter table orcamento_itens add column if not exists liberado_por uuid references perfis(id);
+alter table orcamento_itens add column if not exists liberado_em timestamptz;
+
+drop policy if exists "editar itens de orcamento" on orcamento_itens;
+create policy "editar itens de orcamento"
+  on orcamento_itens for update
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())));
