@@ -2,7 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact, ShoppingCart, ClipboardList, Warehouse, FileBarChart } from "lucide-react";
+import {
+  Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
+  ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown
+} from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
@@ -11,14 +14,45 @@ import SininhoNotificacoes from "./SininhoNotificacoes";
 import IndicadorOnline from "./IndicadorOnline";
 import { useCarrinho } from "../contexts/CarrinhoContext";
 
-const ITENS_MENU = [
-  { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null },
-  { href: "/clientes", label: "Clientes", icone: Contact, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
-  { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"] },
-  { href: "/estoque", label: "Estoque", icone: Warehouse, cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
-  { href: "/notificacoes", label: "Notificações", icone: Bell, cargos: ["Administrador", "Diretor", "Gerente"] }
+// Itens soltos, sempre no topo do menu (sem agrupar)
+const ITENS_TOPO = [
+  { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null }
 ];
 
+// Grupos recolhíveis
+const GRUPOS_MENU = [
+  {
+    id: "vendas",
+    label: "Vendas",
+    icone: Briefcase,
+    itens: [
+      { href: "/clientes", label: "Clientes", icone: Contact, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
+      { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"] }
+    ]
+  },
+  {
+    id: "estoque",
+    label: "Estoque",
+    icone: Warehouse,
+    itens: [
+      { href: "/estoque", label: "Painel de Estoque", icone: Warehouse, cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
+      { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cargos: ["Administrador", "Diretor", "Gerente"] }
+    ]
+  },
+  {
+    id: "sistema",
+    label: "Sistema",
+    icone: Settings,
+    itens: [
+      { href: "/notificacoes", label: "Notificações", icone: Bell, cargos: ["Administrador", "Diretor", "Gerente"] },
+      { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cargos: ["Administrador"] },
+      { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cargos: ["Administrador"] },
+      { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cargos: ["Administrador", "Diretor", "Gerente"] }
+    ]
+  }
+];
+
+// mantido pra tela /configuracoes (hub de cards) continuar funcionando
 export const ITENS_CONFIGURACOES = [
   { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cargos: ["Administrador"], descricao: "Suba as planilhas de peças e ordens de serviço para atualizar a base de custos." },
   { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cargos: ["Administrador"], descricao: "Cadastre e gerencie os impostos usados no cálculo do preço de venda." },
@@ -29,6 +63,7 @@ export const ITENS_CONFIGURACOES = [
 export default function AppShell({ titulo, children }) {
   const [perfil, setPerfil] = useState(null);
   const [carregando, setCarregando] = useState(true);
+  const [gruposAbertos, setGruposAbertos] = useState({});
   const pathname = usePathname();
   const router = useRouter();
   const heartbeatRef = useRef(null);
@@ -57,7 +92,6 @@ export default function AppShell({ titulo, children }) {
       }
       setCarregando(false);
 
-      // presença online: atualiza visto_em ao entrar e a cada ~30s
       async function marcarPresenca() {
         const { error } = await supabase
           .from("perfis")
@@ -76,6 +110,18 @@ export default function AppShell({ titulo, children }) {
     };
   }, [router]);
 
+  // abre automaticamente o grupo que contém a página atual
+  useEffect(() => {
+    const grupoAtivo = GRUPOS_MENU.find((g) => g.itens.some((item) => pathname.startsWith(item.href)));
+    if (grupoAtivo) {
+      setGruposAbertos((atual) => ({ ...atual, [grupoAtivo.id]: true }));
+    }
+  }, [pathname]);
+
+  function alternarGrupo(id) {
+    setGruposAbertos((atual) => ({ ...atual, [id]: !atual[id] }));
+  }
+
   async function sair() {
     await supabase.auth.signOut();
     router.replace("/login");
@@ -85,7 +131,6 @@ export default function AppShell({ titulo, children }) {
     return <div className="h-screen flex items-center justify-center bg-canvas text-muted text-sm">Carregando...</div>;
   }
 
-  const subItensVisiveis = ITENS_CONFIGURACOES.filter((item) => item.cargos.includes(perfil?.cargo));
   const podeComprar = ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"].includes(perfil?.cargo);
 
   return (
@@ -105,8 +150,9 @@ export default function AppShell({ titulo, children }) {
             <Home size={16} />
           </Link>
         </div>
-        <nav className="flex-1 px-3 space-y-1">
-          {ITENS_MENU.filter((item) => !item.cargos || item.cargos.includes(perfil?.cargo)).map((item) => {
+
+        <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
+          {ITENS_TOPO.filter((item) => !item.cargos || item.cargos.includes(perfil?.cargo)).map((item) => {
             const Icone = item.icone;
             const ativo = pathname === item.href;
             return (
@@ -123,18 +169,51 @@ export default function AppShell({ titulo, children }) {
             );
           })}
 
-          {subItensVisiveis.length > 0 && (
-            <Link
-              href="/configuracoes"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
-                pathname.startsWith("/configuracoes") ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              <Settings size={17} />
-              Configurações
-            </Link>
-          )}
+          {GRUPOS_MENU.map((grupo) => {
+            const itensVisiveis = grupo.itens.filter((item) => item.cargos.includes(perfil?.cargo));
+            if (itensVisiveis.length === 0) return null;
+            const GrupoIcone = grupo.icone;
+            const aberto = !!gruposAbertos[grupo.id];
+            const grupoAtivo = itensVisiveis.some((item) => pathname.startsWith(item.href));
+
+            return (
+              <div key={grupo.id} className="pt-1">
+                <button
+                  onClick={() => alternarGrupo(grupo.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
+                    grupoAtivo && !aberto ? "bg-white/10 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <GrupoIcone size={17} />
+                  <span className="flex-1 text-left">{grupo.label}</span>
+                  <ChevronDown size={14} className="transition-transform" style={{ transform: aberto ? "rotate(180deg)" : "rotate(0deg)" }} />
+                </button>
+
+                {aberto && (
+                  <div className="mt-0.5 space-y-0.5">
+                    {itensVisiveis.map((item) => {
+                      const Icone = item.icone;
+                      const ativo = pathname === item.href;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={`flex items-center gap-3 pl-9 pr-3 py-2 rounded-lg text-[13px] font-medium transition ${
+                            ativo ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white"
+                          }`}
+                        >
+                          <Icone size={14} />
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
+
         <button
           onClick={sair}
           className="mx-3 mb-5 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition"
