@@ -26,7 +26,7 @@ export async function POST(req) {
     return NextResponse.json({ erro: "Você não tem permissão para criar usuários." }, { status: 403 });
   }
 
-  const { nome, sobrenome, cargo } = await req.json();
+  const { nome, sobrenome, cargo, clienteId, nomeCompleto } = await req.json();
   if (!nome?.trim() || !sobrenome?.trim() || !cargo) {
     return NextResponse.json({ erro: "Preencha nome, sobrenome e cargo." }, { status: 400 });
   }
@@ -67,13 +67,14 @@ export async function POST(req) {
   const { error: errPerfil } = await supabaseAdmin.from("perfis").insert({
     id: novoUser.user.id,
     login: loginFinal,
-    nome: `${nome.trim()} ${sobrenome.trim()}`,
-    cargo
+    nome: nomeCompleto?.trim() || `${nome.trim()} ${sobrenome.trim()}`,
+    cargo,
+    cliente_id: clienteId || null
   });
   if (errPerfil) {
     await supabaseAdmin.auth.admin.deleteUser(novoUser.user.id);
     return NextResponse.json({ erro: "Falha ao salvar perfil: " + errPerfil.message }, { status: 500 });
   }
 
-  return NextResponse.json({ login: loginFinal, senha: SENHA_INICIAL, email });
+  return NextResponse.json({ id: novoUser.user.id, login: loginFinal, senha: SENHA_INICIAL, email });
 }

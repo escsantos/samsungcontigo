@@ -38,9 +38,14 @@ const VAZIO = {
   origem: ""
 };
 
-export default function ClienteForm({ inicial, vendedores, onSalvar, salvando, onErro }) {
+export default function ClienteForm({ inicial, vendedores, onSalvar, salvando, onErro, onChange }) {
   const [dados, setDados] = useState({ ...VAZIO, ...inicial });
   const [buscandoCep, setBuscandoCep] = useState(false);
+
+  useEffect(() => {
+    onChange?.(dados);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dados]);
 
   useEffect(() => {
     if (inicial) setDados({ ...VAZIO, ...inicial });

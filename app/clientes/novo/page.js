@@ -1,11 +1,28 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ShieldAlert } from "lucide-react";
+import { ArrowLeft, ShieldAlert, Check, RefreshCw } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
+import { sugerirLoginCliente } from "../../../lib/usuarios";
 import AppShell from "../../../components/AppShell";
 import ClienteForm from "../../../components/ClienteForm";
 import Modal from "../../../components/Modal";
+import CredenciaisModal from "../../../components/CredenciaisModal";
+
+async function chamarApi(path, options = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const resp = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session?.access_token}`,
+      ...(options.headers || {})
+    }
+  });
+  const json = await resp.json();
+  if (!resp.ok) throw new Error(json.erro || "Falha na operação.");
+  return json;
+}
 
 export default function NovoClientePage() {
   const router = useRouter();
@@ -16,6 +33,16 @@ export default function NovoClientePage() {
   const [sucesso, setSucesso] = useState(false);
   const [chaveForm, setChaveForm] = useState(0);
 
+  const [dadosAtuais, setDadosAtuais] = useState(null);
+  const [criarAcesso, setCriarAcesso] = useState(true);
+  const [loginEditado, setLoginEditado] = useState("");
+  const [loginTocado, setLoginTocado] = useState(false);
+  const [checandoLogin, setChecandoLogin] = useState(false);
+  const [loginDisponivel, setLoginDisponivel] = useState(null);
+  const [credenciais, setCredenciais] = useState(null);
+
+  const podeGerenciarUsuarios = ["Administrador", "Diretor", "Gerente"].includes(perfil?.cargo);
+
   useEffect(() => {
     (async () => {
       setPerfil(await getPerfilAtual());
@@ -23,6 +50,28 @@ export default function NovoClientePage() {
       setVendedores(data || []);
     })();
   }, []);
+
+  // sugere o login automaticamente enquanto a pessoa não mexeu nele manualmente
+  useEffect(() => {
+    if (!dadosAtuais || loginTocado) return;
+    const sugestao = sugerirLoginCliente(dadosAtuais);
+    setLoginEditado(sugestao);
+  }, [dadosAtuais, loginTocado]);
+
+  // checa disponibilidade do login (com um pequeno atraso pra não bater no banco a cada letra)
+  useEffect(() => {
+    if (!criarAcesso || !loginEditado) {
+      setLoginDisponivel(null);
+      return;
+    }
+    setChecandoLogin(true);
+    const t = setTimeout(async () => {
+      const { data } = await supabase.from("perfis").select("id").eq("login", loginEditado).maybeSingle();
+      setLoginDisponivel(!data);
+      setChecandoLogin(false);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [loginEditado, criarAcesso]);
 
   async function salvar(dados) {
     setErro("");
@@ -32,20 +81,54 @@ export default function NovoClientePage() {
     if (!payload.vendedor_id) payload.vendedor_id = null;
     if (!payload.data_nascimento) payload.data_nascimento = null;
 
-    const { error } = await supabase.from("clientes").insert(payload);
-    setSalvando(false);
+    const { data: novoCliente, error } = await supabase.from("clientes").insert(payload).select().single();
     if (error) {
+      setSalvando(false);
       if (error.message.includes("idx_clientes_cpf")) setErro("Já existe um cliente cadastrado com esse CPF.");
       else if (error.message.includes("idx_clientes_cnpj")) setErro("Já existe um cliente cadastrado com esse CNPJ.");
       else setErro("Não consegui salvar: " + error.message);
       return;
     }
+
+    // cria o acesso ao sistema, se marcado
+    if (criarAcesso && podeGerenciarUsuarios && loginEditado) {
+      const partes = loginEditado.split(".");
+      try {
+        const res = await chamarApi("/api/usuarios", {
+          method: "POST",
+          body: JSON.stringify({
+            nome: partes[0] || loginEditado,
+            sobrenome: partes[1] || partes[0] || loginEditado,
+            cargo: "Cliente",
+            clienteId: novoCliente.id,
+            nomeCompleto: dados.nome
+          })
+        });
+        setSalvando(false);
+        setCredenciais(res);
+        return; // o sucesso final aparece depois de fechar o pop-up de credenciais
+      } catch (e) {
+        setSalvando(false);
+        setErro("Cliente cadastrado, mas não consegui criar o acesso: " + e.message);
+        return;
+      }
+    }
+
+    setSalvando(false);
     setSucesso(true);
   }
 
   function novoCadastro() {
     setSucesso(false);
-    setChaveForm((k) => k + 1); // força o ClienteForm a remontar limpo
+    setChaveForm((k) => k + 1);
+    setLoginTocado(false);
+    setLoginEditado("");
+    setDadosAtuais(null);
+  }
+
+  function fecharCredenciais() {
+    setCredenciais(null);
+    setSucesso(true);
   }
 
   if (perfil === undefined) {
@@ -70,8 +153,51 @@ export default function NovoClientePage() {
         <ArrowLeft size={15} />
         Voltar para Clientes
       </button>
-      <div className="max-w-3xl">
-        <ClienteForm key={chaveForm} vendedores={vendedores} onSalvar={salvar} salvando={salvando} onErro={setErro} />
+      <div className="max-w-3xl space-y-4">
+        <ClienteForm key={chaveForm} vendedores={vendedores} onSalvar={salvar} salvando={salvando} onErro={setErro} onChange={setDadosAtuais} />
+
+        {podeGerenciarUsuarios && (
+          <div className="card p-6">
+            <label className="flex items-center gap-2.5 mb-1">
+              <input type="checkbox" checked={criarAcesso} onChange={(e) => setCriarAcesso(e.target.checked)} />
+              <span className="font-display font-semibold text-[15px]">Criar acesso ao sistema para este cliente</span>
+            </label>
+            <p className="text-xs text-muted mb-4 ml-6">
+              O cliente poderá fazer login para montar orçamentos. Senha inicial: <span className="font-mono">samsungcontigo001</span>
+            </p>
+
+            {criarAcesso && (
+              <div className="ml-6">
+                <label className="field-label">Login</label>
+                <div className="relative max-w-xs">
+                  <input
+                    className="field-input pr-9"
+                    value={loginEditado}
+                    onChange={(e) => { setLoginEditado(e.target.value.toLowerCase()); setLoginTocado(true); }}
+                    placeholder="nome.sobrenome"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                    {checandoLogin ? (
+                      <RefreshCw size={14} className="animate-spin text-muted" />
+                    ) : loginDisponivel === true ? (
+                      <Check size={14} style={{ color: "#2C7C6E" }} />
+                    ) : loginDisponivel === false ? (
+                      <span className="text-danger text-xs font-bold">!</span>
+                    ) : null}
+                  </span>
+                </div>
+                {loginDisponivel === false && !checandoLogin && (
+                  <p className="text-xs text-danger mt-1.5">
+                    Esse login já existe. Sugestão: <button type="button" className="underline" onClick={() => setLoginEditado(loginEditado + "2")}>{loginEditado}2</button>
+                  </p>
+                )}
+                {loginDisponivel === true && !checandoLogin && (
+                  <p className="text-xs mt-1.5" style={{ color: "#2C7C6E" }}>Login disponível.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <Modal
@@ -82,6 +208,8 @@ export default function NovoClientePage() {
       >
         <p className="text-sm text-muted">{erro}</p>
       </Modal>
+
+      <CredenciaisModal dados={credenciais} onClose={fecharCredenciais} />
 
       <Modal
         open={sucesso}

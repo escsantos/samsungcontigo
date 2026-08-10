@@ -19,7 +19,10 @@ export default function ClientesPage() {
   useEffect(() => {
     (async () => {
       setPerfil(await getPerfilAtual());
-      const { data } = await supabase.from("clientes").select("*").order("nome");
+      const { data } = await supabase
+        .from("clientes")
+        .select("*, perfis!clientes_vendedor_id_fkey(nome)")
+        .order("nome");
       setLista(data || []);
       setCarregando(false);
     })();
@@ -44,7 +47,14 @@ export default function ClientesPage() {
   const filtrados = lista.filter((c) => {
     const t = normKey(termo);
     if (!t) return true;
-    return normKey(c.nome).includes(t) || normKey(c.nome_fantasia).includes(t) || normKey(c.cpf).includes(t) || normKey(c.cnpj).includes(t) || normKey(c.celular).includes(t);
+    return (
+      normKey(c.nome).includes(t) ||
+      normKey(c.nome_fantasia).includes(t) ||
+      normKey(c.cpf).includes(t) ||
+      normKey(c.cnpj).includes(t) ||
+      normKey(c.celular).includes(t) ||
+      normKey(c.perfis?.nome).includes(t)
+    );
   });
 
   return (
@@ -54,7 +64,7 @@ export default function ClientesPage() {
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
           <input
             className="field-input pl-10"
-            placeholder="Buscar por nome, CPF, CNPJ ou celular..."
+            placeholder="Buscar por nome, CPF, CNPJ, celular ou vendedor..."
             value={termo}
             onChange={(e) => setTermo(e.target.value)}
           />
@@ -79,6 +89,7 @@ export default function ClientesPage() {
                 <th className="text-left px-4 py-2.5">Nome</th>
                 <th className="text-left px-4 py-2.5">Documento</th>
                 <th className="text-left px-4 py-2.5">Contato</th>
+                <th className="text-left px-4 py-2.5">Vendedor</th>
                 <th className="text-left px-4 py-2.5">Categoria</th>
                 <th className="text-left px-4 py-2.5">Status</th>
               </tr>
@@ -98,6 +109,7 @@ export default function ClientesPage() {
                   </td>
                   <td className="px-4 py-2.5 font-mono text-muted">{c.tipo_pessoa === "juridica" ? c.cnpj : c.cpf}</td>
                   <td className="px-4 py-2.5 text-muted">{c.celular || c.email || "—"}</td>
+                  <td className="px-4 py-2.5 text-muted">{c.perfis?.nome || "—"}</td>
                   <td className="px-4 py-2.5">{c.categoria || "—"}</td>
                   <td className="px-4 py-2.5">
                     <span
