@@ -51,7 +51,7 @@ function LoginForm() {
       return;
     }
 
-    router.push("/pecas");
+    router.push("/inicio");
   }
 
   return (

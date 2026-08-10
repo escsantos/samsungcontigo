@@ -8,7 +8,7 @@ export default function Home() {
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      router.replace(session ? "/pecas" : "/login");
+      router.replace(session ? "/inicio" : "/login");
     })();
   }, [router]);
   return <div className="h-screen bg-canvas" />;

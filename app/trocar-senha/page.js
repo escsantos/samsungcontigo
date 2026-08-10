@@ -49,7 +49,7 @@ export default function TrocarSenhaPage() {
     await supabase.from("perfis").update({ senha_temporaria: false }).eq("id", user.id);
 
     setCarregando(false);
-    router.push("/pecas");
+    router.push("/inicio");
   }
 
   return (
