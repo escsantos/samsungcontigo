@@ -95,7 +95,7 @@ export default function AppShell({ titulo, children }) {
         <div className="px-5 py-6 flex items-center gap-3">
           <img src="/logos/grupo-jmacedo.png" alt="Grupo J.Macedo" className="h-9 w-auto brightness-0 invert opacity-90" />
           <Link
-            href="/pecas"
+            href="/inicio"
             aria-label="Início"
             title="Início"
             className="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/15 hover:text-white transition"
