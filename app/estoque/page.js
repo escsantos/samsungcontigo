@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { ShieldAlert, ChevronRight } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
-import { ORDEM_STATUS, CORES_STATUS } from "../../lib/estoque";
+import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS } from "../../lib/estoque";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -61,19 +61,27 @@ export default function EstoquePage() {
         <div className="flex items-stretch gap-1 min-w-[900px]">
           {ORDEM_STATUS.map((s, i) => {
             const cor = CORES_STATUS[s];
+            const Icone = ICONES_STATUS[s];
             const ativo = filtro === s;
             return (
               <div key={s} className="flex items-center flex-1">
                 <button
                   onClick={() => setFiltro(ativo ? null : s)}
-                  className="flex-1 rounded-xl p-3 text-center transition"
+                  className="flex-1 rounded-xl p-3.5 text-center transition hover:-translate-y-0.5"
                   style={{
                     background: ativo ? cor.fg : cor.bg,
                     color: ativo ? "#fff" : cor.fg,
                     outline: ativo ? `2px solid ${cor.fg}` : "none",
-                    outlineOffset: "2px"
+                    outlineOffset: "2px",
+                    boxShadow: ativo ? "0 4px 10px rgba(0,0,0,0.12)" : "0 1px 0 rgba(0,0,0,0.04), 0 2px 4px rgba(20,24,31,0.05)"
                   }}
                 >
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center mx-auto mb-2"
+                    style={{ background: ativo ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.6)" }}
+                  >
+                    <Icone size={17} />
+                  </div>
                   <div className="font-mono font-bold text-xl">{contagem[s]}</div>
                   <div className="text-[10px] leading-tight mt-1">{s}</div>
                 </button>
@@ -120,6 +128,7 @@ export default function EstoquePage() {
             <tbody>
               {filtrados.map((o) => {
                 const cor = CORES_STATUS[o.status] || { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
+                const IconeStatus = ICONES_STATUS[o.status];
                 return (
                   <tr
                     key={o.id}
@@ -131,7 +140,8 @@ export default function EstoquePage() {
                     <td className="px-4 py-2.5 text-muted">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</td>
                     <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmtBRL(o.valor_total)}</td>
                     <td className="px-4 py-2.5">
-                      <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded" style={{ background: cor.bg, color: cor.fg }}>
+                      <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1.5" style={{ background: cor.bg, color: cor.fg }}>
+                        {IconeStatus && <IconeStatus size={11} />}
                         {o.status}
                       </span>
                     </td>

@@ -6,7 +6,7 @@ import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
-import { CORES_STATUS } from "../../../lib/estoque";
+import { CORES_STATUS, ICONES_STATUS } from "../../../lib/estoque";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -117,6 +117,7 @@ export default function DetalheOrcamentoPage() {
 
   const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo);
   const cor = CORES_STATUS[orcamento.status] || CORES_STATUS_FALLBACK;
+  const IconeStatusAtual = ICONES_STATUS[orcamento.status];
 
   return (
     <AppShell titulo={`Orçamento #${orcamento.id}`}>
@@ -131,7 +132,8 @@ export default function DetalheOrcamentoPage() {
             <p className="font-display font-semibold text-lg">{orcamento.clientes?.nome}</p>
             <p className="text-sm text-muted">{orcamento.clientes?.celular || orcamento.clientes?.email || ""}</p>
           </div>
-          <span className="text-xs font-mono font-bold px-3 py-1 rounded-full" style={{ background: cor.bg, color: cor.fg }}>
+          <span className="text-xs font-mono font-bold px-3 py-1 rounded-full inline-flex items-center gap-1.5" style={{ background: cor.bg, color: cor.fg }}>
+            {IconeStatusAtual && <IconeStatusAtual size={13} />}
             {orcamento.status}
           </span>
         </div>

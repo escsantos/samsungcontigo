@@ -6,7 +6,7 @@ import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
-import { ORDEM_STATUS, CORES_STATUS, proximoStatus, STATUS_EXIGE_ENTREGA_PARA_AVANCAR } from "../../../lib/estoque";
+import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS, proximoStatus, STATUS_EXIGE_ENTREGA_PARA_AVANCAR } from "../../../lib/estoque";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -63,6 +63,7 @@ export default function EstoquePedidoPage() {
 
   const emFluxoEstoque = ORDEM_STATUS.includes(orcamento.status);
   const cor = CORES_STATUS[orcamento.status] || { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
+  const IconeStatusAtual = ICONES_STATUS[orcamento.status];
   const proximo = emFluxoEstoque ? proximoStatus(orcamento.status) : null;
   const exigeEntregaAgora = orcamento.status === STATUS_EXIGE_ENTREGA_PARA_AVANCAR;
   const todosLiberados = itens.length > 0 && itens.every((i) => i.liberado);
@@ -136,7 +137,8 @@ export default function EstoquePedidoPage() {
             <p className="font-display font-semibold text-lg">{orcamento.clientes?.nome}</p>
             <p className="text-sm text-muted">{orcamento.clientes?.celular || orcamento.clientes?.email || ""}</p>
           </div>
-          <span className="text-xs font-mono font-bold px-3 py-1 rounded-full" style={{ background: cor.bg, color: cor.fg }}>
+          <span className="text-xs font-mono font-bold px-3 py-1 rounded-full inline-flex items-center gap-1.5" style={{ background: cor.bg, color: cor.fg }}>
+            {IconeStatusAtual && <IconeStatusAtual size={13} />}
             {orcamento.status}
           </span>
         </div>

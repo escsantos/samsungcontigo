@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getPerfilAtual, supabase } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
-import { CORES_STATUS } from "../../lib/estoque";
+import { CORES_STATUS, ICONES_STATUS } from "../../lib/estoque";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -58,6 +58,7 @@ export default function OrcamentosPage() {
             <tbody>
               {lista.map((o) => {
                 const cor = CORES_STATUS[o.status] || CORES_STATUS_FALLBACK;
+                const IconeStatus = ICONES_STATUS[o.status];
                 return (
                   <tr
                     key={o.id}
@@ -70,7 +71,8 @@ export default function OrcamentosPage() {
                     <td className="px-4 py-2.5 text-muted">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</td>
                     <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmtBRL(o.valor_total)}</td>
                     <td className="px-4 py-2.5">
-                      <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded" style={{ background: cor.bg, color: cor.fg }}>
+                      <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1.5" style={{ background: cor.bg, color: cor.fg }}>
+                        {IconeStatus && <IconeStatus size={11} />}
                         {o.status}
                       </span>
                     </td>
