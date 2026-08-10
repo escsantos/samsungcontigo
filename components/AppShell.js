@@ -91,7 +91,7 @@ export default function AppShell({ titulo, children }) {
   return (
     <div className="h-screen flex bg-canvas">
       <aside
-        className="w-60 shrink-0 flex flex-col text-white"
+        className="w-60 shrink-0 flex flex-col text-white no-print"
         style={{ background: "linear-gradient(180deg, var(--accent-dark), var(--accent))" }}
       >
         <div className="px-5 py-6 flex items-center gap-3">
@@ -145,7 +145,7 @@ export default function AppShell({ titulo, children }) {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-line bg-surface">
+        <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-line bg-surface no-print">
           <div className="flex items-center gap-3">
             <SininhoNotificacoes visivel={["Administrador", "Diretor", "Gerente"].includes(perfil?.cargo)} />
             <h1 className="font-display font-semibold text-[15px] text-ink">{titulo}</h1>
