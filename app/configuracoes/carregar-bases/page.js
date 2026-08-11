@@ -163,10 +163,35 @@ export default function CarregarBasesPage() {
         throw new Error("Nenhuma coluna de peças (Código da peça01...10) encontrada na Base GSPN.");
       }
 
+      setProgresso({ pct: 60, texto: "Lendo peças já cadastradas no Supabase..." });
+      await sleep(0);
+      const existentesMap = new Map();
+      {
+        const PAGINA = 1000;
+        let inicio = 0;
+        while (true) {
+          const { data, error } = await supabase
+            .from("pecas")
+            .select("modelo, codigo, valor_unitario, data_referencia")
+            .range(inicio, inicio + PAGINA - 1);
+          if (error) throw new Error("Falha ao ler peças existentes: " + error.message);
+          if (!data || data.length === 0) break;
+          for (const p of data) {
+            existentesMap.set(p.modelo.toUpperCase() + "||" + p.codigo.toUpperCase(), {
+              valor_unitario: p.valor_unitario,
+              ts: parseBRDate(p.data_referencia),
+              data_referencia: p.data_referencia
+            });
+          }
+          if (data.length < PAGINA) break;
+          inicio += PAGINA;
+        }
+      }
+
       setProgresso({ pct: 65, texto: "Classificando peças e cruzando dados..." });
       await sleep(0);
       const uniqueMap = new Map();
-      let naoClassificados = 0, semCusto = 0;
+      let naoClassificados = 0, semCusto = 0, precosAtualizados = 0, precosMantidos = 0;
       const modelosSet = new Set();
 
       for (let r = 1; r < gspnRows.length; r++) {
@@ -187,35 +212,50 @@ export default function CarregarBasesPage() {
           const catFinal = cat;
           const uKey = modelo.toUpperCase() + "||" + codigo.toUpperCase();
           if (uniqueMap.has(uKey)) continue;
+
           const preco = precoMap.get(codigo.toUpperCase());
-          if (!preco) semCusto++;
+          const existente = existentesMap.get(uKey);
+
+          // decide qual preço vale: só troca se o novo for mais recente que o que já tínhamos
+          let valorFinal = existente?.valor_unitario ?? null;
+          let dataFinal = existente?.data_referencia ?? null;
+          if (preco) {
+            const existeSemData = !existente || existente.valor_unitario === null || existente.valor_unitario === undefined;
+            const novoEhMaisRecente = preco.ts !== null && (!existente?.ts || preco.ts > existente.ts);
+            if (existeSemData || novoEhMaisRecente) {
+              valorFinal = Math.round(preco.valor * 100) / 100;
+              dataFinal = preco.dataNF;
+              if (existente) precosAtualizados++;
+            } else if (existente) {
+              precosMantidos++;
+            }
+          }
+          if (valorFinal === null || valorFinal === undefined) semCusto++;
+
           uniqueMap.set(uKey, {
             modelo,
             categoria: catFinal,
             codigo: codigo.toUpperCase(),
             descricao_resumida: resumida,
             descricao_peca: descPeca ? String(descPeca).trim() : "",
-            valor_unitario: preco ? Math.round(preco.valor * 100) / 100 : null,
-            data_referencia: preco ? preco.dataNF : null
+            valor_unitario: valorFinal,
+            data_referencia: dataFinal
           });
         }
       }
 
       const registros = Array.from(uniqueMap.values());
+      const novasPecas = registros.filter((r) => !existentesMap.has(r.modelo.toUpperCase() + "||" + r.codigo.toUpperCase())).length;
 
-      setProgresso({ pct: 80, texto: "Apagando base antiga no Supabase..." });
+      setProgresso({ pct: 80, texto: "Gravando peças (atualizando as existentes, cadastrando as novas)..." });
       await sleep(0);
-      const { error: delError } = await supabase.from("pecas").delete().gte("id", 0);
-      if (delError) throw new Error("Falha ao limpar base antiga: " + delError.message);
-
-      setProgresso({ pct: 85, texto: `Gravando ${registros.length.toLocaleString("pt-BR")} peças no Supabase...` });
       const LOTE = 500;
       for (let i = 0; i < registros.length; i += LOTE) {
         const lote = registros.slice(i, i + LOTE);
-        const { error: insError } = await supabase.from("pecas").insert(lote);
-        if (insError) throw new Error("Falha ao gravar peças: " + insError.message);
+        const { error: upError } = await supabase.from("pecas").upsert(lote, { onConflict: "modelo,codigo" });
+        if (upError) throw new Error("Falha ao gravar peças: " + upError.message);
         setProgresso({
-          pct: 85 + Math.round((i / registros.length) * 13),
+          pct: 80 + Math.round((i / registros.length) * 13),
           texto: `Gravando peças... ${Math.min(i + LOTE, registros.length).toLocaleString("pt-BR")} / ${registros.length.toLocaleString("pt-BR")}`
         });
         await sleep(0);
@@ -232,14 +272,12 @@ export default function CarregarBasesPage() {
         sem_custo: semCusto
       });
 
-      setProgresso({ pct: 96, texto: "Salvando lotes por Delivery..." });
+      setProgresso({ pct: 96, texto: "Salvando lotes por Delivery (sem apagar os antigos)..." });
       await sleep(0);
-      const { error: delLotesError } = await supabase.from("lotes_pecas").delete().gte("id", 0);
-      if (delLotesError) throw new Error("Falha ao limpar lotes antigos: " + delLotesError.message);
       for (let i = 0; i < lotes.length; i += LOTE) {
         const bloco = lotes.slice(i, i + LOTE);
-        const { error: insLotesError } = await supabase.from("lotes_pecas").insert(bloco);
-        if (insLotesError) throw new Error("Falha ao gravar lotes: " + insLotesError.message);
+        const { error: upLotesError } = await supabase.from("lotes_pecas").upsert(bloco, { onConflict: "codigo,no_entrega" });
+        if (upLotesError) throw new Error("Falha ao gravar lotes: " + upLotesError.message);
       }
 
       setProgresso({ pct: 100, texto: "Concluído." });
@@ -252,7 +290,10 @@ export default function CarregarBasesPage() {
         naoClassificados,
         semCusto,
         totalLotes: lotes.length,
-        semEntrega
+        semEntrega,
+        novasPecas,
+        precosAtualizados,
+        precosMantidos
       });
       setConcluido(true);
     } catch (e) {
@@ -358,6 +399,9 @@ export default function CarregarBasesPage() {
           <div className="grid grid-cols-2 gap-3">
             <Stat n={resultado.totalRegistros} label="combinações peça/modelo" />
             <Stat n={resultado.totalModelos} label="modelos distintos" />
+            <Stat n={resultado.novasPecas} label="peças novas cadastradas" />
+            <Stat n={resultado.precosAtualizados} label="preços atualizados (mais recentes)" />
+            <Stat n={resultado.precosMantidos} label="preços mantidos (já eram mais novos)" />
             <Stat n={resultado.duplicadosRemovidos} label="duplicados removidos" />
             <Stat n={resultado.naoClassificados} label="não classificadas" />
             <Stat n={resultado.semCusto} label="sem custo encontrado" />
