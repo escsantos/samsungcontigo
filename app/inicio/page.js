@@ -2,10 +2,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Search, Contact, ClipboardList, ShoppingCart, Bell, UploadCloud, Percent, Users, ChevronRight, Warehouse, FileBarChart, LayoutDashboard
+  Search, Contact, ClipboardList, ShoppingCart, Bell, UploadCloud, Percent, Users, ChevronRight, Warehouse, FileBarChart, LayoutDashboard, Smartphone, Copy, Check
 } from "lucide-react";
 import { getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
+import Modal from "../../components/Modal";
 
 const CARDS = [
   {
@@ -101,10 +102,20 @@ const CARDS = [
 export default function InicioPage() {
   const router = useRouter();
   const [perfil, setPerfil] = useState(undefined);
+  const [qrAberto, setQrAberto] = useState(false);
+  const [urlAtual, setUrlAtual] = useState("");
+  const [copiado, setCopiado] = useState(false);
 
   useEffect(() => {
     getPerfilAtual().then(setPerfil);
+    if (typeof window !== "undefined") setUrlAtual(window.location.origin);
   }, []);
+
+  function copiarLink() {
+    navigator.clipboard.writeText(urlAtual);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2000);
+  }
 
   if (perfil === undefined) {
     return <AppShell titulo="Início"><p className="text-muted text-sm">Carregando...</p></AppShell>;
@@ -114,9 +125,15 @@ export default function InicioPage() {
 
   return (
     <AppShell titulo="Início">
-      <p className="text-sm text-muted mb-5">
-        Olá, <b>{perfil?.nome}</b>. Aqui estão as áreas que você pode acessar.
-      </p>
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+        <p className="text-sm text-muted">
+          Olá, <b>{perfil?.nome}</b>. Aqui estão as áreas que você pode acessar.
+        </p>
+        <button className="btn-secondary text-xs py-2" onClick={() => setQrAberto(true)}>
+          <Smartphone size={14} />
+          Acessar no celular
+        </button>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {opcoes.map((item) => {
           const Icone = item.icone;
@@ -141,6 +158,30 @@ export default function InicioPage() {
           );
         })}
       </div>
+
+      <Modal open={qrAberto} onClose={() => setQrAberto(false)} title="Acessar no celular">
+        <div className="text-center">
+          <p className="text-sm text-muted mb-4">Aponte a câmera do celular pra esse código pra abrir o sistema direto nele.</p>
+          {urlAtual && (
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(urlAtual)}`}
+              alt="QR Code de acesso"
+              className="mx-auto rounded-lg border border-line"
+              width={220}
+              height={220}
+            />
+          )}
+          <div className="flex items-center gap-2 mt-4 bg-canvas rounded-lg px-3 py-2.5">
+            <span className="text-xs font-mono flex-1 text-left truncate">{urlAtual}</span>
+            <button onClick={copiarLink} className="shrink-0 text-muted hover:text-ink">
+              {copiado ? <Check size={15} style={{ color: "#2C7C6E" }} /> : <Copy size={15} />}
+            </button>
+          </div>
+          <p className="text-[11px] text-muted mt-3">
+            Depois de acessar, o celular pode oferecer a opção "Adicionar à tela inicial" — isso deixa o sistema com cara de aplicativo, com ícone próprio.
+          </p>
+        </div>
+      </Modal>
     </AppShell>
   );
 }

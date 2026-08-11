@@ -1,0 +1,13 @@
+{
+  "name": "Samsung Contigo — Grupo J.Macedo",
+  "short_name": "Samsung Contigo",
+  "description": "Consulta de peças, orçamentos e estoque — Grupo J.Macedo",
+  "start_url": "/inicio",
+  "display": "standalone",
+  "background_color": "#F4F6F9",
+  "theme_color": "#1B4162",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

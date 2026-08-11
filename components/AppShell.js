@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
-  ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard
+  ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
@@ -65,6 +65,7 @@ export default function AppShell({ titulo, children }) {
   const [perfil, setPerfil] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [gruposAbertos, setGruposAbertos] = useState({});
+  const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const heartbeatRef = useRef(null);
@@ -117,6 +118,7 @@ export default function AppShell({ titulo, children }) {
     if (grupoAtivo) {
       setGruposAbertos((atual) => ({ ...atual, [grupoAtivo.id]: true }));
     }
+    setMenuMobileAberto(false);
   }, [pathname]);
 
   function alternarGrupo(id) {
@@ -136,20 +138,35 @@ export default function AppShell({ titulo, children }) {
 
   return (
     <div className="h-screen flex bg-canvas">
+      {menuMobileAberto && (
+        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMenuMobileAberto(false)} />
+      )}
+
       <aside
-        className="w-60 shrink-0 flex flex-col text-white no-print"
+        className={`fixed md:static inset-y-0 left-0 z-50 w-64 md:w-60 shrink-0 flex flex-col text-white no-print transform transition-transform duration-200 ${
+          menuMobileAberto ? "translate-x-0" : "-translate-x-full"
+        } md:translate-x-0`}
         style={{ background: "linear-gradient(180deg, var(--accent-dark), var(--accent))" }}
       >
-        <div className="px-5 py-6 flex items-center gap-3">
-          <img src="/logos/grupo-jmacedo.png" alt="Grupo J.Macedo" className="h-9 w-auto brightness-0 invert opacity-90" />
-          <Link
-            href="/inicio"
-            aria-label="Início"
-            title="Início"
-            className="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/15 hover:text-white transition"
+        <div className="px-5 py-6 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <img src="/logos/grupo-jmacedo.png" alt="Grupo J.Macedo" className="h-9 w-auto brightness-0 invert opacity-90" />
+            <Link
+              href="/inicio"
+              aria-label="Início"
+              title="Início"
+              className="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/15 hover:text-white transition"
+            >
+              <Home size={16} />
+            </Link>
+          </div>
+          <button
+            onClick={() => setMenuMobileAberto(false)}
+            className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/15 hover:text-white"
+            aria-label="Fechar menu"
           >
-            <Home size={16} />
-          </Link>
+            <X size={18} />
+          </button>
         </div>
 
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
@@ -225,12 +242,19 @@ export default function AppShell({ titulo, children }) {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-line bg-surface no-print">
-          <div className="flex items-center gap-3">
+        <header className="h-16 shrink-0 flex items-center justify-between px-3 md:px-6 border-b border-line bg-surface no-print gap-2">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0">
+            <button
+              onClick={() => setMenuMobileAberto(true)}
+              className="md:hidden w-9 h-9 shrink-0 flex items-center justify-center rounded-full border border-line text-muted hover:text-ink"
+              aria-label="Abrir menu"
+            >
+              <Menu size={17} />
+            </button>
             <SininhoNotificacoes visivel={["Administrador", "Diretor", "Gerente"].includes(perfil?.cargo)} />
-            <h1 className="font-display font-semibold text-[15px] text-ink">{titulo}</h1>
+            <h1 className="font-display font-semibold text-[15px] text-ink truncate">{titulo}</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
             {podeComprar && (
               <Link
                 href="/carrinho"
@@ -246,19 +270,21 @@ export default function AppShell({ titulo, children }) {
                 )}
               </Link>
             )}
-            <IndicadorOnline />
+            <span className="hidden lg:block"><IndicadorOnline /></span>
             <Link href="/perfil" className="flex items-center gap-2.5 hover:opacity-80 transition">
-              <div className="text-right leading-tight">
+              <div className="text-right leading-tight hidden sm:block">
                 <p className="text-sm font-medium text-ink">{perfil?.nome || "-"}</p>
                 <p className="text-[11.5px] text-muted">{perfil?.cargo || "-"}</p>
               </div>
               <Avatar nome={perfil?.nome} fotoUrl={perfil?.foto_url} tamanho={34} />
             </Link>
-            <SeletorCor perfil={perfil} />
-            <BotaoTema />
+            <span className="hidden sm:flex items-center gap-1.5 md:gap-3">
+              <SeletorCor perfil={perfil} />
+              <BotaoTema />
+            </span>
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-auto p-3 md:p-6">{children}</main>
       </div>
     </div>
   );

@@ -2,8 +2,20 @@ import "./globals.css";
 import { CarrinhoProvider } from "../contexts/CarrinhoContext";
 
 export const metadata = {
-  title: "Consulta de Peças — Grupo J.Macedo",
-  description: "Custo de peças para orçamento ao cliente"
+  title: "Samsung Contigo — Grupo J.Macedo",
+  description: "Consulta de peças, orçamentos e estoque — Grupo J.Macedo",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Samsung Contigo"
+  }
+};
+
+export const viewport = {
+  themeColor: "#1B4162",
+  width: "device-width",
+  initialScale: 1
 };
 
 export default function RootLayout({ children }) {
@@ -16,6 +28,8 @@ export default function RootLayout({ children }) {
           href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <link rel="icon" href="/icons/icon-192.png" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
