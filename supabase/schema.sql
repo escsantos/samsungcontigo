@@ -404,3 +404,38 @@ drop policy if exists "editar itens de orcamento" on orcamento_itens;
 create policy "editar itens de orcamento"
   on orcamento_itens for update
   using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())));
+
+-- 8. Fluxo operacional completo (compra, faturamento, separação, entrega)
+alter table orcamentos add column if not exists numero_pedido_compra text;
+alter table orcamentos add column if not exists no_entrega text;
+alter table orcamentos add column if not exists valor_pago numeric(12,2);
+alter table orcamentos add column if not exists data_pagamento date;
+alter table orcamentos add column if not exists anexo_pagamento_url text;
+alter table orcamentos add column if not exists pagamento_validado_por uuid references perfis(id);
+alter table orcamentos add column if not exists pagamento_validado_em timestamptz;
+alter table orcamentos add column if not exists separado_por uuid references perfis(id);
+alter table orcamentos add column if not exists separado_em timestamptz;
+alter table orcamentos add column if not exists entregue boolean default false;
+alter table orcamentos add column if not exists entregue_por uuid references perfis(id);
+alter table orcamentos add column if not exists entregue_em timestamptz;
+
+insert into storage.buckets (id, name, public) values ('comprovantes', 'comprovantes', false)
+on conflict (id) do nothing;
+
+create policy "estoque le comprovantes"
+  on storage.objects for select
+  using (bucket_id = 'comprovantes' and pode_gerenciar_estoque());
+
+create policy "estoque sobe comprovantes"
+  on storage.objects for insert
+  with check (bucket_id = 'comprovantes' and pode_gerenciar_estoque());
+
+drop policy if exists "criar itens de orcamento" on orcamento_itens;
+create policy "criar itens de orcamento"
+  on orcamento_itens for insert
+  with check (
+    exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and (o.criado_por = auth.uid() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())
+    )
+  );

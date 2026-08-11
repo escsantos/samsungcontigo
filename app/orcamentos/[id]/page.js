@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Check, X, Pencil, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { CORES_STATUS, ICONES_STATUS } from "../../../lib/estoque";
+import { calcularPreco } from "../../../lib/precos";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -26,6 +27,11 @@ export default function DetalheOrcamentoPage() {
   const [motivoRejeicao, setMotivoRejeicao] = useState("");
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState("");
+
+  const [buscaAberta, setBuscaAberta] = useState(false);
+  const [termoBusca, setTermoBusca] = useState("");
+  const [resultadosBusca, setResultadosBusca] = useState([]);
+  const [buscando, setBuscando] = useState(false);
 
   useEffect(() => {
     carregar();
@@ -52,12 +58,91 @@ export default function DetalheOrcamentoPage() {
     setItens((atual) => atual.filter((i) => i.id !== itemId));
   }
 
+  useEffect(() => {
+    if (!buscaAberta) return;
+    const termo = termoBusca.trim();
+    if (!termo) {
+      setResultadosBusca([]);
+      return;
+    }
+    setBuscando(true);
+    const t = setTimeout(async () => {
+      const like = `%${termo}%`;
+      const { data } = await supabase
+        .from("pecas")
+        .select("*")
+        .or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`)
+        .limit(30);
+      setResultadosBusca(data || []);
+      setBuscando(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [termoBusca, buscaAberta]);
+
+  function adicionarPeca(peca) {
+    if (itens.some((i) => i.codigo === peca.codigo && !i._removida)) {
+      // já existe: só soma 1 na quantidade
+      setItens((atual) => atual.map((i) => (i.codigo === peca.codigo ? { ...i, qtd: i.qtd + 1, venda_total: Number(i.venda_unitario) * (i.qtd + 1) } : i)));
+      setBuscaAberta(false);
+      setTermoBusca("");
+      return;
+    }
+    const { venda } = calcularPreco(peca.valor_unitario, Number(orcamento.margem), Number(orcamento.imposto_total));
+    const novoItem = {
+      id: `novo-${peca.id}-${Date.now()}`,
+      _novo: true,
+      peca_id: peca.id,
+      modelo: peca.modelo,
+      categoria: peca.categoria,
+      codigo: peca.codigo,
+      descricao_resumida: peca.descricao_resumida,
+      descricao_peca: peca.descricao_peca,
+      qtd: 1,
+      custo_unitario: peca.valor_unitario,
+      venda_unitario: venda,
+      venda_total: venda
+    };
+    setItens((atual) => [...atual, novoItem]);
+    setBuscaAberta(false);
+    setTermoBusca("");
+  }
+
   async function salvarAjustes() {
     setProcessando(true);
     setErro("");
+
     for (const i of itens) {
-      await supabase.from("orcamento_itens").update({ qtd: i.qtd, venda_total: i.venda_total }).eq("id", i.id);
+      if (i._novo) {
+        const { error } = await supabase.from("orcamento_itens").insert({
+          orcamento_id: id,
+          peca_id: i.peca_id,
+          modelo: i.modelo,
+          categoria: i.categoria,
+          codigo: i.codigo,
+          descricao_resumida: i.descricao_resumida,
+          descricao_peca: i.descricao_peca,
+          qtd: i.qtd,
+          custo_unitario: i.custo_unitario,
+          venda_unitario: i.venda_unitario,
+          venda_total: i.venda_total
+        });
+        if (error) {
+          setProcessando(false);
+          setErro("Falha ao adicionar peça " + i.codigo + ": " + error.message);
+          return;
+        }
+      } else {
+        await supabase.from("orcamento_itens").update({ qtd: i.qtd, venda_total: i.venda_total }).eq("id", i.id);
+      }
     }
+
+    const idsAtuais = itens.filter((i) => !i._novo).map((i) => i.id);
+    const { data: itensAntigos } = await supabase.from("orcamento_itens").select("id").eq("orcamento_id", id);
+    const idsParaExcluir = (itensAntigos || []).map((i) => i.id).filter((oid) => !idsAtuais.includes(oid));
+    if (idsParaExcluir.length > 0) {
+      await supabase.from("orcamento_itens").delete().in("id", idsParaExcluir);
+    }
+
     const novoTotal = itens.reduce((s, i) => s + Number(i.venda_total || 0), 0);
     const { error } = await supabase.from("orcamentos").update({ valor_total: novoTotal }).eq("id", id);
     setProcessando(false);
@@ -75,7 +160,7 @@ export default function DetalheOrcamentoPage() {
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from("orcamentos")
-      .update({ status: "Validado pelo Vendedor", revisado_por: user.id, revisado_em: new Date().toISOString() })
+      .update({ status: "Aguardando Separação/Compra", revisado_por: user.id, revisado_em: new Date().toISOString() })
       .eq("id", id);
     setProcessando(false);
     if (error) {
@@ -153,6 +238,15 @@ export default function DetalheOrcamentoPage() {
         )}
       </div>
 
+      {ajustando && (
+        <div className="mb-4">
+          <button className="btn-secondary text-sm" onClick={() => setBuscaAberta(true)}>
+            <Plus size={15} />
+            Adicionar peça
+          </button>
+        </div>
+      )}
+
       <div className="card overflow-hidden mb-4">
         <table className="w-full text-sm">
           <thead>
@@ -171,7 +265,7 @@ export default function DetalheOrcamentoPage() {
               const corCat = corCategoria(i.categoria);
               const Icone = iconeCategoria(i.categoria);
               return (
-                <tr key={i.id} className="border-b border-line last:border-0">
+                <tr key={i.id} className="border-b border-line last:border-0" style={{ background: i._novo ? "var(--accent-soft)" : "transparent" }}>
                   <td className="px-4 py-2.5 font-mono font-medium">{i.modelo}</td>
                   <td className="px-4 py-2.5">
                     <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1" style={{ background: corCat.bg, color: corCat.fg }}>
@@ -260,6 +354,40 @@ export default function DetalheOrcamentoPage() {
       >
         <label className="field-label">Motivo (opcional, o cliente vai ver)</label>
         <textarea className="field-input" rows={3} value={motivoRejeicao} onChange={(e) => setMotivoRejeicao(e.target.value)} />
+      </Modal>
+
+      <Modal open={buscaAberta} onClose={() => setBuscaAberta(false)} title="Adicionar peça ao pedido">
+        <div className="relative mb-3">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            className="field-input pl-9"
+            placeholder="Buscar por código, modelo ou descrição..."
+            value={termoBusca}
+            onChange={(e) => setTermoBusca(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="max-h-80 overflow-auto -mx-2">
+          {buscando ? (
+            <p className="text-sm text-muted px-2 py-3">Buscando...</p>
+          ) : resultadosBusca.length === 0 ? (
+            <p className="text-sm text-muted px-2 py-3">{termoBusca ? "Nenhuma peça encontrada." : "Digite para buscar."}</p>
+          ) : (
+            resultadosBusca.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => adicionarPeca(p)}
+                className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-canvas flex items-center justify-between gap-3"
+              >
+                <span className="text-sm">
+                  <span className="font-mono font-medium" style={{ color: "var(--accent)" }}>{p.codigo}</span>
+                  {" — "}{p.descricao_resumida} <span className="text-muted text-xs">({p.modelo})</span>
+                </span>
+                <Plus size={15} className="shrink-0 text-muted" />
+              </button>
+            ))
+          )}
+        </div>
       </Modal>
     </AppShell>
   );
