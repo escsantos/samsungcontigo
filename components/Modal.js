@@ -1,12 +1,18 @@
 "use client";
 import { X } from "lucide-react";
 
-export default function Modal({ open, onClose, title, children, footer }) {
+const LARGURAS = {
+  md: "w-full max-w-lg",
+  lg: "w-full max-w-3xl",
+  xl: "w-[96vw] max-w-[1400px]"
+};
+
+export default function Modal({ open, onClose, title, children, footer, tamanho = "md" }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="card relative w-full max-w-lg p-6 shadow-2xl">
+      <div className={`card relative ${LARGURAS[tamanho] || LARGURAS.md} p-6 shadow-2xl max-h-[88vh] overflow-auto`}>
         <button
           onClick={onClose}
           aria-label="Fechar"

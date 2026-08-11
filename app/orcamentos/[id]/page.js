@@ -399,6 +399,7 @@ export default function DetalheOrcamentoPage() {
         open={buscaAberta}
         onClose={fecharBusca}
         title="Adicionar peça ao pedido"
+        tamanho="xl"
         footer={<button className="btn-primary" onClick={fecharBusca}>Concluído</button>}
       >
         <div className="relative mb-3">
@@ -436,9 +437,9 @@ export default function DetalheOrcamentoPage() {
                   const jaAdicionada = pecasAdicionadasAgora.includes(p.id);
                   return (
                     <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas">
-                      <td className="px-3 py-2 font-mono" style={{ color: "var(--accent)" }}>{p.codigo}</td>
-                      <td className="px-3 py-2">{p.descricao_resumida}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-muted">{p.modelo}</td>
+                      <td className="px-3 py-2 font-mono whitespace-nowrap" style={{ color: "var(--accent)" }}>{p.codigo}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{p.descricao_resumida}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-muted whitespace-nowrap">{p.modelo}</td>
                       <td className="px-3 py-2 text-right font-mono">{fmtBRL(p.valor_unitario)}</td>
                       <td className="px-3 py-2 text-right font-mono">{fmtBRL(imposto)}</td>
                       <td className="px-3 py-2 text-right font-mono font-semibold">{fmtBRL(venda)}</td>
