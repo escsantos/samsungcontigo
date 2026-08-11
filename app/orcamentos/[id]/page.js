@@ -125,36 +125,42 @@ export default function DetalheOrcamentoPage() {
     setProcessando(true);
     setErro("");
 
-    for (const i of itens) {
-      if (i._novo) {
-        const { error } = await supabase.from("orcamento_itens").insert({
-          orcamento_id: id,
-          peca_id: i.peca_id,
-          modelo: i.modelo,
-          categoria: i.categoria,
-          codigo: i.codigo,
-          descricao_resumida: i.descricao_resumida,
-          descricao_peca: i.descricao_peca,
-          qtd: i.qtd,
-          custo_unitario: i.custo_unitario,
-          venda_unitario: i.venda_unitario,
-          venda_total: i.venda_total
-        });
-        if (error) {
-          setProcessando(false);
-          setErro("Falha ao adicionar peça " + i.codigo + ": " + error.message);
-          return;
-        }
-      } else {
-        await supabase.from("orcamento_itens").update({ qtd: i.qtd, venda_total: i.venda_total }).eq("id", i.id);
-      }
-    }
+    // 1º: descobre quais itens já existiam no banco ANTES de qualquer alteração
+    const { data: itensNoBancoAntes } = await supabase.from("orcamento_itens").select("id").eq("orcamento_id", id);
+    const idsExistentesAntes = (itensNoBancoAntes || []).map((i) => i.id);
 
-    const idsAtuais = itens.filter((i) => !i._novo).map((i) => i.id);
-    const { data: itensAntigos } = await supabase.from("orcamento_itens").select("id").eq("orcamento_id", id);
-    const idsParaExcluir = (itensAntigos || []).map((i) => i.id).filter((oid) => !idsAtuais.includes(oid));
+    // 2º: dos que já existiam, quais continuam na lista local (não foram removidos com a lixeira)
+    const idsParaManter = itens.filter((i) => !i._novo).map((i) => i.id);
+    const idsParaExcluir = idsExistentesAntes.filter((oid) => !idsParaManter.includes(oid));
     if (idsParaExcluir.length > 0) {
       await supabase.from("orcamento_itens").delete().in("id", idsParaExcluir);
+    }
+
+    // 3º: atualiza qtd/total dos itens que já existiam e continuam
+    for (const i of itens.filter((i) => !i._novo)) {
+      await supabase.from("orcamento_itens").update({ qtd: i.qtd, venda_total: i.venda_total }).eq("id", i.id);
+    }
+
+    // 4º: só agora insere os itens novos (depois de já ter decidido o que excluir)
+    for (const i of itens.filter((i) => i._novo)) {
+      const { error } = await supabase.from("orcamento_itens").insert({
+        orcamento_id: id,
+        peca_id: i.peca_id,
+        modelo: i.modelo,
+        categoria: i.categoria,
+        codigo: i.codigo,
+        descricao_resumida: i.descricao_resumida,
+        descricao_peca: i.descricao_peca,
+        qtd: i.qtd,
+        custo_unitario: i.custo_unitario,
+        venda_unitario: i.venda_unitario,
+        venda_total: i.venda_total
+      });
+      if (error) {
+        setProcessando(false);
+        setErro("Falha ao adicionar peça " + i.codigo + ": " + error.message);
+        return;
+      }
     }
 
     const novoTotal = itens.reduce((s, i) => s + Number(i.venda_total || 0), 0);
@@ -217,6 +223,7 @@ export default function DetalheOrcamentoPage() {
   const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo);
   const cor = CORES_STATUS[orcamento.status] || CORES_STATUS_FALLBACK;
   const IconeStatusAtual = ICONES_STATUS[orcamento.status];
+  const mostraCusto = perfil?.cargo !== "Cliente";
 
   return (
     <AppShell titulo={`Orçamento #${orcamento.id}`}>
@@ -270,7 +277,14 @@ export default function DetalheOrcamentoPage() {
               <th className="text-left px-4 py-2.5">Código</th>
               <th className="text-left px-4 py-2.5">Descrição</th>
               <th className="text-center px-4 py-2.5">Qtd</th>
-              <th className="text-right px-4 py-2.5">Total</th>
+              {mostraCusto && (
+                <>
+                  <th className="text-right px-4 py-2.5">Custo</th>
+                  <th className="text-right px-4 py-2.5">Imposto</th>
+                  <th className="text-right px-4 py-2.5">Lucro Líquido</th>
+                </>
+              )}
+              <th className="text-right px-4 py-2.5">{mostraCusto ? "Venda" : "Valor"}</th>
               {ajustando && <th></th>}
             </tr>
           </thead>
@@ -278,6 +292,10 @@ export default function DetalheOrcamentoPage() {
             {itens.map((i) => {
               const corCat = corCategoria(i.categoria);
               const Icone = iconeCategoria(i.categoria);
+              const custoTotal = Number(i.custo_unitario || 0) * i.qtd;
+              const impostoPct = Number(orcamento.imposto_total || 0);
+              const impostoValor = Number(i.venda_total || 0) * (impostoPct / 100);
+              const lucroLiquido = Number(i.venda_total || 0) - custoTotal - impostoValor;
               return (
                 <tr key={i.id} className="border-b border-line last:border-0" style={{ background: i._novo ? "var(--accent-soft)" : "transparent" }}>
                   <td className="px-4 py-2.5 font-mono font-medium">{i.modelo}</td>
@@ -302,7 +320,14 @@ export default function DetalheOrcamentoPage() {
                       i.qtd
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmtBRL(i.venda_total)}</td>
+                  {mostraCusto && (
+                    <>
+                      <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(custoTotal)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(impostoValor)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(lucroLiquido)}</td>
+                    </>
+                  )}
+                  <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: mostraCusto ? "#2C7C6E" : undefined }}>{fmtBRL(i.venda_total)}</td>
                   {ajustando && (
                     <td className="px-4 py-2.5 text-right">
                       <button onClick={() => removerItem(i.id)} className="text-muted hover:text-danger">
