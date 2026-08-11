@@ -65,7 +65,7 @@ export default function CarrinhoPage() {
         cliente_id: carrinho.clienteId,
         vendedor_id: cliente?.vendedor_id || null,
         criado_por: user.id,
-        status: "Pendente",
+        status: "Pendente de Análise",
         valor_total: totalGeral,
         margem: margemEfetiva,
         imposto_total: impostoTotal

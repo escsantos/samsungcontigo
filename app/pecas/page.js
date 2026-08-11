@@ -181,9 +181,23 @@ export default function ConsultaPecasPage() {
               <span className="text-muted">Nenhum cliente selecionado — escolha um para poder adicionar peças ao carrinho.</span>
             )}
           </div>
-          <button className="btn-secondary text-xs py-2" onClick={() => setSeletorClienteAberto(true)}>
-            {carrinho?.clienteId ? "Trocar cliente" : "Selecionar cliente"}
-          </button>
+          <div className="flex gap-2">
+            {carrinho?.clienteId && (
+              <button
+                className="btn-secondary text-xs py-2 text-danger"
+                onClick={() => {
+                  carrinho.selecionarCliente(null, "");
+                  limparPesquisa();
+                }}
+              >
+                <X size={13} />
+                Limpar cliente e pesquisa
+              </button>
+            )}
+            <button className="btn-secondary text-xs py-2" onClick={() => setSeletorClienteAberto(true)}>
+              {carrinho?.clienteId ? "Trocar cliente" : "Selecionar cliente"}
+            </button>
+          </div>
         </div>
       )}
 
