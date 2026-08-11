@@ -121,7 +121,7 @@ export default function CarregarBasesPage() {
         const ts = parseBRDate(p.dataNF);
         const atual = precoMap.get(p.codigo);
         if (!atual || (ts !== null && (atual.ts === null || ts > atual.ts))) {
-          precoMap.set(p.codigo, { valor: p.valor / p.qtd, ts });
+          precoMap.set(p.codigo, { valor: p.valor / p.qtd, ts, dataNF: p.dataNF });
         }
       }
 
@@ -195,7 +195,8 @@ export default function CarregarBasesPage() {
             codigo: codigo.toUpperCase(),
             descricao_resumida: resumida,
             descricao_peca: descPeca ? String(descPeca).trim() : "",
-            valor_unitario: preco ? Math.round(preco.valor * 100) / 100 : null
+            valor_unitario: preco ? Math.round(preco.valor * 100) / 100 : null,
+            data_referencia: preco ? preco.dataNF : null
           });
         }
       }

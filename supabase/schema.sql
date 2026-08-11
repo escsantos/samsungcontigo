@@ -145,6 +145,7 @@ create table if not exists pecas (
   descricao_resumida text,
   descricao_peca text,
   valor_unitario numeric(12,2),
+  data_referencia text,
   atualizado_em timestamptz default now(),
   unique (modelo, codigo)
 );

@@ -97,6 +97,12 @@ export default function DetalhePecaModal({ peca, qtd, mostraCusto, onClose }) {
       <div className="bg-canvas rounded-lg p-4 text-sm space-y-1.5 font-mono">
         {linhasTexto().map((l, i) => <p key={i}>{l}</p>)}
       </div>
+
+      {mostrarCustoAgora && peca.data_referencia && (
+        <p className="text-[11px] text-muted mt-2 text-left">
+          Valor atualizado em: <span className="font-mono">{peca.data_referencia}</span>
+        </p>
+      )}
     </Modal>
   );
 }
