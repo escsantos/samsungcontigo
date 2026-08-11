@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search } from "lucide-react";
+import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
@@ -15,7 +15,6 @@ function fmtBRL(v) {
 }
 
 const CORES_STATUS_FALLBACK = { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
-
 export default function DetalheOrcamentoPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -32,6 +31,8 @@ export default function DetalheOrcamentoPage() {
   const [termoBusca, setTermoBusca] = useState("");
   const [resultadosBusca, setResultadosBusca] = useState([]);
   const [buscando, setBuscando] = useState(false);
+  const [qtdsBusca, setQtdsBusca] = useState({});
+  const [pecasAdicionadasAgora, setPecasAdicionadasAgora] = useState([]);
 
   useEffect(() => {
     carregar();
@@ -79,12 +80,26 @@ export default function DetalheOrcamentoPage() {
     return () => clearTimeout(t);
   }, [termoBusca, buscaAberta]);
 
+  function fecharBusca() {
+    setBuscaAberta(false);
+    setTermoBusca("");
+    setResultadosBusca([]);
+    setQtdsBusca({});
+    setPecasAdicionadasAgora([]);
+  }
+
   function adicionarPeca(peca) {
-    if (itens.some((i) => i.codigo === peca.codigo && !i._removida)) {
-      // já existe: só soma 1 na quantidade
-      setItens((atual) => atual.map((i) => (i.codigo === peca.codigo ? { ...i, qtd: i.qtd + 1, venda_total: Number(i.venda_unitario) * (i.qtd + 1) } : i)));
-      setBuscaAberta(false);
-      setTermoBusca("");
+    const qtdEscolhida = Math.max(1, parseInt(qtdsBusca[peca.id], 10) || 1);
+
+    if (itens.some((i) => i.codigo === peca.codigo)) {
+      setItens((atual) =>
+        atual.map((i) =>
+          i.codigo === peca.codigo
+            ? { ...i, qtd: i.qtd + qtdEscolhida, venda_total: Number(i.venda_unitario) * (i.qtd + qtdEscolhida) }
+            : i
+        )
+      );
+      setPecasAdicionadasAgora((atual) => [...atual, peca.id]);
       return;
     }
     const { venda } = calcularPreco(peca.valor_unitario, Number(orcamento.margem), Number(orcamento.imposto_total));
@@ -97,14 +112,13 @@ export default function DetalheOrcamentoPage() {
       codigo: peca.codigo,
       descricao_resumida: peca.descricao_resumida,
       descricao_peca: peca.descricao_peca,
-      qtd: 1,
+      qtd: qtdEscolhida,
       custo_unitario: peca.valor_unitario,
       venda_unitario: venda,
-      venda_total: venda
+      venda_total: venda * qtdEscolhida
     };
     setItens((atual) => [...atual, novoItem]);
-    setBuscaAberta(false);
-    setTermoBusca("");
+    setPecasAdicionadasAgora((atual) => [...atual, peca.id]);
   }
 
   async function salvarAjustes() {
@@ -356,7 +370,12 @@ export default function DetalheOrcamentoPage() {
         <textarea className="field-input" rows={3} value={motivoRejeicao} onChange={(e) => setMotivoRejeicao(e.target.value)} />
       </Modal>
 
-      <Modal open={buscaAberta} onClose={() => setBuscaAberta(false)} title="Adicionar peça ao pedido">
+      <Modal
+        open={buscaAberta}
+        onClose={fecharBusca}
+        title="Adicionar peça ao pedido"
+        footer={<button className="btn-primary" onClick={fecharBusca}>Concluído</button>}
+      >
         <div className="relative mb-3">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input
@@ -367,25 +386,63 @@ export default function DetalheOrcamentoPage() {
             autoFocus
           />
         </div>
-        <div className="max-h-80 overflow-auto -mx-2">
+        <div className="max-h-96 overflow-auto -mx-6 border-t border-line">
           {buscando ? (
-            <p className="text-sm text-muted px-2 py-3">Buscando...</p>
+            <p className="text-sm text-muted px-6 py-3">Buscando...</p>
           ) : resultadosBusca.length === 0 ? (
-            <p className="text-sm text-muted px-2 py-3">{termoBusca ? "Nenhuma peça encontrada." : "Digite para buscar."}</p>
+            <p className="text-sm text-muted px-6 py-3">{termoBusca ? "Nenhuma peça encontrada." : "Digite para buscar."}</p>
           ) : (
-            resultadosBusca.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => adicionarPeca(p)}
-                className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-canvas flex items-center justify-between gap-3"
-              >
-                <span className="text-sm">
-                  <span className="font-mono font-medium" style={{ color: "var(--accent)" }}>{p.codigo}</span>
-                  {" — "}{p.descricao_resumida} <span className="text-muted text-xs">({p.modelo})</span>
-                </span>
-                <Plus size={15} className="shrink-0 text-muted" />
-              </button>
-            ))
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
+                  <th className="text-left px-3 py-2">Código</th>
+                  <th className="text-left px-3 py-2">Descrição</th>
+                  <th className="text-left px-3 py-2">Modelo</th>
+                  <th className="text-right px-3 py-2">Custo</th>
+                  <th className="text-right px-3 py-2">Imposto</th>
+                  <th className="text-right px-3 py-2">Venda</th>
+                  <th className="text-center px-3 py-2">Qtd</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultadosBusca.map((p) => {
+                  const { venda, imposto } = calcularPreco(p.valor_unitario, Number(orcamento.margem), Number(orcamento.imposto_total));
+                  const jaAdicionada = pecasAdicionadasAgora.includes(p.id);
+                  return (
+                    <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas">
+                      <td className="px-3 py-2 font-mono" style={{ color: "var(--accent)" }}>{p.codigo}</td>
+                      <td className="px-3 py-2">{p.descricao_resumida}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-muted">{p.modelo}</td>
+                      <td className="px-3 py-2 text-right font-mono">{fmtBRL(p.valor_unitario)}</td>
+                      <td className="px-3 py-2 text-right font-mono">{fmtBRL(imposto)}</td>
+                      <td className="px-3 py-2 text-right font-mono font-semibold">{fmtBRL(venda)}</td>
+                      <td className="px-3 py-2 text-center">
+                        <input
+                          type="number"
+                          min={1}
+                          className="field-input py-1 px-1 text-center font-mono w-12 mx-auto"
+                          value={qtdsBusca[p.id] ?? 1}
+                          onChange={(e) => setQtdsBusca((atual) => ({ ...atual, [p.id]: e.target.value }))}
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {jaAdicionada ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: "#2C7C6E" }}>
+                            <CheckCircle2 size={15} /> Adicionada
+                          </span>
+                        ) : (
+                          <button onClick={() => adicionarPeca(p)} className="btn-secondary py-1.5 px-3 text-xs">
+                            <Plus size={13} />
+                            Adicionar
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           )}
         </div>
       </Modal>
