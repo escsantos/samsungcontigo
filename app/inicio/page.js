@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Search, Contact, ClipboardList, ShoppingCart, Bell, UploadCloud, Percent, Users, ChevronRight, Warehouse, FileBarChart
+  Search, Contact, ClipboardList, ShoppingCart, Bell, UploadCloud, Percent, Users, ChevronRight, Warehouse, FileBarChart, LayoutDashboard
 } from "lucide-react";
 import { getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
@@ -15,6 +15,14 @@ const CARDS = [
     cor: "#4A90D9",
     descricao: "Busque peças por código, modelo ou descrição e veja custo e preço de venda.",
     cargos: null
+  },
+  {
+    href: "/dashboard",
+    label: "Dashboard de Vendas",
+    icone: LayoutDashboard,
+    cor: "#3FA796",
+    descricao: "Cards, gráficos e ranking de vendas por período.",
+    cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"]
   },
   {
     href: "/clientes",

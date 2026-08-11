@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
-  ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown
+  ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
@@ -26,6 +26,7 @@ const GRUPOS_MENU = [
     label: "Vendas",
     icone: Briefcase,
     itens: [
+      { href: "/dashboard", label: "Dashboard de Vendas", icone: LayoutDashboard, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
       { href: "/clientes", label: "Clientes", icone: Contact, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
       { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"] }
     ]
