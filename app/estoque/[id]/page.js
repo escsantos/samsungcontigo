@@ -2,8 +2,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft, ShieldAlert, Search, Check, AlertTriangle, Package, Truck,
-  Receipt, Paperclip, PackageCheck, Send, ExternalLink
+  ArrowLeft, ShieldAlert, Search, Check, AlertTriangle, Package,
+  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
@@ -28,18 +28,18 @@ export default function EstoquePedidoPage() {
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState("");
 
-  // etapa "Aguardando Separação/Compra"
+  // pedido de compra (único pro pedido inteiro)
   const [numeroPedidoCompra, setNumeroPedidoCompra] = useState("");
-  const [deliveryAdiantada, setDeliveryAdiantada] = useState("");
 
-  // etapa "Peças Compradas"
-  const [deliveryChegada, setDeliveryChegada] = useState("");
+  // delivery por peça (cada linha tem a sua)
+  const [deliveries, setDeliveries] = useState({});
+  const [buscandoItem, setBuscandoItem] = useState({});
+  const [erroItem, setErroItem] = useState({});
 
   // etapa "Em Estoque - Aguardando Faturamento"
   const [valorPago, setValorPago] = useState("");
   const [dataPagamento, setDataPagamento] = useState(hoje());
   const [arquivoAnexo, setArquivoAnexo] = useState(null);
-  const [linkComprovante, setLinkComprovante] = useState("");
 
   // romaneio
   const [romaneioAberto, setRomaneioAberto] = useState(false);
@@ -81,6 +81,8 @@ export default function EstoquePedidoPage() {
 
   const cor = CORES_STATUS[orcamento.status] || { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
   const IconeAtual = ICONES_STATUS[orcamento.status];
+  const podeInformarDelivery = ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status);
+  const todosLiberados = itens.length > 0 && itens.every((i) => i.liberado);
 
   // ---------- ações ----------
 
@@ -97,54 +99,54 @@ export default function EstoquePedidoPage() {
     carregar();
   }
 
-  async function processarDelivery(delivery, statusDestino) {
-    if (!delivery.trim()) return false;
-    setProcessando(true);
-    setErro("");
+  async function buscarDeliveryItem(item) {
+    const valor = (deliveries[item.id] || "").trim();
+    if (!valor) return;
+    setBuscandoItem((b) => ({ ...b, [item.id]: true }));
+    setErroItem((e) => ({ ...e, [item.id]: "" }));
 
-    const resultados = [];
-    for (const item of itens) {
-      const { data: lote } = await supabase
-        .from("lotes_pecas")
-        .select("*")
-        .eq("codigo", item.codigo)
-        .eq("no_entrega", delivery.trim())
-        .maybeSingle();
-      resultados.push({ item, lote });
-    }
+    const { data: lote } = await supabase
+      .from("lotes_pecas")
+      .select("*")
+      .eq("codigo", item.codigo)
+      .eq("no_entrega", valor)
+      .maybeSingle();
 
-    const semMatch = resultados.filter((r) => !r.lote);
-    if (semMatch.length > 0) {
-      setProcessando(false);
-      setErro(
-        `Delivery "${delivery.trim()}" não encontrada para o(s) código(s): ${semMatch.map((r) => r.item.codigo).join(", ")}. ` +
-        `Peça pro Administrador atualizar a Base Peças com essa remessa antes de continuar.`
-      );
-      return false;
+    if (!lote) {
+      setBuscandoItem((b) => ({ ...b, [item.id]: false }));
+      setErroItem((e) => ({
+        ...e,
+        [item.id]: `Delivery "${valor}" não encontrada pro código ${item.codigo}. Peça pro Administrador atualizar a Base Peças.`
+      }));
+      return;
     }
 
     const { data: { user } } = await supabase.auth.getUser();
-    for (const r of resultados) {
-      await supabase
-        .from("orcamento_itens")
-        .update({
-          no_entrega: delivery.trim(),
-          custo_real: r.lote.valor_unitario,
-          liberado: true,
-          liberado_por: user.id,
-          liberado_em: new Date().toISOString()
-        })
-        .eq("id", r.item.id);
-    }
     const { error } = await supabase
-      .from("orcamentos")
-      .update({ no_entrega: delivery.trim(), status: statusDestino })
-      .eq("id", id);
+      .from("orcamento_itens")
+      .update({
+        no_entrega: valor,
+        custo_real: lote.valor_unitario,
+        liberado: true,
+        liberado_por: user.id,
+        liberado_em: new Date().toISOString()
+      })
+      .eq("id", item.id);
 
-    setProcessando(false);
-    if (error) { setErro("Falha ao registrar delivery: " + error.message); return false; }
-    carregar();
-    return true;
+    setBuscandoItem((b) => ({ ...b, [item.id]: false }));
+    if (error) {
+      setErroItem((e) => ({ ...e, [item.id]: "Falha ao salvar: " + error.message }));
+      return;
+    }
+
+    const itensAtualizados = itens.map((i) => (i.id === item.id ? { ...i, no_entrega: valor, custo_real: lote.valor_unitario, liberado: true } : i));
+    setItens(itensAtualizados);
+
+    // quando a última peça é liberada, o pedido inteiro avança pro faturamento
+    if (itensAtualizados.every((i) => i.liberado)) {
+      await supabase.from("orcamentos").update({ status: "Em Estoque - Aguardando Faturamento" }).eq("id", id);
+      carregar();
+    }
   }
 
   async function registrarFaturamento() {
@@ -256,9 +258,6 @@ export default function EstoquePedidoPage() {
         {orcamento.numero_pedido_compra && (
           <p className="text-xs text-muted mt-3">Nº do pedido de compra: <span className="font-mono">{orcamento.numero_pedido_compra}</span></p>
         )}
-        {orcamento.no_entrega && (
-          <p className="text-xs text-muted mt-1">Delivery: <span className="font-mono">{orcamento.no_entrega}</span></p>
-        )}
         {orcamento.valor_pago && (
           <p className="text-xs text-muted mt-1">
             Pago: <span className="font-mono">{fmtBRL(orcamento.valor_pago)}</span> em {orcamento.data_pagamento && new Date(orcamento.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}
@@ -276,6 +275,22 @@ export default function EstoquePedidoPage() {
         )}
       </div>
 
+      {orcamento.status === "Aguardando Separação/Compra" && (
+        <div className="card p-5 mb-4">
+          <p className="font-display font-semibold text-sm mb-1 flex items-center gap-2">
+            <Package size={16} style={{ color: "var(--accent)" }} />
+            Precisa comprar?
+          </p>
+          <p className="text-xs text-muted mb-3">
+            Informe o número do pedido de compra feito à Samsung (vale pro pedido inteiro). Se já tiver alguma peça em estoque, pode informar a Delivery dela direto na tabela abaixo, sem precisar comprar.
+          </p>
+          <div className="flex gap-2 max-w-md">
+            <input className="field-input" placeholder="Nº do pedido de compra" value={numeroPedidoCompra} onChange={(e) => setNumeroPedidoCompra(e.target.value)} />
+            <button className="btn-primary shrink-0" disabled={processando || !numeroPedidoCompra.trim()} onClick={registrarCompra}>Registrar</button>
+          </div>
+        </div>
+      )}
+
       <div className="card overflow-hidden mb-4">
         <table className="w-full text-sm">
           <thead>
@@ -284,6 +299,7 @@ export default function EstoquePedidoPage() {
               <th className="text-left px-4 py-2.5">Código</th>
               <th className="text-left px-4 py-2.5">Descrição</th>
               <th className="text-center px-4 py-2.5">Qtd</th>
+              {podeInformarDelivery && <th className="text-left px-4 py-2.5">Delivery</th>}
               <th className="text-right px-4 py-2.5">Custo real</th>
               <th className="text-center px-4 py-2.5">Status</th>
             </tr>
@@ -303,6 +319,32 @@ export default function EstoquePedidoPage() {
                   </td>
                   <td className="px-4 py-2.5">{i.descricao_resumida}</td>
                   <td className="px-4 py-2.5 text-center">{i.qtd}</td>
+                  {podeInformarDelivery && (
+                    <td className="px-4 py-2.5">
+                      {i.liberado ? (
+                        <span className="font-mono text-xs">{i.no_entrega}</span>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            className="field-input py-1.5 text-xs w-28"
+                            placeholder="nº delivery"
+                            value={deliveries[i.id] || ""}
+                            onChange={(e) => setDeliveries((atual) => ({ ...atual, [i.id]: e.target.value }))}
+                          />
+                          <button
+                            onClick={() => buscarDeliveryItem(i)}
+                            disabled={buscandoItem[i.id] || !deliveries[i.id]}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas shrink-0"
+                          >
+                            {buscandoItem[i.id] ? <RefreshCw size={13} className="animate-spin" /> : <Search size={13} />}
+                          </button>
+                        </div>
+                      )}
+                      {erroItem[i.id] && (
+                        <p className="text-[10.5px] text-danger mt-1 max-w-[220px] leading-snug">{erroItem[i.id]}</p>
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(i.custo_real)}</td>
                   <td className="px-4 py-2.5 text-center">
                     {i.liberado ? <Check size={16} style={{ color: "#2C7C6E" }} className="inline" /> : <AlertTriangle size={16} className="text-muted inline" />}
@@ -314,59 +356,10 @@ export default function EstoquePedidoPage() {
         </table>
       </div>
 
-      {/* ---------- ações por etapa ---------- */}
-
-      {orcamento.status === "Aguardando Separação/Compra" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div className="card p-5">
-            <p className="font-display font-semibold text-sm mb-1 flex items-center gap-2">
-              <Package size={16} style={{ color: "var(--accent)" }} />
-              Precisa comprar
-            </p>
-            <p className="text-xs text-muted mb-3">Informe o número do pedido de compra feito à Samsung.</p>
-            <div className="flex gap-2">
-              <input className="field-input" placeholder="Nº do pedido de compra" value={numeroPedidoCompra} onChange={(e) => setNumeroPedidoCompra(e.target.value)} />
-              <button className="btn-primary shrink-0" disabled={processando || !numeroPedidoCompra.trim()} onClick={registrarCompra}>Registrar</button>
-            </div>
-          </div>
-          <div className="card p-5">
-            <p className="font-display font-semibold text-sm mb-1 flex items-center gap-2">
-              <PackageCheck size={16} style={{ color: "#2C7C6E" }} />
-              Já tem em estoque
-            </p>
-            <p className="text-xs text-muted mb-3">Se já tiver a peça, informe a Delivery direto — pula pro faturamento.</p>
-            <div className="flex gap-2">
-              <input className="field-input" placeholder="Nº da Delivery" value={deliveryAdiantada} onChange={(e) => setDeliveryAdiantada(e.target.value)} />
-              <button
-                className="btn-primary shrink-0"
-                disabled={processando || !deliveryAdiantada.trim()}
-                onClick={() => processarDelivery(deliveryAdiantada, "Em Estoque - Aguardando Faturamento")}
-              >
-                Registrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {orcamento.status === "Peças Compradas - Aguardando Chegada" && (
-        <div className="card p-5 mb-4">
-          <p className="font-display font-semibold text-sm mb-1 flex items-center gap-2">
-            <Truck size={16} style={{ color: "var(--accent)" }} />
-            Peça chegou?
-          </p>
-          <p className="text-xs text-muted mb-3">Informe a Delivery pra confirmar o custo exato e liberar pro faturamento.</p>
-          <div className="flex gap-2 max-w-md">
-            <input className="field-input" placeholder="Nº da Delivery" value={deliveryChegada} onChange={(e) => setDeliveryChegada(e.target.value)} />
-            <button
-              className="btn-primary shrink-0"
-              disabled={processando || !deliveryChegada.trim()}
-              onClick={() => processarDelivery(deliveryChegada, "Em Estoque - Aguardando Faturamento")}
-            >
-              Registrar
-            </button>
-          </div>
-        </div>
+      {podeInformarDelivery && !todosLiberados && (
+        <p className="text-xs text-muted -mt-2 mb-4">
+          Assim que todas as peças tiverem Delivery confirmada, o pedido avança sozinho pro Faturamento.
+        </p>
       )}
 
       {orcamento.status === "Em Estoque - Aguardando Faturamento" && (
