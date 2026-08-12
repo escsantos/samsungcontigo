@@ -440,3 +440,29 @@ create policy "criar itens de orcamento"
       and (o.criado_por = auth.uid() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())
     )
   );
+
+-- 9. Pagamentos do faturamento (múltiplas formas, pagamento parcial)
+create table if not exists pagamentos_orcamento (
+  id bigint generated always as identity primary key,
+  orcamento_id bigint not null references orcamentos(id) on delete cascade,
+  forma_pagamento text not null,
+  valor numeric(12,2) not null check (valor > 0),
+  data_pagamento date not null,
+  anexo_url text,
+  registrado_por uuid references perfis(id),
+  registrado_em timestamptz default now()
+);
+
+alter table pagamentos_orcamento enable row level security;
+
+create policy "ver pagamentos"
+  on pagamentos_orcamento for select
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.cliente_id = meu_cliente_id() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())));
+
+create policy "criar pagamentos"
+  on pagamentos_orcamento for insert
+  with check (exists (select 1 from orcamentos o where o.id = orcamento_id and pode_gerenciar_estoque()));
+
+create policy "excluir pagamentos"
+  on pagamentos_orcamento for delete
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and pode_gerenciar_estoque()));

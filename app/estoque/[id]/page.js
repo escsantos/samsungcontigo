@@ -3,13 +3,13 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, ShieldAlert, Search, Check, AlertTriangle, Package,
-  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw
+  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
-import { CORES_STATUS, ICONES_STATUS } from "../../../lib/estoque";
+import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../../lib/estoque";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -37,9 +37,12 @@ export default function EstoquePedidoPage() {
   const [erroItem, setErroItem] = useState({});
 
   // etapa "Em Estoque - Aguardando Faturamento"
-  const [valorPago, setValorPago] = useState("");
+  const [pagamentos, setPagamentos] = useState([]);
+  const [formaPagamento, setFormaPagamento] = useState(FORMAS_PAGAMENTO[0]);
+  const [valorPagamento, setValorPagamento] = useState("");
   const [dataPagamento, setDataPagamento] = useState(hoje());
   const [arquivoAnexo, setArquivoAnexo] = useState(null);
+  const [processandoPagamento, setProcessandoPagamento] = useState(false);
 
   // romaneio
   const [romaneioAberto, setRomaneioAberto] = useState(false);
@@ -56,7 +59,13 @@ export default function EstoquePedidoPage() {
     setOrcamento(orc);
     const { data: its } = await supabase.from("orcamento_itens").select("*").eq("orcamento_id", id).order("id");
     setItens(its || []);
-    if (orc) setValorPago(String(orc.valor_total || ""));
+    const { data: pags } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", id).order("registrado_em");
+    setPagamentos(pags || []);
+    if (orc) {
+      const totalPago = (pags || []).reduce((s, p) => s + Number(p.valor), 0);
+      const faltando = Number(orc.valor_total || 0) - totalPago;
+      setValorPagamento(faltando > 0 ? faltando.toFixed(2) : "");
+    }
   }
 
   if (perfil === undefined || orcamento === undefined) {
@@ -149,9 +158,10 @@ export default function EstoquePedidoPage() {
     }
   }
 
-  async function registrarFaturamento() {
-    if (!valorPago || !dataPagamento) return;
-    setProcessando(true);
+  async function adicionarPagamento() {
+    const valor = parseFloat(valorPagamento);
+    if (!valor || valor <= 0 || !dataPagamento) return;
+    setProcessandoPagamento(true);
     setErro("");
 
     let anexoPath = null;
@@ -159,7 +169,7 @@ export default function EstoquePedidoPage() {
       const nomeArquivo = `${id}/${Date.now()}-${arquivoAnexo.name}`;
       const { error: errUpload } = await supabase.storage.from("comprovantes").upload(nomeArquivo, arquivoAnexo);
       if (errUpload) {
-        setProcessando(false);
+        setProcessandoPagamento(false);
         setErro("Falha ao subir o anexo: " + errUpload.message);
         return;
       }
@@ -167,20 +177,46 @@ export default function EstoquePedidoPage() {
     }
 
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase
-      .from("orcamentos")
-      .update({
-        valor_pago: parseFloat(valorPago),
-        data_pagamento: dataPagamento,
-        anexo_pagamento_url: anexoPath,
-        pagamento_validado_por: user.id,
-        pagamento_validado_em: new Date().toISOString(),
-        status: "Faturamento Efetuado"
-      })
-      .eq("id", id);
+    const { error } = await supabase.from("pagamentos_orcamento").insert({
+      orcamento_id: id,
+      forma_pagamento: formaPagamento,
+      valor,
+      data_pagamento: dataPagamento,
+      anexo_url: anexoPath,
+      registrado_por: user.id
+    });
 
+    if (error) {
+      setProcessandoPagamento(false);
+      setErro("Falha ao registrar pagamento: " + error.message);
+      return;
+    }
+
+    const { data: pagsAtuais } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", id);
+    const totalPago = (pagsAtuais || []).reduce((s, p) => s + Number(p.valor), 0);
+
+    if (totalPago >= Number(orcamento.valor_total) - 0.01) {
+      await supabase
+        .from("orcamentos")
+        .update({
+          valor_pago: totalPago,
+          data_pagamento: dataPagamento,
+          pagamento_validado_por: user.id,
+          pagamento_validado_em: new Date().toISOString(),
+          status: "Faturamento Efetuado"
+        })
+        .eq("id", id);
+    }
+
+    setArquivoAnexo(null);
+    setProcessandoPagamento(false);
+    carregar();
+  }
+
+  async function excluirPagamento(pagamentoId) {
+    setProcessando(true);
+    await supabase.from("pagamentos_orcamento").delete().eq("id", pagamentoId);
     setProcessando(false);
-    if (error) { setErro("Falha ao registrar faturamento: " + error.message); return; }
     carregar();
   }
 
@@ -231,9 +267,9 @@ export default function EstoquePedidoPage() {
     carregar();
   }
 
-  async function verComprovante() {
-    if (!orcamento.anexo_pagamento_url) return;
-    const { data, error } = await supabase.storage.from("comprovantes").createSignedUrl(orcamento.anexo_pagamento_url, 3600);
+  async function verComprovante(anexoUrl) {
+    if (!anexoUrl) return;
+    const { data, error } = await supabase.storage.from("comprovantes").createSignedUrl(anexoUrl, 3600);
     if (!error && data) window.open(data.signedUrl, "_blank");
   }
 
@@ -258,14 +294,9 @@ export default function EstoquePedidoPage() {
         {orcamento.numero_pedido_compra && (
           <p className="text-xs text-muted mt-3">Nº do pedido de compra: <span className="font-mono">{orcamento.numero_pedido_compra}</span></p>
         )}
-        {orcamento.valor_pago && (
+        {orcamento.valor_pago && orcamento.status !== "Em Estoque - Aguardando Faturamento" && (
           <p className="text-xs text-muted mt-1">
             Pago: <span className="font-mono">{fmtBRL(orcamento.valor_pago)}</span> em {orcamento.data_pagamento && new Date(orcamento.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}
-            {orcamento.anexo_pagamento_url && (
-              <button onClick={verComprovante} className="ml-2 underline inline-flex items-center gap-1" style={{ color: "var(--accent)" }}>
-                Ver comprovante <ExternalLink size={11} />
-              </button>
-            )}
           </p>
         )}
         {orcamento.entregue && (
@@ -362,36 +393,100 @@ export default function EstoquePedidoPage() {
         </p>
       )}
 
-      {orcamento.status === "Em Estoque - Aguardando Faturamento" && (
-        <div className="card p-5 mb-4">
-          <p className="font-display font-semibold text-sm mb-1 flex items-center gap-2">
-            <Receipt size={16} style={{ color: "var(--accent)" }} />
-            Registrar faturamento
-          </p>
-          <p className="text-xs text-muted mb-4">Confirme o pagamento feito ao fornecedor pra liberar a próxima etapa.</p>
-          <div className="grid grid-cols-2 gap-4 max-w-lg">
-            <div>
-              <label className="field-label">Valor pago</label>
-              <input type="number" step="0.01" className="field-input" value={valorPago} onChange={(e) => setValorPago(e.target.value)} />
+      {orcamento.status === "Em Estoque - Aguardando Faturamento" && (() => {
+        const totalPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0);
+        const faltando = Number(orcamento.valor_total) - totalPago;
+        return (
+          <div className="card p-5 mb-4">
+            <p className="font-display font-semibold text-sm mb-1 flex items-center gap-2">
+              <Receipt size={16} style={{ color: "var(--accent)" }} />
+              Registrar faturamento
+            </p>
+            <p className="text-xs text-muted mb-4">
+              Só avança pra próxima etapa quando o total pago bater com o valor do pedido ({fmtBRL(orcamento.valor_total)}). Pode registrar mais de uma forma de pagamento.
+            </p>
+
+            {pagamentos.length > 0 && (
+              <div className="mb-4 border border-line rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
+                      <th className="text-left px-3 py-2">Forma</th>
+                      <th className="text-left px-3 py-2">Data</th>
+                      <th className="text-right px-3 py-2">Valor</th>
+                      <th className="px-3 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagamentos.map((p) => (
+                      <tr key={p.id} className="border-b border-line last:border-0">
+                        <td className="px-3 py-2">{p.forma_pagamento}</td>
+                        <td className="px-3 py-2 text-muted">{new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmtBRL(p.valor)}</td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {p.anexo_url && (
+                              <button onClick={() => verComprovante(p.anexo_url)} className="text-muted hover:text-ink" title="Ver comprovante">
+                                <ExternalLink size={13} />
+                              </button>
+                            )}
+                            <button onClick={() => excluirPagamento(p.id)} className="text-muted hover:text-danger" title="Excluir">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between mb-4 px-1">
+              <span className="text-xs text-muted">Total pago: <b className="font-mono text-ink">{fmtBRL(totalPago)}</b></span>
+              {faltando > 0.004 ? (
+                <span className="text-xs font-semibold text-danger">Faltam {fmtBRL(faltando)}</span>
+              ) : (
+                <span className="text-xs font-semibold" style={{ color: "#2C7C6E" }}>Valor completo ✓</span>
+              )}
             </div>
-            <div>
-              <label className="field-label">Data do pagamento</label>
-              <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
+
+            <p className="text-xs font-medium mb-2">Registrar {pagamentos.length > 0 ? "mais uma forma de pagamento" : "pagamento"}</p>
+            <div className="grid grid-cols-2 gap-4 max-w-lg">
+              <div>
+                <label className="field-label">Forma de pagamento</label>
+                <select className="field-input" value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
+                  {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="field-label">Valor</label>
+                <input type="number" step="0.01" className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
+              </div>
+              <div>
+                <label className="field-label">Data do pagamento</label>
+                <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
+              </div>
+              <div>
+                <label className="field-label">Anexo (opcional)</label>
+                <label className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm text-muted hover:border-brand-400 truncate">
+                  <Paperclip size={14} className="shrink-0" />
+                  <span className="truncate">{arquivoAnexo ? arquivoAnexo.name : "Escolher arquivo"}</span>
+                  <input type="file" className="hidden" onChange={(e) => setArquivoAnexo(e.target.files[0] || null)} />
+                </label>
+              </div>
             </div>
-            <div className="col-span-2">
-              <label className="field-label">Anexo (opcional)</label>
-              <label className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm text-muted hover:border-brand-400">
-                <Paperclip size={14} />
-                {arquivoAnexo ? arquivoAnexo.name : "Escolher arquivo (comprovante de pagamento)"}
-                <input type="file" className="hidden" onChange={(e) => setArquivoAnexo(e.target.files[0] || null)} />
-              </label>
-            </div>
+            <button
+              className="btn-primary mt-4"
+              disabled={processandoPagamento || !valorPagamento || !dataPagamento}
+              onClick={adicionarPagamento}
+            >
+              <Plus size={15} />
+              Adicionar pagamento
+            </button>
           </div>
-          <button className="btn-primary mt-4" disabled={processando || !valorPago || !dataPagamento} onClick={registrarFaturamento}>
-            Registrar faturamento
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {orcamento.status === "Faturamento Efetuado" && (
         <div className="card p-5 mb-4 flex items-center justify-between">
