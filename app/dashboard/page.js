@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ShieldAlert, TrendingUp, ShoppingBag, Receipt, Wallet, UserPlus, CheckCircle2
+  ShieldAlert, TrendingUp, ShoppingBag, Receipt, Wallet, UserPlus, CheckCircle2, AlertTriangle
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -26,6 +26,7 @@ function fmtMes(d) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [perfil, setPerfil] = useState(undefined);
   const [carregando, setCarregando] = useState(true);
   const [periodo, setPeriodo] = useState("mes");
@@ -35,6 +36,7 @@ export default function DashboardPage() {
   const [vendedorFiltro, setVendedorFiltro] = useState("");
 
   const [orcamentos, setOrcamentos] = useState([]);
+  const [pendencias, setPendencias] = useState([]);
   const [itens, setItens] = useState([]);
   const [itensLiberados, setItensLiberados] = useState([]);
   const [clientesNovos, setClientesNovos] = useState(0);
@@ -50,6 +52,12 @@ export default function DashboardPage() {
         const { data } = await supabase.from("perfis").select("id, nome").eq("cargo", "Vendedor").order("nome");
         setVendedores(data || []);
       }
+      const { data: pend } = await supabase
+        .from("orcamentos")
+        .select("id, status, pedido_pai_id, parcial, clientes(nome)")
+        .or("parcial.eq.true,pedido_pai_id.not.is.null")
+        .eq("entregue", false);
+      setPendencias(pend || []);
     })();
   }, []);
 
@@ -209,6 +217,16 @@ export default function DashboardPage() {
           </select>
         )}
       </div>
+
+      {pendencias.length > 0 && (
+        <div className="card p-4 mb-4" onClick={() => router.push("/estoque")} style={{ cursor: "pointer" }}>
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={16} style={{ color: "#C2801F" }} />
+            <p className="font-display font-semibold text-sm">{pendencias.length} pedido(s) com pendência de liberação parcial</p>
+            <span className="text-xs text-muted ml-auto">ver no Estoque →</span>
+          </div>
+        </div>
+      )}
 
       {carregando ? (
         <p className="text-sm text-muted">Carregando...</p>

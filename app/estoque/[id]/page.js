@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, ShieldAlert, Search, Check, AlertTriangle, Package,
-  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2
+  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
@@ -30,6 +30,8 @@ export default function EstoquePedidoPage() {
 
   // pedido de compra (único pro pedido inteiro)
   const [numeroPedidoCompra, setNumeroPedidoCompra] = useState("");
+  const [codigoCopiado, setCodigoCopiado] = useState(null);
+  const [confirmarAvanco, setConfirmarAvanco] = useState(null);
 
   // delivery por peça (cada linha tem a sua)
   const [deliveries, setDeliveries] = useState({});
@@ -43,6 +45,11 @@ export default function EstoquePedidoPage() {
   const [dataPagamento, setDataPagamento] = useState(hoje());
   const [arquivoAnexo, setArquivoAnexo] = useState(null);
   const [processandoPagamento, setProcessandoPagamento] = useState(false);
+
+  // liberação parcial
+  const [confirmarParcial, setConfirmarParcial] = useState(false);
+  const [processandoParcial, setProcessandoParcial] = useState(false);
+  const [pedidoFilho, setPedidoFilho] = useState(null);
 
   // romaneio
   const [romaneioAberto, setRomaneioAberto] = useState(false);
@@ -61,6 +68,10 @@ export default function EstoquePedidoPage() {
     setItens(its || []);
     const { data: pags } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", id).order("registrado_em");
     setPagamentos(pags || []);
+    if (orc?.parcial) {
+      const { data: filho } = await supabase.from("orcamentos").select("id, status").eq("pedido_pai_id", id).maybeSingle();
+      setPedidoFilho(filho || null);
+    }
     if (orc) {
       const totalPago = (pags || []).reduce((s, p) => s + Number(p.valor), 0);
       const faltando = Number(orc.valor_total || 0) - totalPago;
@@ -92,6 +103,12 @@ export default function EstoquePedidoPage() {
   const IconeAtual = ICONES_STATUS[orcamento.status];
   const podeInformarDelivery = ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status);
   const todosLiberados = itens.length > 0 && itens.every((i) => i.liberado);
+
+  function copiarCodigo(codigo) {
+    navigator.clipboard.writeText(codigo);
+    setCodigoCopiado(codigo);
+    setTimeout(() => setCodigoCopiado(null), 1500);
+  }
 
   // ---------- ações ----------
 
@@ -151,11 +168,89 @@ export default function EstoquePedidoPage() {
     const itensAtualizados = itens.map((i) => (i.id === item.id ? { ...i, no_entrega: valor, custo_real: lote.valor_unitario, liberado: true } : i));
     setItens(itensAtualizados);
 
-    // quando a última peça é liberada, o pedido inteiro avança pro faturamento
     if (itensAtualizados.every((i) => i.liberado)) {
-      await supabase.from("orcamentos").update({ status: "Em Estoque - Aguardando Faturamento" }).eq("id", id);
-      carregar();
+      if (orcamento.pedido_pai_id) {
+        // pedido filho (peça pendente que acabou de chegar): avança e avisa sozinho, sem faturamento manual de novo
+        await supabase.from("orcamentos").update({ status: "Liberado para Retirada/Entrega" }).eq("id", id);
+        await supabase.from("notificacoes").insert({
+          tipo: "pedido_pendente_pronto",
+          mensagem: `A peça pendente do pedido #${orcamento.pedido_pai_id} chegou — pedido #${id} está pronto para retirada/entrega.`
+        });
+        carregar();
+      } else {
+        setConfirmarAvanco({ de: orcamento.status, para: "Em Estoque - Aguardando Faturamento" });
+      }
     }
+  }
+
+  async function liberarParcialmente() {
+    setProcessandoParcial(true);
+    setErro("");
+
+    const itensProntos = itens.filter((i) => i.liberado);
+    const itensPendentes = itens.filter((i) => !i.liberado);
+    if (itensProntos.length === 0 || itensPendentes.length === 0) {
+      setProcessandoParcial(false);
+      return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const valorPendente = itensPendentes.reduce((s, i) => s + Number(i.venda_total || 0), 0);
+    const statusFilho = orcamento.numero_pedido_compra ? "Peças Compradas - Aguardando Chegada" : "Aguardando Separação/Compra";
+
+    const { data: novoPedido, error: errNovo } = await supabase
+      .from("orcamentos")
+      .insert({
+        cliente_id: orcamento.cliente_id,
+        vendedor_id: orcamento.vendedor_id,
+        criado_por: user.id,
+        status: statusFilho,
+        valor_total: valorPendente,
+        margem: orcamento.margem,
+        imposto_total: orcamento.imposto_total,
+        numero_pedido_compra: orcamento.numero_pedido_compra,
+        pedido_pai_id: id
+      })
+      .select()
+      .single();
+
+    if (errNovo) {
+      setProcessandoParcial(false);
+      setErro("Falha ao separar peça pendente: " + errNovo.message);
+      return;
+    }
+
+    const idsPendentes = itensPendentes.map((i) => i.id);
+    const { error: errMove } = await supabase.from("orcamento_itens").update({ orcamento_id: novoPedido.id }).in("id", idsPendentes);
+    if (errMove) {
+      setProcessandoParcial(false);
+      setErro("Falha ao mover peças pendentes: " + errMove.message);
+      return;
+    }
+
+    const valorPronto = itensProntos.reduce((s, i) => s + Number(i.venda_total || 0), 0);
+    const { error: errAtualiza } = await supabase
+      .from("orcamentos")
+      .update({ valor_total: valorPronto, status: "Em Estoque - Aguardando Faturamento", parcial: true })
+      .eq("id", id);
+
+    setProcessandoParcial(false);
+    if (errAtualiza) {
+      setErro("Falha ao atualizar o pedido: " + errAtualiza.message);
+      return;
+    }
+    setConfirmarParcial(false);
+    carregar();
+  }
+
+  async function confirmarAvancoStatus() {
+    if (!confirmarAvanco) return;
+    setProcessando(true);
+    const { error } = await supabase.from("orcamentos").update({ status: confirmarAvanco.para }).eq("id", id);
+    setProcessando(false);
+    setConfirmarAvanco(null);
+    if (error) { setErro("Falha ao avançar etapa: " + error.message); return; }
+    carregar();
   }
 
   async function adicionarPagamento() {
@@ -304,6 +399,25 @@ export default function EstoquePedidoPage() {
             ✓ Entregue em {new Date(orcamento.entregue_em).toLocaleDateString("pt-BR")}
           </p>
         )}
+        {orcamento.pedido_pai_id && (
+          <div className="mt-3 rounded-lg px-3 py-2 text-xs" style={{ background: "rgba(122,79,176,0.10)", color: "#7A4FB0" }}>
+            Este pedido é uma peça pendente separada do{" "}
+            <button onClick={() => router.push(`/estoque/${orcamento.pedido_pai_id}`)} className="underline font-medium">
+              pedido #{orcamento.pedido_pai_id}
+            </button>.
+          </div>
+        )}
+        {orcamento.parcial && pedidoFilho && (
+          <div className="mt-3 rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-2" style={{ background: "rgba(232,163,61,0.12)", color: "#C2801F" }}>
+            <span>
+              Liberado parcialmente — a peça pendente virou o{" "}
+              <button onClick={() => router.push(`/estoque/${pedidoFilho.id}`)} className="underline font-medium">
+                pedido #{pedidoFilho.id}
+              </button>{" "}
+              ({pedidoFilho.status}).
+            </span>
+          </div>
+        )}
       </div>
 
       {orcamento.status === "Aguardando Separação/Compra" && (
@@ -343,9 +457,16 @@ export default function EstoquePedidoPage() {
                 <tr key={i.id} className="border-b border-line last:border-0">
                   <td className="px-4 py-2.5 font-mono font-medium">{i.modelo}</td>
                   <td className="px-4 py-2.5 font-mono" style={{ color: "var(--accent)" }}>
-                    <span className="inline-flex items-center gap-1">
+                    <span className="inline-flex items-center gap-1.5">
                       <Icone size={11} style={{ color: corCat.fg }} />
                       {i.codigo}
+                      <button
+                        onClick={() => copiarCodigo(i.codigo)}
+                        title="Copiar código"
+                        className="text-muted hover:text-ink"
+                      >
+                        {codigoCopiado === i.codigo ? <Check size={12} style={{ color: "#2C7C6E" }} /> : <Copy size={12} />}
+                      </button>
                     </span>
                   </td>
                   <td className="px-4 py-2.5">{i.descricao_resumida}</td>
@@ -388,9 +509,16 @@ export default function EstoquePedidoPage() {
       </div>
 
       {podeInformarDelivery && !todosLiberados && (
-        <p className="text-xs text-muted -mt-2 mb-4">
-          Assim que todas as peças tiverem Delivery confirmada, o pedido avança sozinho pro Faturamento.
-        </p>
+        <div className="flex items-center justify-between flex-wrap gap-3 -mt-2 mb-4">
+          <p className="text-xs text-muted">
+            Assim que todas as peças tiverem Delivery confirmada, o pedido avança sozinho pro Faturamento.
+          </p>
+          {itens.some((i) => i.liberado) && (
+            <button className="btn-secondary text-xs py-2" onClick={() => setConfirmarParcial(true)}>
+              Liberar Parcialmente
+            </button>
+          )}
+        </div>
       )}
 
       {orcamento.status === "Em Estoque - Aguardando Faturamento" && (() => {
@@ -515,6 +643,84 @@ export default function EstoquePedidoPage() {
       )}
 
       {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
+
+      <Modal
+        open={!!confirmarAvanco}
+        onClose={() => setConfirmarAvanco(null)}
+        title="Todas as peças foram liberadas"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setConfirmarAvanco(null)}>Ainda não</button>
+            <button className="btn-primary" disabled={processando} onClick={confirmarAvancoStatus}>Confirmar avanço</button>
+          </>
+        }
+      >
+        {confirmarAvanco && (
+          <>
+            <div className="flex items-center gap-2.5 flex-wrap mb-4">
+              <span
+                className="text-xs font-mono font-bold px-3 py-1.5 rounded-full"
+                style={{ background: (CORES_STATUS[confirmarAvanco.de] || {}).bg, color: (CORES_STATUS[confirmarAvanco.de] || {}).fg }}
+              >
+                {confirmarAvanco.de}
+              </span>
+              <ArrowRight size={16} className="text-muted shrink-0" />
+              <span
+                className="text-xs font-mono font-bold px-3 py-1.5 rounded-full"
+                style={{ background: (CORES_STATUS[confirmarAvanco.para] || {}).bg, color: (CORES_STATUS[confirmarAvanco.para] || {}).fg }}
+              >
+                {confirmarAvanco.para}
+              </span>
+            </div>
+            <p className="text-sm text-muted">
+              Todas as peças do pedido #{orcamento.id} já têm Delivery confirmada. Confirma o avanço pra próxima etapa?
+            </p>
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        open={confirmarParcial}
+        onClose={() => setConfirmarParcial(false)}
+        title="Liberar parcialmente?"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setConfirmarParcial(false)}>Cancelar</button>
+            <button className="btn-primary" disabled={processandoParcial} onClick={liberarParcialmente}>Confirmar liberação parcial</button>
+          </>
+        }
+      >
+        <div className="flex items-center gap-2.5 flex-wrap mb-4">
+          <span
+            className="text-xs font-mono font-bold px-3 py-1.5 rounded-full"
+            style={{ background: (CORES_STATUS[orcamento.status] || {}).bg, color: (CORES_STATUS[orcamento.status] || {}).fg }}
+          >
+            {orcamento.status}
+          </span>
+          <ArrowRight size={16} className="text-muted shrink-0" />
+          <span
+            className="text-xs font-mono font-bold px-3 py-1.5 rounded-full"
+            style={{ background: CORES_STATUS["Em Estoque - Aguardando Faturamento"].bg, color: CORES_STATUS["Em Estoque - Aguardando Faturamento"].fg }}
+          >
+            Em Estoque - Aguardando Faturamento
+          </span>
+        </div>
+        <p className="text-sm text-muted mb-3">
+          As peças abaixo seguem agora pro Faturamento. As demais viram um pedido novo, separado, pra acompanhar até a delivery chegar.
+        </p>
+        <div className="space-y-1.5 mb-3">
+          <p className="text-xs font-semibold" style={{ color: "#2C7C6E" }}>Seguem agora ({itens.filter((i) => i.liberado).length})</p>
+          {itens.filter((i) => i.liberado).map((i) => (
+            <p key={i.id} className="text-xs text-muted pl-2">{i.codigo} — {i.descricao_resumida}</p>
+          ))}
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-danger">Ficam pendentes ({itens.filter((i) => !i.liberado).length})</p>
+          {itens.filter((i) => !i.liberado).map((i) => (
+            <p key={i.id} className="text-xs text-muted pl-2">{i.codigo} — {i.descricao_resumida}</p>
+          ))}
+        </div>
+      </Modal>
 
       <Modal
         open={romaneioAberto}

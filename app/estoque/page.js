@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldAlert, ChevronRight } from "lucide-react";
+import { ShieldAlert, ChevronRight, AlertTriangle } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS } from "../../lib/estoque";
@@ -51,11 +51,42 @@ export default function EstoquePage() {
   ORDEM_STATUS.forEach((s) => (contagem[s] = 0));
   lista.forEach((o) => { if (contagem[o.status] !== undefined) contagem[o.status]++; });
   const rejeitados = lista.filter((o) => o.status === "Rejeitado").length;
+  const pendencias = lista.filter((o) => o.parcial || o.pedido_pai_id);
 
   const filtrados = filtro ? lista.filter((o) => o.status === filtro) : lista;
 
   return (
     <AppShell titulo="Estoque">
+      {pendencias.length > 0 && (
+        <div className="card p-4 mb-4" style={{ borderColor: "#E8A33D" }}>
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle size={16} style={{ color: "#C2801F" }} />
+            <p className="font-display font-semibold text-sm">{pendencias.length} pedido(s) com pendência de liberação parcial</p>
+          </div>
+          <div className="space-y-1.5">
+            {pendencias.map((o) => (
+              <button
+                key={o.id}
+                onClick={() => router.push(`/estoque/${o.id}`)}
+                className="w-full text-left flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg hover:bg-canvas"
+              >
+                <span>
+                  Pedido #{o.id} — {o.clientes?.nome || "—"}{" "}
+                  {o.pedido_pai_id ? (
+                    <span className="text-muted">(peça pendente do pedido #{o.pedido_pai_id})</span>
+                  ) : (
+                    <span className="text-muted">(liberado parcialmente, aguardando o restante)</span>
+                  )}
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded" style={{ background: (CORES_STATUS[o.status] || {}).bg, color: (CORES_STATUS[o.status] || {}).fg }}>
+                  {o.status}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="card p-5 mb-4 overflow-x-auto">
         <p className="font-display font-semibold text-[15px] mb-4">Linha do tempo dos pedidos</p>
         <div className="flex items-stretch gap-1 min-w-[900px]">
@@ -136,7 +167,14 @@ export default function EstoquePage() {
                     onClick={() => router.push(`/estoque/${o.id}`)}
                   >
                     <td className="px-4 py-2.5 font-mono text-muted">#{o.id}</td>
-                    <td className="px-4 py-2.5 font-medium">{o.clientes?.nome || "—"}</td>
+                    <td className="px-4 py-2.5 font-medium">
+                      {o.clientes?.nome || "—"}
+                      {(o.parcial || o.pedido_pai_id) && (
+                        <span className="ml-2 text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(232,163,61,0.14)", color: "#C2801F" }}>
+                          PARCIAL
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 text-muted">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</td>
                     <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmtBRL(o.valor_total)}</td>
                     <td className="px-4 py-2.5">

@@ -287,6 +287,11 @@ returns boolean language sql security definer set search_path = public stable as
   select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente'));
 $$;
 
+create or replace function pode_gerenciar_estoque()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Estoque'));
+$$;
+
 create table if not exists orcamentos (
   id bigint generated always as identity primary key,
   cliente_id bigint not null references clientes(id),
@@ -310,7 +315,7 @@ create policy "ver orcamentos"
 
 create policy "criar orcamentos"
   on orcamentos for insert
-  with check (criado_por = auth.uid() and (cliente_id = meu_cliente_id() or pode_gerenciar_clientes()));
+  with check (criado_por = auth.uid() and (cliente_id = meu_cliente_id() or pode_gerenciar_clientes() or pode_gerenciar_estoque()));
 
 create policy "revisar orcamentos"
   on orcamentos for update
@@ -365,11 +370,6 @@ create table if not exists lotes_pecas (
 create index if not exists idx_lotes_codigo on lotes_pecas (codigo);
 
 alter table lotes_pecas enable row level security;
-
-create or replace function pode_gerenciar_estoque()
-returns boolean language sql security definer set search_path = public stable as $$
-  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Estoque'));
-$$;
 
 create policy "estoque le lotes"
   on lotes_pecas for select
@@ -466,3 +466,15 @@ create policy "criar pagamentos"
 create policy "excluir pagamentos"
   on pagamentos_orcamento for delete
   using (exists (select 1 from orcamentos o where o.id = orcamento_id and pode_gerenciar_estoque()));
+
+-- 10. Liberação parcial (pedido "filho" pra peça pendente)
+alter table orcamentos add column if not exists pedido_pai_id bigint references orcamentos(id);
+alter table orcamentos add column if not exists parcial boolean default false;
+
+alter table notificacoes drop constraint if exists notificacoes_tipo_check;
+alter table notificacoes add constraint notificacoes_tipo_check
+  check (tipo in ('esqueci_senha', 'pedido_pendente_pronto'));
+
+create policy "estoque cria notificacao de pendencia"
+  on notificacoes for insert
+  with check (tipo = 'pedido_pendente_pronto' and pode_gerenciar_estoque());
