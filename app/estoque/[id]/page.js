@@ -45,6 +45,7 @@ export default function EstoquePedidoPage() {
   const [dataPagamento, setDataPagamento] = useState(hoje());
   const [arquivoAnexo, setArquivoAnexo] = useState(null);
   const [processandoPagamento, setProcessandoPagamento] = useState(false);
+  const [pagamentoModalAberto, setPagamentoModalAberto] = useState(false);
 
   // liberação parcial
   const [confirmarParcial, setConfirmarParcial] = useState(false);
@@ -253,7 +254,7 @@ export default function EstoquePedidoPage() {
     carregar();
   }
 
-  async function adicionarPagamento() {
+  async function adicionarPagamentoModal() {
     const valor = parseFloat(valorPagamento);
     if (!valor || valor <= 0 || !dataPagamento) return;
     setProcessandoPagamento(true);
@@ -304,6 +305,7 @@ export default function EstoquePedidoPage() {
     }
 
     setArquivoAnexo(null);
+    setValorPagamento("");
     setProcessandoPagamento(false);
     carregar();
   }
@@ -381,8 +383,8 @@ export default function EstoquePedidoPage() {
             <p className="font-display font-semibold text-lg">{orcamento.clientes?.nome}</p>
             <p className="text-sm text-muted">{orcamento.clientes?.celular || orcamento.clientes?.email || ""}</p>
           </div>
-          <span className="text-xs font-mono font-bold px-3 py-1 rounded-full inline-flex items-center gap-1.5" style={{ background: cor.bg, color: cor.fg }}>
-            {IconeAtual && <IconeAtual size={13} />}
+          <span className="text-sm font-mono font-bold px-4 py-2 rounded-full inline-flex items-center gap-2" style={{ background: cor.bg, color: cor.fg }}>
+            {IconeAtual && <IconeAtual size={17} />}
             {orcamento.status}
           </span>
         </div>
@@ -446,6 +448,7 @@ export default function EstoquePedidoPage() {
               <th className="text-center px-4 py-2.5">Qtd</th>
               {podeInformarDelivery && <th className="text-left px-4 py-2.5">Delivery</th>}
               <th className="text-right px-4 py-2.5">Custo real</th>
+              <th className="text-right px-4 py-2.5">Venda</th>
               <th className="text-center px-4 py-2.5">Status</th>
             </tr>
           </thead>
@@ -498,6 +501,7 @@ export default function EstoquePedidoPage() {
                     </td>
                   )}
                   <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(i.custo_real)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: "#2C7C6E" }}>{fmtBRL(i.venda_total)}</td>
                   <td className="px-4 py-2.5 text-center">
                     {i.liberado ? <Check size={16} style={{ color: "#2C7C6E" }} className="inline" /> : <AlertTriangle size={16} className="text-muted inline" />}
                   </td>
@@ -505,6 +509,14 @@ export default function EstoquePedidoPage() {
               );
             })}
           </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-line bg-canvas font-semibold">
+              <td className="px-4 py-2.5" colSpan={podeInformarDelivery ? 5 : 4}>Total</td>
+              <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(itens.reduce((s, i) => s + Number(i.custo_real || 0), 0))}</td>
+              <td className="px-4 py-2.5 text-right font-mono" style={{ color: "#2C7C6E" }}>{fmtBRL(itens.reduce((s, i) => s + Number(i.venda_total || 0), 0))}</td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
@@ -526,95 +538,141 @@ export default function EstoquePedidoPage() {
         const faltando = Number(orcamento.valor_total) - totalPago;
         return (
           <div className="card p-5 mb-4">
-            <p className="font-display font-semibold text-sm mb-1 flex items-center gap-2">
-              <Receipt size={16} style={{ color: "var(--accent)" }} />
-              Registrar faturamento
-            </p>
-            <p className="text-xs text-muted mb-4">
-              Só avança pra próxima etapa quando o total pago bater com o valor do pedido ({fmtBRL(orcamento.valor_total)}). Pode registrar mais de uma forma de pagamento.
-            </p>
-
-            {pagamentos.length > 0 && (
-              <div className="mb-4 border border-line rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
-                      <th className="text-left px-3 py-2">Forma</th>
-                      <th className="text-left px-3 py-2">Data</th>
-                      <th className="text-right px-3 py-2">Valor</th>
-                      <th className="px-3 py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pagamentos.map((p) => (
-                      <tr key={p.id} className="border-b border-line last:border-0">
-                        <td className="px-3 py-2">{p.forma_pagamento}</td>
-                        <td className="px-3 py-2 text-muted">{new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}</td>
-                        <td className="px-3 py-2 text-right font-mono">{fmtBRL(p.valor)}</td>
-                        <td className="px-3 py-2 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {p.anexo_url && (
-                              <button onClick={() => verComprovante(p.anexo_url)} className="text-muted hover:text-ink" title="Ver comprovante">
-                                <ExternalLink size={13} />
-                              </button>
-                            )}
-                            <button onClick={() => excluirPagamento(p.id)} className="text-muted hover:text-danger" title="Excluir">
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="font-display font-semibold text-sm flex items-center gap-2 mb-1">
+                  <Receipt size={16} style={{ color: "var(--accent)" }} />
+                  Faturamento
+                </p>
+                <p className="text-xs text-muted">
+                  Total pago: <b className="font-mono text-ink">{fmtBRL(totalPago)}</b>
+                  {" · "}
+                  {faltando > 0.004 ? (
+                    <span className="font-semibold text-danger">Faltam {fmtBRL(faltando)}</span>
+                  ) : (
+                    <span className="font-semibold" style={{ color: "#2C7C6E" }}>Valor completo ✓</span>
+                  )}
+                </p>
               </div>
-            )}
-
-            <div className="flex items-center justify-between mb-4 px-1">
-              <span className="text-xs text-muted">Total pago: <b className="font-mono text-ink">{fmtBRL(totalPago)}</b></span>
-              {faltando > 0.004 ? (
-                <span className="text-xs font-semibold text-danger">Faltam {fmtBRL(faltando)}</span>
-              ) : (
-                <span className="text-xs font-semibold" style={{ color: "#2C7C6E" }}>Valor completo ✓</span>
-              )}
+              <button className="btn-primary" onClick={() => setPagamentoModalAberto(true)}>
+                <Plus size={15} />
+                Inserir Pagamento
+              </button>
             </div>
-
-            <p className="text-xs font-medium mb-2">Registrar {pagamentos.length > 0 ? "mais uma forma de pagamento" : "pagamento"}</p>
-            <div className="grid grid-cols-2 gap-4 max-w-lg">
-              <div>
-                <label className="field-label">Forma de pagamento</label>
-                <select className="field-input" value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
-                  {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">Valor</label>
-                <input type="number" step="0.01" className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
-              </div>
-              <div>
-                <label className="field-label">Data do pagamento</label>
-                <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
-              </div>
-              <div>
-                <label className="field-label">Anexo (opcional)</label>
-                <label className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm text-muted hover:border-brand-400 truncate">
-                  <Paperclip size={14} className="shrink-0" />
-                  <span className="truncate">{arquivoAnexo ? arquivoAnexo.name : "Escolher arquivo"}</span>
-                  <input type="file" className="hidden" onChange={(e) => setArquivoAnexo(e.target.files[0] || null)} />
-                </label>
-              </div>
-            </div>
-            <button
-              className="btn-primary mt-4"
-              disabled={processandoPagamento || !valorPagamento || !dataPagamento}
-              onClick={adicionarPagamento}
-            >
-              <Plus size={15} />
-              Adicionar pagamento
-            </button>
           </div>
         );
       })()}
+
+      <Modal
+        open={pagamentoModalAberto}
+        onClose={() => setPagamentoModalAberto(false)}
+        title="Registrar pagamento"
+        tamanho="lg"
+      >
+        {orcamento.status !== "Em Estoque - Aguardando Faturamento" ? (
+          <div className="text-center py-4">
+            <Check size={32} className="mx-auto mb-3" style={{ color: "#2C7C6E" }} />
+            <p className="font-display font-semibold mb-1">Faturamento completo!</p>
+            <p className="text-sm text-muted mb-5">O pedido avançou para "{orcamento.status}".</p>
+            <button className="btn-primary" onClick={() => setPagamentoModalAberto(false)}>Fechar</button>
+          </div>
+        ) : (() => {
+          const totalPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0);
+          const faltando = Number(orcamento.valor_total) - totalPago;
+          return (
+            <>
+              <p className="text-xs text-muted mb-4">
+                Valor do pedido: <b className="text-ink">{fmtBRL(orcamento.valor_total)}</b>. Pode registrar quantas formas de pagamento precisar (ex: parte PIX, parte cartão).
+              </p>
+
+              {pagamentos.length > 0 && (
+                <div className="mb-4 border border-line rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
+                        <th className="text-left px-3 py-2">Forma</th>
+                        <th className="text-left px-3 py-2">Data</th>
+                        <th className="text-right px-3 py-2">Valor</th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagamentos.map((p) => (
+                        <tr key={p.id} className="border-b border-line last:border-0">
+                          <td className="px-3 py-2">{p.forma_pagamento}</td>
+                          <td className="px-3 py-2 text-muted">{new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmtBRL(p.valor)}</td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {p.anexo_url && (
+                                <button onClick={() => verComprovante(p.anexo_url)} className="text-muted hover:text-ink" title="Ver comprovante">
+                                  <ExternalLink size={13} />
+                                </button>
+                              )}
+                              <button onClick={() => excluirPagamento(p.id)} className="text-muted hover:text-danger" title="Excluir">
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between mb-4 px-1">
+                <span className="text-xs text-muted">Total pago: <b className="font-mono text-ink">{fmtBRL(totalPago)}</b></span>
+                {faltando > 0.004 ? (
+                  <span className="text-xs font-semibold text-danger">Faltam {fmtBRL(faltando)}</span>
+                ) : (
+                  <span className="text-xs font-semibold" style={{ color: "#2C7C6E" }}>Valor completo ✓</span>
+                )}
+              </div>
+
+              {faltando > 0.004 && (
+                <>
+                  <p className="text-xs font-semibold mb-2">{pagamentos.length > 0 ? "Adicionar mais uma forma de pagamento" : "Registrar pagamento"}</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="field-label">Forma de pagamento</label>
+                      <select className="field-input" value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
+                        {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="field-label">Valor</label>
+                      <input type="number" step="0.01" className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="field-label">Data do pagamento</label>
+                      <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="field-label">Anexo (opcional)</label>
+                      <label className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm text-muted hover:border-brand-400 truncate">
+                        <Paperclip size={14} className="shrink-0" />
+                        <span className="truncate">{arquivoAnexo ? arquivoAnexo.name : "Escolher arquivo"}</span>
+                        <input type="file" className="hidden" onChange={(e) => setArquivoAnexo(e.target.files[0] || null)} />
+                      </label>
+                    </div>
+                  </div>
+                  <button
+                    className="btn-primary mt-5"
+                    disabled={processandoPagamento || !valorPagamento || !dataPagamento}
+                    onClick={adicionarPagamentoModal}
+                  >
+                    <Plus size={15} />
+                    {processandoPagamento ? "Salvando..." : "Adicionar pagamento"}
+                  </button>
+                </>
+              )}
+
+              {erro && <div className="mt-4 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
+            </>
+          );
+        })()}
+      </Modal>
 
       {orcamento.status === "Faturamento Efetuado" && (
         <div className="card p-5 mb-4 flex items-center justify-between">
