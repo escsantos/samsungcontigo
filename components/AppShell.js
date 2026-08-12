@@ -19,52 +19,49 @@ const ITENS_TOPO = [
   { href: "/pecas", label: "Consulta de Peças", icone: Search, cargos: null }
 ];
 
-// Grupos recolhíveis
-const GRUPOS_MENU = [
+// Grupos recolhíveis — cada um tem uma tela de cards própria (href do grupo)
+export const GRUPOS_MENU = [
   {
     id: "vendas",
     label: "Vendas",
     icone: Briefcase,
+    href: "/menu/vendas",
     itens: [
-      { href: "/dashboard", label: "Dashboard de Vendas", icone: LayoutDashboard, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
-      { href: "/clientes", label: "Clientes", icone: Contact, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
-      { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"] }
+      { href: "/dashboard", label: "Dashboard de Vendas", icone: LayoutDashboard, cor: "#3FA796", descricao: "Cards, gráficos e ranking de vendas por período.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
+      { href: "/clientes", label: "Clientes", icone: Contact, cor: "#8B5CF6", descricao: "Cadastre e gerencie os clientes da loja.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
+      { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cor: "#4A90D9", descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"] }
     ]
   },
   {
     id: "estoque",
     label: "Estoque",
     icone: Warehouse,
+    href: "/menu/estoque",
     itens: [
-      { href: "/estoque", label: "Painel de Estoque", icone: Warehouse, cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
-      { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cargos: ["Administrador", "Diretor", "Gerente"] }
+      { href: "/estoque", label: "Painel de Estoque", icone: Warehouse, cor: "#2E7F97", descricao: "Acompanhe a linha do tempo dos pedidos e libere peças por Delivery.", cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
+      { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cor: "#4338CA", descricao: "Custo real, imposto e lucro líquido das peças já liberadas.", cargos: ["Administrador", "Diretor", "Gerente"] }
     ]
   },
   {
     id: "sistema",
     label: "Sistema",
     icone: Settings,
+    href: "/configuracoes",
     itens: [
-      { href: "/notificacoes", label: "Notificações", icone: Bell, cargos: ["Administrador", "Diretor", "Gerente"] },
-      { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cargos: ["Administrador"] },
-      { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cargos: ["Administrador"] },
-      { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cargos: ["Administrador", "Diretor", "Gerente"] }
+      { href: "/notificacoes", label: "Notificações", icone: Bell, cor: "#E1614F", descricao: "Avisos do sistema, como solicitações de redefinição de senha.", cargos: ["Administrador", "Diretor", "Gerente"] },
+      { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cor: "#2E6DA8", descricao: "Suba as planilhas de peças e ordens de serviço para atualizar a base.", cargos: ["Administrador"] },
+      { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cor: "#C2801F", descricao: "Cadastre os impostos usados no cálculo do preço de venda.", cargos: ["Administrador"] },
+      { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cor: "#7A4FB0", descricao: "Crie logins, defina cargos e controle o acesso ao sistema.", cargos: ["Administrador", "Diretor", "Gerente"] }
     ]
   }
 ];
 
 // mantido pra tela /configuracoes (hub de cards) continuar funcionando
-export const ITENS_CONFIGURACOES = [
-  { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cargos: ["Administrador"], descricao: "Suba as planilhas de peças e ordens de serviço para atualizar a base de custos." },
-  { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cargos: ["Administrador"], descricao: "Cadastre e gerencie os impostos usados no cálculo do preço de venda." },
-  { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cargos: ["Administrador", "Diretor", "Gerente"], descricao: "Crie logins, defina cargos, resete senhas e controle o acesso ao sistema." },
-  { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cargos: ["Administrador", "Diretor", "Gerente"], descricao: "Custo real, imposto, lucro líquido e margem das peças já liberadas." }
-];
+export const ITENS_CONFIGURACOES = GRUPOS_MENU.find((g) => g.id === "sistema").itens;
 
 export default function AppShell({ titulo, children }) {
   const [perfil, setPerfil] = useState(null);
   const [carregando, setCarregando] = useState(true);
-  const [gruposAbertos, setGruposAbertos] = useState({});
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
@@ -112,18 +109,10 @@ export default function AppShell({ titulo, children }) {
     };
   }, [router]);
 
-  // abre automaticamente o grupo que contém a página atual
+  // fecha o menu mobile ao trocar de página
   useEffect(() => {
-    const grupoAtivo = GRUPOS_MENU.find((g) => g.itens.some((item) => pathname.startsWith(item.href)));
-    if (grupoAtivo) {
-      setGruposAbertos((atual) => ({ ...atual, [grupoAtivo.id]: true }));
-    }
     setMenuMobileAberto(false);
   }, [pathname]);
-
-  function alternarGrupo(id) {
-    setGruposAbertos((atual) => ({ ...atual, [id]: !atual[id] }));
-  }
 
   async function sair() {
     await supabase.auth.signOut();
@@ -191,21 +180,21 @@ export default function AppShell({ titulo, children }) {
             const itensVisiveis = grupo.itens.filter((item) => item.cargos.includes(perfil?.cargo));
             if (itensVisiveis.length === 0) return null;
             const GrupoIcone = grupo.icone;
-            const aberto = !!gruposAbertos[grupo.id];
-            const grupoAtivo = itensVisiveis.some((item) => pathname.startsWith(item.href));
+            const grupoAtivo = itensVisiveis.some((item) => pathname.startsWith(item.href)) || pathname === grupo.href;
+            const aberto = grupoAtivo;
 
             return (
               <div key={grupo.id} className="pt-1">
-                <button
-                  onClick={() => alternarGrupo(grupo.id)}
+                <Link
+                  href={grupo.href}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
-                    grupoAtivo && !aberto ? "bg-white/10 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
+                    grupoAtivo ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
                   }`}
                 >
                   <GrupoIcone size={17} />
                   <span className="flex-1 text-left">{grupo.label}</span>
                   <ChevronDown size={14} className="transition-transform" style={{ transform: aberto ? "rotate(180deg)" : "rotate(0deg)" }} />
-                </button>
+                </Link>
 
                 {aberto && (
                   <div className="mt-0.5 space-y-0.5">
