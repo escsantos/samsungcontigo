@@ -1,26 +1,34 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldAlert, ChevronRight, AlertTriangle, PackageOpen } from "lucide-react";
+import { ShieldAlert, ChevronRight, FileBarChart } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS } from "../../lib/estoque";
+import { semanaAtualStr, mesAtualStr, calcularSemanaISO, calcularMesEscolhido } from "../../lib/periodoEscolhido";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-
-const COR_ENTREGUE = { bg: "rgba(44,124,110,0.16)", fg: "#2C7C6E" };
+function fmtBRLCompacto(v) {
+  if (!v) return "R$ 0";
+  if (v >= 1000) return "R$ " + (v / 1000).toFixed(1).replace(".", ",") + "k";
+  return fmtBRL(v);
+}
 
 export default function EstoquePage() {
   const router = useRouter();
   const [perfil, setPerfil] = useState(undefined);
-  const [lista, setLista] = useState([]);
+  const [todosPedidos, setTodosPedidos] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [filtro, setFiltro] = useState(null);
   const [pendenciasAbertas, setPendenciasAbertas] = useState(false);
   const balaoRef = useRef(null);
+
+  const [periodo, setPeriodo] = useState("todos");
+  const [semanaEscolhida, setSemanaEscolhida] = useState(semanaAtualStr());
+  const [mesEscolhido, setMesEscolhido] = useState(mesAtualStr());
 
   useEffect(() => {
     (async () => {
@@ -29,8 +37,9 @@ export default function EstoquePage() {
         .from("orcamentos")
         .select("*, clientes(nome)")
         .neq("status", "Pendente de Análise")
+        .eq("entregue", false)
         .order("criado_em", { ascending: false });
-      setLista(data || []);
+      setTodosPedidos(data || []);
       setCarregando(false);
     })();
   }, []);
@@ -42,6 +51,20 @@ export default function EstoquePage() {
     document.addEventListener("mousedown", fora);
     return () => document.removeEventListener("mousedown", fora);
   }, []);
+
+  const intervalo = useMemo(() => {
+    if (periodo === "semana") return calcularSemanaISO(semanaEscolhida);
+    if (periodo === "mes") return calcularMesEscolhido(mesEscolhido);
+    return null;
+  }, [periodo, semanaEscolhida, mesEscolhido]);
+
+  const lista = useMemo(() => {
+    if (!intervalo) return todosPedidos;
+    return todosPedidos.filter((o) => {
+      const t = new Date(o.criado_em).getTime();
+      return t >= intervalo.de.getTime() && t <= intervalo.ate.getTime();
+    });
+  }, [todosPedidos, intervalo]);
 
   if (perfil === undefined) {
     return <AppShell titulo="Estoque"><p className="text-muted text-sm">Carregando...</p></AppShell>;
@@ -60,28 +83,44 @@ export default function EstoquePage() {
   }
 
   const contagem = {};
-  ORDEM_STATUS.forEach((s) => (contagem[s] = 0));
-  let entreguesCount = 0;
+  const somaValor = {};
+  ORDEM_STATUS.forEach((s) => { contagem[s] = 0; somaValor[s] = 0; });
   lista.forEach((o) => {
-    if (o.status === "Liberado para Retirada/Entrega" && o.entregue) {
-      entreguesCount++;
-    } else if (contagem[o.status] !== undefined) {
+    if (contagem[o.status] !== undefined) {
       contagem[o.status]++;
+      somaValor[o.status] += Number(o.valor_total || 0);
     }
   });
   const rejeitados = lista.filter((o) => o.status === "Rejeitado").length;
   const pendencias = lista.filter((o) => o.parcial || o.pedido_pai_id);
 
-  const filtrados = filtro === "Entregue"
-    ? lista.filter((o) => o.entregue)
-    : filtro
-      ? lista.filter((o) => o.status === filtro && !o.entregue)
-      : lista;
+  const filtrados = filtro ? lista.filter((o) => o.status === filtro) : lista;
 
   return (
     <AppShell titulo="Estoque">
-      <div className="flex items-center justify-between mb-4">
-        <div />
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          {[
+            { id: "todos", label: "Todos" },
+            { id: "semana", label: "Semana" },
+            { id: "mes", label: "Mês" }
+          ].map((p) => (
+            <button key={p.id} onClick={() => setPeriodo(p.id)} className={`chip ${periodo === p.id ? "chip-active" : ""}`}>
+              {p.label}
+            </button>
+          ))}
+          {periodo === "semana" && (
+            <input type="week" className="field-input py-1.5 text-xs" value={semanaEscolhida} onChange={(e) => setSemanaEscolhida(e.target.value)} />
+          )}
+          {periodo === "mes" && (
+            <input type="month" className="field-input py-1.5 text-xs" value={mesEscolhido} onChange={(e) => setMesEscolhido(e.target.value)} />
+          )}
+          <button className="btn-secondary text-xs py-2" onClick={() => router.push("/estoque/pedidos")}>
+            <FileBarChart size={13} />
+            Relatório completo
+          </button>
+        </div>
+
         {pendencias.length > 0 && (
           <div className="relative" ref={balaoRef}>
             <button
@@ -126,7 +165,7 @@ export default function EstoquePage() {
 
       <div className="card p-5 mb-4 overflow-x-auto">
         <p className="font-display font-semibold text-[15px] mb-4">Linha do tempo dos pedidos</p>
-        <div className="flex items-stretch gap-1 min-w-[1000px]">
+        <div className="flex items-stretch gap-1 min-w-[900px]">
           {ORDEM_STATUS.map((s, i) => {
             const cor = CORES_STATUS[s];
             const Icone = ICONES_STATUS[s];
@@ -152,31 +191,12 @@ export default function EstoquePage() {
                   </div>
                   <div className="font-mono font-bold text-xl">{contagem[s]}</div>
                   <div className="text-[10px] leading-tight mt-1">{s}</div>
+                  <div className="text-[9.5px] font-mono opacity-80 mt-0.5">{fmtBRLCompacto(somaValor[s])}</div>
                 </button>
-                <ChevronRight size={16} className="text-muted mx-0.5 shrink-0" />
+                {i < ORDEM_STATUS.length - 1 && <ChevronRight size={16} className="text-muted mx-0.5 shrink-0" />}
               </div>
             );
           })}
-          <button
-            onClick={() => setFiltro(filtro === "Entregue" ? null : "Entregue")}
-            className="flex-1 rounded-xl p-3.5 text-center transition hover:-translate-y-0.5"
-            style={{
-              background: filtro === "Entregue" ? COR_ENTREGUE.fg : COR_ENTREGUE.bg,
-              color: filtro === "Entregue" ? "#fff" : COR_ENTREGUE.fg,
-              outline: filtro === "Entregue" ? `2px solid ${COR_ENTREGUE.fg}` : "none",
-              outlineOffset: "2px",
-              boxShadow: filtro === "Entregue" ? "0 4px 10px rgba(0,0,0,0.12)" : "0 1px 0 rgba(0,0,0,0.04), 0 2px 4px rgba(20,24,31,0.05)"
-            }}
-          >
-            <div
-              className="w-9 h-9 rounded-full flex items-center justify-center mx-auto mb-2"
-              style={{ background: filtro === "Entregue" ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.6)" }}
-            >
-              <PackageOpen size={17} />
-            </div>
-            <div className="font-mono font-bold text-xl">{entreguesCount}</div>
-            <div className="text-[10px] leading-tight mt-1">Entregue</div>
-          </button>
         </div>
         {rejeitados > 0 && (
           <button
@@ -193,7 +213,7 @@ export default function EstoquePage() {
       </div>
 
       <div className="flex justify-between items-center mb-3">
-        <p className="text-sm text-muted">{filtrados.length} pedido(s) {filtro ? `em "${filtro}"` : ""}</p>
+        <p className="text-sm text-muted">{filtrados.length} pedido(s) em andamento {filtro ? `— "${filtro}"` : ""}</p>
         {filtro && <button className="text-xs" style={{ color: "var(--accent)" }} onClick={() => setFiltro(null)}>Limpar filtro</button>}
       </div>
 
@@ -201,7 +221,7 @@ export default function EstoquePage() {
         {carregando ? (
           <p className="text-sm text-muted p-6">Carregando...</p>
         ) : filtrados.length === 0 ? (
-          <p className="text-sm text-muted p-6 text-center">Nenhum pedido aqui.</p>
+          <p className="text-sm text-muted p-6 text-center">Nenhum pedido em andamento aqui.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -215,8 +235,8 @@ export default function EstoquePage() {
             </thead>
             <tbody>
               {filtrados.map((o) => {
-                const cor = o.entregue ? COR_ENTREGUE : (CORES_STATUS[o.status] || { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" });
-                const IconeStatus = o.entregue ? PackageOpen : ICONES_STATUS[o.status];
+                const cor = CORES_STATUS[o.status] || { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
+                const IconeStatus = ICONES_STATUS[o.status];
                 return (
                   <tr
                     key={o.id}
@@ -237,7 +257,7 @@ export default function EstoquePage() {
                     <td className="px-4 py-2.5">
                       <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1.5" style={{ background: cor.bg, color: cor.fg }}>
                         {IconeStatus && <IconeStatus size={11} />}
-                        {o.entregue ? "Entregue" : o.status}
+                        {o.status}
                       </span>
                     </td>
                   </tr>

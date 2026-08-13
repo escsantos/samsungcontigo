@@ -39,6 +39,7 @@ export const GRUPOS_MENU = [
     href: "/menu/estoque",
     itens: [
       { href: "/estoque", label: "Painel de Estoque", icone: Warehouse, cor: "#2E7F97", descricao: "Acompanhe a linha do tempo dos pedidos e libere peças por Delivery.", cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
+      { href: "/estoque/pedidos", label: "Relatório de Pedidos", icone: ClipboardList, cor: "#7A4FB0", descricao: "Todos os pedidos com filtros completos, exporta para Excel.", cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
       { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cor: "#4338CA", descricao: "Custo real, imposto e lucro líquido das peças já liberadas.", cargos: ["Administrador", "Diretor", "Gerente"] }
     ]
   },
