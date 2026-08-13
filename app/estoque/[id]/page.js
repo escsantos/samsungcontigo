@@ -447,7 +447,8 @@ export default function EstoquePedidoPage() {
               <th className="text-left px-4 py-2.5">Descrição</th>
               <th className="text-center px-4 py-2.5">Qtd</th>
               <th className="text-left px-4 py-2.5">Delivery</th>
-              <th className="text-right px-4 py-2.5">Custo real</th>
+              <th className="text-right px-4 py-2.5">Custo real (un.)</th>
+              <th className="text-right px-4 py-2.5">Custo Total</th>
               <th className="text-right px-4 py-2.5">Venda</th>
               <th className="text-center px-4 py-2.5">Status</th>
             </tr>
@@ -456,6 +457,7 @@ export default function EstoquePedidoPage() {
             {itens.map((i) => {
               const corCat = corCategoria(i.categoria);
               const Icone = iconeCategoria(i.categoria);
+              const custoTotalItem = Number(i.custo_real || 0) * i.qtd;
               return (
                 <tr key={i.id} className="border-b border-line last:border-0">
                   <td className="px-4 py-2.5 font-mono font-medium">{i.modelo}</td>
@@ -501,6 +503,7 @@ export default function EstoquePedidoPage() {
                     )}
                     </td>
                   <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(i.custo_real)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmtBRL(custoTotalItem)}</td>
                   <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: "#2C7C6E" }}>{fmtBRL(i.venda_total)}</td>
                   <td className="px-4 py-2.5 text-center">
                     {i.liberado ? <Check size={16} style={{ color: "#2C7C6E" }} className="inline" /> : <AlertTriangle size={16} className="text-muted inline" />}
@@ -512,7 +515,8 @@ export default function EstoquePedidoPage() {
           <tfoot>
             <tr className="border-t-2 border-line bg-canvas font-semibold">
               <td className="px-4 py-2.5" colSpan={5}>Total</td>
-              <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(itens.reduce((s, i) => s + Number(i.custo_real || 0), 0))}</td>
+              <td></td>
+              <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(itens.reduce((s, i) => s + Number(i.custo_real || 0) * i.qtd, 0))}</td>
               <td className="px-4 py-2.5 text-right font-mono" style={{ color: "#2C7C6E" }}>{fmtBRL(itens.reduce((s, i) => s + Number(i.venda_total || 0), 0))}</td>
               <td></td>
             </tr>

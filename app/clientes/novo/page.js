@@ -46,7 +46,7 @@ export default function NovoClientePage() {
   useEffect(() => {
     (async () => {
       setPerfil(await getPerfilAtual());
-      const { data } = await supabase.from("perfis").select("id, nome").order("nome");
+      const { data } = await supabase.from("perfis").select("id, nome").eq("cargo", "Vendedor").order("nome");
       setVendedores(data || []);
     })();
   }, []);

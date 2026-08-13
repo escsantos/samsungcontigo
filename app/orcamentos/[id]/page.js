@@ -33,6 +33,7 @@ export default function DetalheOrcamentoPage() {
   const [buscando, setBuscando] = useState(false);
   const [qtdsBusca, setQtdsBusca] = useState({});
   const [pecasAdicionadasAgora, setPecasAdicionadasAgora] = useState([]);
+  const [desconto, setDesconto] = useState("0");
 
   useEffect(() => {
     carregar();
@@ -42,16 +43,38 @@ export default function DetalheOrcamentoPage() {
     setPerfil(await getPerfilAtual());
     const { data: orc } = await supabase.from("orcamentos").select("*, clientes(nome, celular, email)").eq("id", id).single();
     setOrcamento(orc);
+    setDesconto(String(orc?.desconto || 0));
     const { data: its } = await supabase.from("orcamento_itens").select("*").eq("orcamento_id", id).order("id");
     setItens(its || []);
   }
 
-  const totalAtual = itens.reduce((s, i) => s + Number(i.venda_total || 0), 0);
+  const subtotalItens = itens.reduce((s, i) => s + Number(i.venda_total || 0), 0);
+  const descontoNum = Math.min(Math.max(parseFloat(desconto) || 0, 0), subtotalItens);
+  const totalComDesconto = subtotalItens - descontoNum;
+  const custoTotalGeral = itens.reduce((s, i) => s + Number(i.custo_unitario || 0) * i.qtd, 0);
+  const impostoPct = Number(orcamento?.imposto_total || 0);
+  const impostoTotalGeral = totalComDesconto * (impostoPct / 100);
+  const lucroFinal = totalComDesconto - custoTotalGeral - impostoTotalGeral;
+  const margemFinal = totalComDesconto > 0 ? (lucroFinal / totalComDesconto) * 100 : 0;
+
+  const totalAtual = totalComDesconto;
 
   function mudarQtdItem(itemId, valor) {
     const n = Math.max(1, parseInt(valor, 10) || 1);
     setItens((atual) =>
       atual.map((i) => (i.id === itemId ? { ...i, qtd: n, venda_total: Number(i.venda_unitario) * n } : i))
+    );
+  }
+
+  function mudarCustoItem(itemId, valor) {
+    const novoCusto = parseFloat(valor);
+    setItens((atual) =>
+      atual.map((i) => {
+        if (i.id !== itemId) return i;
+        const custo = isNaN(novoCusto) ? 0 : novoCusto;
+        const { venda } = calcularPreco(custo, Number(orcamento.margem), Number(orcamento.imposto_total));
+        return { ...i, custo_unitario: custo, venda_unitario: venda, venda_total: venda !== null ? venda * i.qtd : i.venda_total };
+      })
     );
   }
 
@@ -136,9 +159,12 @@ export default function DetalheOrcamentoPage() {
       await supabase.from("orcamento_itens").delete().in("id", idsParaExcluir);
     }
 
-    // 3º: atualiza qtd/total dos itens que já existiam e continuam
+    // 3º: atualiza qtd/custo/venda dos itens que já existiam e continuam
     for (const i of itens.filter((i) => !i._novo)) {
-      await supabase.from("orcamento_itens").update({ qtd: i.qtd, venda_total: i.venda_total }).eq("id", i.id);
+      await supabase
+        .from("orcamento_itens")
+        .update({ qtd: i.qtd, custo_unitario: i.custo_unitario, venda_unitario: i.venda_unitario, venda_total: i.venda_total })
+        .eq("id", i.id);
     }
 
     // 4º: só agora insere os itens novos (depois de já ter decidido o que excluir)
@@ -164,7 +190,11 @@ export default function DetalheOrcamentoPage() {
     }
 
     const novoTotal = itens.reduce((s, i) => s + Number(i.venda_total || 0), 0);
-    const { error } = await supabase.from("orcamentos").update({ valor_total: novoTotal }).eq("id", id);
+    const novoDesconto = Math.min(Math.max(parseFloat(desconto) || 0, 0), novoTotal);
+    const { error } = await supabase
+      .from("orcamentos")
+      .update({ valor_total: novoTotal - novoDesconto, desconto: novoDesconto })
+      .eq("id", id);
     setProcessando(false);
     if (error) {
       setErro("Falha ao salvar ajustes: " + error.message);
@@ -282,6 +312,7 @@ export default function DetalheOrcamentoPage() {
                   <th className="text-right px-4 py-2.5">Custo</th>
                   <th className="text-right px-4 py-2.5">Imposto</th>
                   <th className="text-right px-4 py-2.5">Lucro Líquido</th>
+                  <th className="text-right px-4 py-2.5">Margem</th>
                 </>
               )}
               <th className="text-right px-4 py-2.5">{mostraCusto ? "Venda" : "Valor"}</th>
@@ -296,6 +327,7 @@ export default function DetalheOrcamentoPage() {
               const impostoPct = Number(orcamento.imposto_total || 0);
               const impostoValor = Number(i.venda_total || 0) * (impostoPct / 100);
               const lucroLiquido = Number(i.venda_total || 0) - custoTotal - impostoValor;
+              const margemItem = Number(i.venda_total || 0) > 0 ? (lucroLiquido / Number(i.venda_total)) * 100 : 0;
               return (
                 <tr key={i.id} className="border-b border-line last:border-0" style={{ background: i._novo ? "var(--accent-soft)" : "transparent" }}>
                   <td className="px-4 py-2.5 font-mono font-medium">{i.modelo}</td>
@@ -322,9 +354,23 @@ export default function DetalheOrcamentoPage() {
                   </td>
                   {mostraCusto && (
                     <>
-                      <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(custoTotal)}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        {ajustando ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            className="field-input py-1 px-1.5 text-right font-mono w-24 ml-auto"
+                            value={i.custo_unitario ?? ""}
+                            onChange={(e) => mudarCustoItem(i.id, e.target.value)}
+                            title="Custo editável só pra este pedido — não altera a base de peças"
+                          />
+                        ) : (
+                          <span className="font-mono">{fmtBRL(custoTotal)}</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(impostoValor)}</td>
                       <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(lucroLiquido)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{margemItem.toFixed(1)}%</td>
                     </>
                   )}
                   <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: mostraCusto ? "#2C7C6E" : undefined }}>{fmtBRL(i.venda_total)}</td>
@@ -342,10 +388,62 @@ export default function DetalheOrcamentoPage() {
         </table>
       </div>
 
+      {ajustando && mostraCusto && (
+        <div className="card p-5 mb-4">
+          <p className="font-display font-semibold text-sm mb-3">Desconto no valor final</p>
+          <div className="flex items-center gap-2 max-w-xs mb-4">
+            <span className="text-sm text-muted">R$</span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              className="field-input"
+              value={desconto}
+              onChange={(e) => setDesconto(e.target.value)}
+            />
+          </div>
+
+          <p className="text-xs font-semibold text-muted mb-2">Resumo da negociação</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-canvas rounded-lg p-3">
+              <p className="text-[11px] text-muted">Subtotal</p>
+              <p className="font-mono font-semibold">{fmtBRL(subtotalItens)}</p>
+            </div>
+            <div className="bg-canvas rounded-lg p-3">
+              <p className="text-[11px] text-muted">Desconto</p>
+              <p className="font-mono font-semibold text-danger">- {fmtBRL(descontoNum)}</p>
+            </div>
+            <div className="bg-canvas rounded-lg p-3">
+              <p className="text-[11px] text-muted">Total com desconto</p>
+              <p className="font-mono font-semibold" style={{ color: "var(--accent)" }}>{fmtBRL(totalComDesconto)}</p>
+            </div>
+            <div className="bg-canvas rounded-lg p-3">
+              <p className="text-[11px] text-muted">Lucro líquido final</p>
+              <p className="font-mono font-semibold" style={{ color: lucroFinal >= 0 ? "#2C7C6E" : "var(--danger)" }}>{fmtBRL(lucroFinal)}</p>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-xs text-muted">Margem final:</span>
+            <span
+              className="text-xs font-mono font-bold px-2 py-0.5 rounded"
+              style={{
+                background: margemFinal >= 30 ? "rgba(63,167,150,0.14)" : margemFinal >= 20 ? "rgba(232,163,61,0.14)" : "var(--danger-soft)",
+                color: margemFinal >= 30 ? "#2C7C6E" : margemFinal >= 20 ? "#C2801F" : "var(--danger)"
+              }}
+            >
+              {margemFinal.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="card p-5 flex items-center justify-between mb-4">
         <div>
           <p className="text-xs text-muted">Total do orçamento</p>
           <p className="font-display font-bold text-2xl" style={{ color: "var(--accent)" }}>{fmtBRL(totalAtual)}</p>
+          {descontoNum > 0 && !ajustando && (
+            <p className="text-xs text-muted mt-0.5">Desconto aplicado: {fmtBRL(descontoNum)}</p>
+          )}
         </div>
 
         {podeRevisar && (

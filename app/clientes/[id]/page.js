@@ -23,7 +23,7 @@ export default function EditarClientePage() {
       setPerfil(await getPerfilAtual());
       const { data } = await supabase.from("clientes").select("*").eq("id", id).single();
       setCliente(data);
-      const { data: vend } = await supabase.from("perfis").select("id, nome").order("nome");
+      const { data: vend } = await supabase.from("perfis").select("id, nome").eq("cargo", "Vendedor").order("nome");
       setVendedores(vend || []);
     })();
   }, [id]);

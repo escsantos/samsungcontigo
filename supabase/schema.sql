@@ -478,3 +478,6 @@ alter table notificacoes add constraint notificacoes_tipo_check
 create policy "estoque cria notificacao de pendencia"
   on notificacoes for insert
   with check (tipo = 'pedido_pendente_pronto' and pode_gerenciar_estoque());
+
+-- 11. Desconto no orçamento
+alter table orcamentos add column if not exists desconto numeric(12,2) default 0;

@@ -49,6 +49,7 @@ export default function ConsultaPecasPage() {
   const [perfil, setPerfil] = useState(null);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null);
   const [qtds, setQtds] = useState({});
+  const [custosEditados, setCustosEditados] = useState({});
   const [pecaSelecionada, setPecaSelecionada] = useState(null);
   const [seletorClienteAberto, setSeletorClienteAberto] = useState(false);
   const [buscaCliente, setBuscaCliente] = useState("");
@@ -129,23 +130,29 @@ export default function ConsultaPecasPage() {
   const linhas = useMemo(() => {
     return resultados.map((r) => {
       const qtd = qtds[r.id] ?? 1;
-      const { venda, imposto, lucroLiquido } = calcularPreco(r.valor_unitario, margemEfetiva, impostoTotal);
+      const custoUnit = custosEditados[r.id] !== undefined ? custosEditados[r.id] : r.valor_unitario;
+      const { venda, imposto, lucroLiquido } = calcularPreco(custoUnit, margemEfetiva, impostoTotal);
       return {
         ...r,
         qtd,
-        custoUnit: r.valor_unitario,
+        custoUnit,
         vendaUnit: venda,
-        custoTotal: r.valor_unitario !== null ? r.valor_unitario * qtd : null,
+        custoTotal: custoUnit !== null ? custoUnit * qtd : null,
         impostoTotal: imposto !== null ? imposto * qtd : null,
         lucroLiquidoTotal: lucroLiquido !== null ? lucroLiquido * qtd : null,
         vendaTotal: venda !== null ? venda * qtd : null
       };
     });
-  }, [resultados, margemEfetiva, impostoTotal, qtds]);
+  }, [resultados, margemEfetiva, impostoTotal, qtds, custosEditados]);
 
   function mudarQtd(id, valor) {
     const n = Math.max(1, parseInt(valor, 10) || 1);
     setQtds((q) => ({ ...q, [id]: n }));
+  }
+
+  function mudarCusto(id, valor) {
+    const n = parseFloat(valor);
+    setCustosEditados((c) => ({ ...c, [id]: isNaN(n) ? 0 : n }));
   }
 
   function limparPesquisa() {
@@ -155,7 +162,7 @@ export default function ConsultaPecasPage() {
 
   function adicionarAoCarrinho(r, e) {
     e.stopPropagation();
-    carrinho.adicionarItem(r, r.qtd);
+    carrinho.adicionarItem({ ...r, valor_unitario: r.custoUnit }, r.qtd);
     setItemAdicionado(r.id);
     setTimeout(() => setItemAdicionado(null), 1200);
   }
@@ -368,7 +375,17 @@ export default function ConsultaPecasPage() {
                       </td>
                       {mostraCusto && (
                         <>
-                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.custoTotal)}</td>
+                          <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="field-input py-1 px-1.5 text-right font-mono w-24 ml-auto"
+                              style={{ color: corLinha }}
+                              value={r.custoUnit ?? ""}
+                              onChange={(e) => mudarCusto(r.id, e.target.value)}
+                              title="Custo editável — só vale pra este pedido, não altera a base de peças"
+                            />
+                          </td>
                           <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.impostoTotal)}</td>
                           <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.lucroLiquidoTotal)}</td>
                           <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha || statusMargem.cor }}>{margemEfetiva}%</td>
