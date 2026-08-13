@@ -446,7 +446,7 @@ export default function EstoquePedidoPage() {
               <th className="text-left px-4 py-2.5">Código</th>
               <th className="text-left px-4 py-2.5">Descrição</th>
               <th className="text-center px-4 py-2.5">Qtd</th>
-              {podeInformarDelivery && <th className="text-left px-4 py-2.5">Delivery</th>}
+              <th className="text-left px-4 py-2.5">Delivery</th>
               <th className="text-right px-4 py-2.5">Custo real</th>
               <th className="text-right px-4 py-2.5">Venda</th>
               <th className="text-center px-4 py-2.5">Status</th>
@@ -474,32 +474,32 @@ export default function EstoquePedidoPage() {
                   </td>
                   <td className="px-4 py-2.5">{i.descricao_resumida}</td>
                   <td className="px-4 py-2.5 text-center">{i.qtd}</td>
-                  {podeInformarDelivery && (
-                    <td className="px-4 py-2.5">
-                      {i.liberado ? (
-                        <span className="font-mono text-xs">{i.no_entrega}</span>
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            className="field-input py-1.5 text-xs w-28"
-                            placeholder="nº delivery"
-                            value={deliveries[i.id] || ""}
-                            onChange={(e) => setDeliveries((atual) => ({ ...atual, [i.id]: e.target.value }))}
-                          />
-                          <button
-                            onClick={() => buscarDeliveryItem(i)}
-                            disabled={buscandoItem[i.id] || !deliveries[i.id]}
-                            className="w-7 h-7 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas shrink-0"
-                          >
-                            {buscandoItem[i.id] ? <RefreshCw size={13} className="animate-spin" /> : <Search size={13} />}
-                          </button>
-                        </div>
-                      )}
-                      {erroItem[i.id] && (
-                        <p className="text-[10.5px] text-danger mt-1 max-w-[220px] leading-snug">{erroItem[i.id]}</p>
-                      )}
+                  <td className="px-4 py-2.5">
+                    {i.liberado ? (
+                      <span className="font-mono text-xs">{i.no_entrega}</span>
+                    ) : podeInformarDelivery ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          className="field-input py-1.5 text-xs w-28"
+                          placeholder="nº delivery"
+                          value={deliveries[i.id] || ""}
+                          onChange={(e) => setDeliveries((atual) => ({ ...atual, [i.id]: e.target.value }))}
+                        />
+                        <button
+                          onClick={() => buscarDeliveryItem(i)}
+                          disabled={buscandoItem[i.id] || !deliveries[i.id]}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas shrink-0"
+                        >
+                          {buscandoItem[i.id] ? <RefreshCw size={13} className="animate-spin" /> : <Search size={13} />}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted">—</span>
+                    )}
+                    {erroItem[i.id] && (
+                      <p className="text-[10.5px] text-danger mt-1 max-w-[220px] leading-snug">{erroItem[i.id]}</p>
+                    )}
                     </td>
-                  )}
                   <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(i.custo_real)}</td>
                   <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: "#2C7C6E" }}>{fmtBRL(i.venda_total)}</td>
                   <td className="px-4 py-2.5 text-center">
@@ -511,7 +511,7 @@ export default function EstoquePedidoPage() {
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-line bg-canvas font-semibold">
-              <td className="px-4 py-2.5" colSpan={podeInformarDelivery ? 5 : 4}>Total</td>
+              <td className="px-4 py-2.5" colSpan={5}>Total</td>
               <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(itens.reduce((s, i) => s + Number(i.custo_real || 0), 0))}</td>
               <td className="px-4 py-2.5 text-right font-mono" style={{ color: "#2C7C6E" }}>{fmtBRL(itens.reduce((s, i) => s + Number(i.venda_total || 0), 0))}</td>
               <td></td>
@@ -691,7 +691,7 @@ export default function EstoquePedidoPage() {
         <div className="card p-5 mb-4 flex items-center justify-between">
           <div>
             <p className="font-display font-semibold text-sm">Pronto pra entrega</p>
-            <p className="text-xs text-muted mt-0.5">Gere o romanéio e confirme a entrega ao cliente.</p>
+            <p className="text-xs text-muted mt-0.5">Gere o romaneio e confirme a entrega ao cliente.</p>
           </div>
           <button className="btn-primary" onClick={abrirRomaneio}>
             <Send size={15} />
@@ -786,7 +786,7 @@ export default function EstoquePedidoPage() {
         title="Confirmar entrega"
         footer={
           <>
-            <button className="btn-secondary" onClick={imprimirRomaneio}>Ver / Imprimir Romanéio</button>
+            <button className="btn-secondary" onClick={imprimirRomaneio}>Ver / Imprimir Romaneio</button>
             <button className="btn-primary" disabled={processando || selecionados.length === 0} onClick={confirmarEntregaFinal}>
               Confirmar Entrega ({selecionados.length})
             </button>
@@ -794,7 +794,7 @@ export default function EstoquePedidoPage() {
         }
       >
         <p className="text-sm text-muted mb-3">
-          Este pedido e outros do mesmo cliente já liberados pra retirada podem ser entregues juntos, no mesmo romanéio.
+          Este pedido e outros do mesmo cliente já liberados pra retirada podem ser entregues juntos, no mesmo romaneio.
         </p>
         <div className="space-y-2">
           {pedidosIrmaos.map((p) => (

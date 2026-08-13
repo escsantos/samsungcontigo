@@ -38,12 +38,11 @@ export default function CarregarBasesPage() {
   const [progresso, setProgresso] = useState({ pct: 0, texto: "" });
   const [resultado, setResultado] = useState(null);
   const [erro, setErro] = useState("");
+  const [confirmando, setConfirmando] = useState(false);
 
   useEffect(() => {
     (async () => setPerfil(await getPerfilAtual()))();
   }, []);
-
-  const [confirmando, setConfirmando] = useState(false);
 
   function fecharPopupResultado() {
     setResultado(null);
@@ -57,233 +56,283 @@ export default function CarregarBasesPage() {
     setErro("");
     setProcessando(true);
     try {
-      setProgresso({ pct: 5, texto: "Lendo Base Peças..." });
-      await sleep(0);
-      const pecasRows = await lerPlanilha(arquivoPecas);
-      const pHeaders = pecasRows[0].map(normKey);
+      let precoMap = new Map();
+      let lotes = [];
+      let duplicadosRemovidos = 0;
+      let semEntrega = 0;
 
-      const idxDataNF = findExact(pHeaders, "data nf");
-      const idxPecasEnv = findExact(pHeaders, "pecas enviadas");
-      const idxQtd = findExact(pHeaders, "qtd");
-      const idxValor = findExact(pHeaders, "valor");
-      const idxBilling = findExact(pHeaders, "nro. billing");
-      const idxDocConta = findExact(pHeaders, "documento de conta");
-      const idxItemNro = findExact(pHeaders, "item nro.");
-      const idxArrived = findExact(pHeaders, "arrived date");
-      const idxEntrega = findExact(pHeaders, "no. da entrega");
+      // ---------- Base Peças (opcional) ----------
+      if (arquivoPecas) {
+        setProgresso({ pct: 5, texto: "Lendo Base Peças..." });
+        await sleep(0);
+        const pecasRows = await lerPlanilha(arquivoPecas);
+        const pHeaders = pecasRows[0].map(normKey);
 
-      const faltando = [];
-      if (idxDataNF < 0) faltando.push("Data NF");
-      if (idxPecasEnv < 0) faltando.push("Peças enviadas");
-      if (idxQtd < 0) faltando.push("Qtd");
-      if (idxValor < 0) faltando.push("Valor");
-      if (faltando.length) {
-        throw new Error(`Colunas não encontradas na Base Peças: ${faltando.join(", ")}`);
-      }
+        const idxDataNF = findExact(pHeaders, "data nf");
+        const idxPecasEnv = findExact(pHeaders, "pecas enviadas");
+        const idxQtd = findExact(pHeaders, "qtd");
+        const idxValor = findExact(pHeaders, "valor");
+        const idxBilling = findExact(pHeaders, "nro. billing");
+        const idxDocConta = findExact(pHeaders, "documento de conta");
+        const idxItemNro = findExact(pHeaders, "item nro.");
+        const idxArrived = findExact(pHeaders, "arrived date");
+        const idxEntrega = findExact(pHeaders, "no. da entrega");
 
-      setProgresso({ pct: 20, texto: "Removendo duplicados da Base Peças..." });
-      await sleep(0);
-      const dedupMap = new Map();
-      for (let r = 1; r < pecasRows.length; r++) {
-        const row = pecasRows[r];
-        if (!row || row.length === 0) continue;
-        const code = String(row[idxPecasEnv] || "").trim();
-        if (!code) continue;
-        const key = [
-          idxBilling >= 0 ? row[idxBilling] : "",
-          idxDocConta >= 0 ? row[idxDocConta] : "",
-          idxItemNro >= 0 ? row[idxItemNro] : "",
-          code, row[idxQtd], row[idxValor]
-        ].join("|");
-        const completo = idxArrived >= 0
-          ? (String(row[idxArrived] || "").trim() !== "-" && String(row[idxArrived] || "").trim() !== "")
-          : false;
-        const existente = dedupMap.get(key);
-        if (!existente || (completo && !existente._completo)) {
-          dedupMap.set(key, {
-            codigo: code.toUpperCase(),
-            qtd: Number(row[idxQtd]) || 0,
-            valor: Number(row[idxValor]) || 0,
-            dataNF: idxDataNF >= 0 ? row[idxDataNF] : "",
-            entrega: idxEntrega >= 0 ? String(row[idxEntrega] || "").trim() : "",
-            _completo: completo
+        const faltando = [];
+        if (idxDataNF < 0) faltando.push("Data NF");
+        if (idxPecasEnv < 0) faltando.push("Peças enviadas");
+        if (idxQtd < 0) faltando.push("Qtd");
+        if (idxValor < 0) faltando.push("Valor");
+        if (faltando.length) {
+          throw new Error(`Colunas não encontradas na Base Peças: ${faltando.join(", ")}`);
+        }
+
+        setProgresso({ pct: 15, texto: "Removendo duplicados da Base Peças..." });
+        await sleep(0);
+        const dedupMap = new Map();
+        for (let r = 1; r < pecasRows.length; r++) {
+          const row = pecasRows[r];
+          if (!row || row.length === 0) continue;
+          const code = String(row[idxPecasEnv] || "").trim();
+          if (!code) continue;
+          const key = [
+            idxBilling >= 0 ? row[idxBilling] : "",
+            idxDocConta >= 0 ? row[idxDocConta] : "",
+            idxItemNro >= 0 ? row[idxItemNro] : "",
+            code, row[idxQtd], row[idxValor]
+          ].join("|");
+          const completo = idxArrived >= 0
+            ? (String(row[idxArrived] || "").trim() !== "-" && String(row[idxArrived] || "").trim() !== "")
+            : false;
+          const existente = dedupMap.get(key);
+          if (!existente || (completo && !existente._completo)) {
+            dedupMap.set(key, {
+              codigo: code.toUpperCase(),
+              qtd: Number(row[idxQtd]) || 0,
+              valor: Number(row[idxValor]) || 0,
+              dataNF: idxDataNF >= 0 ? row[idxDataNF] : "",
+              entrega: idxEntrega >= 0 ? String(row[idxEntrega] || "").trim() : "",
+              _completo: completo
+            });
+          }
+        }
+        const pecasDedup = Array.from(dedupMap.values());
+        duplicadosRemovidos = (pecasRows.length - 1) - pecasDedup.length;
+
+        setProgresso({ pct: 25, texto: "Calculando valor unitário mais recente por código..." });
+        await sleep(0);
+        for (const p of pecasDedup) {
+          if (!p.qtd || !p.valor) continue;
+          const ts = parseBRDate(p.dataNF);
+          const atual = precoMap.get(p.codigo);
+          if (!atual || (ts !== null && (atual.ts === null || ts > atual.ts))) {
+            precoMap.set(p.codigo, { valor: p.valor / p.qtd, ts, dataNF: p.dataNF });
+          }
+        }
+
+        setProgresso({ pct: 32, texto: "Montando lotes por Delivery (custo exato por remessa)..." });
+        await sleep(0);
+        const lotesMap = new Map();
+        for (const p of pecasDedup) {
+          if (!p.qtd || !p.valor) continue;
+          if (!p.entrega) { semEntrega++; continue; }
+          const chave = `${p.codigo}||${p.entrega}`;
+          lotesMap.set(chave, {
+            codigo: p.codigo,
+            no_entrega: p.entrega,
+            valor_unitario: Math.round((p.valor / p.qtd) * 100) / 100,
+            qtd: p.qtd,
+            data_nf: p.dataNF
           });
         }
-      }
-      const pecasDedup = Array.from(dedupMap.values());
-      const duplicadosRemovidos = (pecasRows.length - 1) - pecasDedup.length;
-
-      setProgresso({ pct: 32, texto: "Calculando valor unitário mais recente por código..." });
-      await sleep(0);
-      const precoMap = new Map();
-      for (const p of pecasDedup) {
-        if (!p.qtd || !p.valor) continue;
-        const ts = parseBRDate(p.dataNF);
-        const atual = precoMap.get(p.codigo);
-        if (!atual || (ts !== null && (atual.ts === null || ts > atual.ts))) {
-          precoMap.set(p.codigo, { valor: p.valor / p.qtd, ts, dataNF: p.dataNF });
-        }
+        lotes = Array.from(lotesMap.values());
       }
 
-      setProgresso({ pct: 38, texto: "Montando lotes por Delivery (custo exato por remessa)..." });
+      // ---------- peças já cadastradas no Supabase (sempre precisa) ----------
+      setProgresso({ pct: 40, texto: "Lendo peças já cadastradas no Supabase..." });
       await sleep(0);
-      const lotesMap = new Map();
-      let semEntrega = 0;
-      for (const p of pecasDedup) {
-        if (!p.qtd || !p.valor) continue;
-        if (!p.entrega) { semEntrega++; continue; }
-        const chave = `${p.codigo}||${p.entrega}`;
-        lotesMap.set(chave, {
-          codigo: p.codigo,
-          no_entrega: p.entrega,
-          valor_unitario: Math.round((p.valor / p.qtd) * 100) / 100,
-          qtd: p.qtd,
-          data_nf: p.dataNF
-        });
-      }
-      const lotes = Array.from(lotesMap.values());
-
-      setProgresso({ pct: 50, texto: "Lendo Base GSPN..." });
-      await sleep(0);
-      const gspnRows = await lerPlanilha(arquivoGspn);
-      const gHeaders = gspnRows[0].map(normKey);
-      const idxModelo = findExact(gHeaders, "modelo");
-      const idxBH = findExact(gHeaders, "service product description");
-      if (idxModelo < 0 || idxBH < 0) {
-        throw new Error("Colunas Modelo e/ou Service Product Description não encontradas na Base GSPN.");
-      }
-      const slots = [];
-      for (let n = 1; n <= 10; n++) {
-        const suf = n < 10 ? "0" + n : "10";
-        const iCod = findExact(gHeaders, "codigo da peca" + suf);
-        const iDesc = findExact(gHeaders, "pecas description " + suf);
-        if (iCod >= 0 && iDesc >= 0) slots.push({ cod: iCod, desc: iDesc });
-      }
-      if (slots.length === 0) {
-        throw new Error("Nenhuma coluna de peças (Código da peça01...10) encontrada na Base GSPN.");
-      }
-
-      setProgresso({ pct: 60, texto: "Lendo peças já cadastradas no Supabase..." });
-      await sleep(0);
-      const existentesMap = new Map();
+      const existentesMap = new Map(); // modelo||codigo -> {...}
+      const existentesPorCodigo = new Map(); // codigo -> [ {...} ]
       {
         const PAGINA = 1000;
         let inicio = 0;
         while (true) {
           const { data, error } = await supabase
             .from("pecas")
-            .select("modelo, codigo, valor_unitario, data_referencia")
+            .select("modelo, codigo, categoria, descricao_resumida, descricao_peca, valor_unitario, data_referencia")
             .range(inicio, inicio + PAGINA - 1);
           if (error) throw new Error("Falha ao ler peças existentes: " + error.message);
           if (!data || data.length === 0) break;
           for (const p of data) {
-            existentesMap.set(p.modelo.toUpperCase() + "||" + p.codigo.toUpperCase(), {
+            const info = {
+              modelo: p.modelo,
+              categoria: p.categoria,
+              descricao_resumida: p.descricao_resumida,
+              descricao_peca: p.descricao_peca,
               valor_unitario: p.valor_unitario,
               ts: parseBRDate(p.data_referencia),
               data_referencia: p.data_referencia
-            });
+            };
+            existentesMap.set(p.modelo.toUpperCase() + "||" + p.codigo.toUpperCase(), info);
+            const lista = existentesPorCodigo.get(p.codigo.toUpperCase()) || [];
+            lista.push(info);
+            existentesPorCodigo.set(p.codigo.toUpperCase(), lista);
           }
           if (data.length < PAGINA) break;
           inicio += PAGINA;
         }
       }
 
-      setProgresso({ pct: 65, texto: "Classificando peças e cruzando dados..." });
-      await sleep(0);
-      const uniqueMap = new Map();
-      let naoClassificados = 0, semCusto = 0, precosAtualizados = 0, precosMantidos = 0;
-      const modelosSet = new Set();
+      let registros = [];
+      let modelosSet = new Set();
+      let naoClassificados = 0, semCusto = 0, precosAtualizados = 0, precosMantidos = 0, novasPecas = 0;
 
-      for (let r = 1; r < gspnRows.length; r++) {
-        const grow = gspnRows[r];
-        if (!grow || grow.length === 0) continue;
-        const modelo = String(grow[idxModelo] || "").trim();
-        if (!modelo) continue;
-        let cat = categoria(grow[idxBH]);
-        if (modelo.toUpperCase().startsWith("DW")) cat = "WSM";
-        if (modelo.toUpperCase().startsWith("NP") || modelo.toUpperCase().startsWith("XE")) cat = "NPC";
-        modelosSet.add(modelo);
-        for (const slot of slots) {
-          const codigo = String(grow[slot.cod] || "").trim();
-          if (!codigo) continue;
-          const descPeca = grow[slot.desc];
-          const resumida = classifyDesc(descPeca);
-          if (resumida === "Outros / Não Classificado") naoClassificados++;
-          const catFinal = cat;
-          const uKey = modelo.toUpperCase() + "||" + codigo.toUpperCase();
-          if (uniqueMap.has(uKey)) continue;
+      if (arquivoGspn) {
+        // ---------- modo completo: classifica pelo GSPN, cruza preço se tiver Base Peças ----------
+        setProgresso({ pct: 50, texto: "Lendo Base GSPN..." });
+        await sleep(0);
+        const gspnRows = await lerPlanilha(arquivoGspn);
+        const gHeaders = gspnRows[0].map(normKey);
+        const idxModelo = findExact(gHeaders, "modelo");
+        const idxBH = findExact(gHeaders, "service product description");
+        if (idxModelo < 0 || idxBH < 0) {
+          throw new Error("Colunas Modelo e/ou Service Product Description não encontradas na Base GSPN.");
+        }
+        const slots = [];
+        for (let n = 1; n <= 10; n++) {
+          const suf = n < 10 ? "0" + n : "10";
+          const iCod = findExact(gHeaders, "codigo da peca" + suf);
+          const iDesc = findExact(gHeaders, "pecas description " + suf);
+          if (iCod >= 0 && iDesc >= 0) slots.push({ cod: iCod, desc: iDesc });
+        }
+        if (slots.length === 0) {
+          throw new Error("Nenhuma coluna de peças (Código da peça01...10) encontrada na Base GSPN.");
+        }
 
-          const preco = precoMap.get(codigo.toUpperCase());
-          const existente = existentesMap.get(uKey);
+        setProgresso({ pct: 65, texto: "Classificando peças e cruzando dados..." });
+        await sleep(0);
+        const uniqueMap = new Map();
 
-          // decide qual preço vale: só troca se o novo for mais recente que o que já tínhamos
-          let valorFinal = existente?.valor_unitario ?? null;
-          let dataFinal = existente?.data_referencia ?? null;
-          if (preco) {
-            const existeSemData = !existente || existente.valor_unitario === null || existente.valor_unitario === undefined;
-            const novoEhMaisRecente = preco.ts !== null && (!existente?.ts || preco.ts > existente.ts);
+        for (let r = 1; r < gspnRows.length; r++) {
+          const grow = gspnRows[r];
+          if (!grow || grow.length === 0) continue;
+          const modelo = String(grow[idxModelo] || "").trim();
+          if (!modelo) continue;
+          let cat = categoria(grow[idxBH]);
+          if (modelo.toUpperCase().startsWith("DW")) cat = "WSM";
+          if (modelo.toUpperCase().startsWith("NP") || modelo.toUpperCase().startsWith("XE")) cat = "NPC";
+          modelosSet.add(modelo);
+          for (const slot of slots) {
+            const codigo = String(grow[slot.cod] || "").trim();
+            if (!codigo) continue;
+            const descPeca = grow[slot.desc];
+            const resumida = classifyDesc(descPeca);
+            if (resumida === "Outros / Não Classificado") naoClassificados++;
+            const catFinal = cat;
+            const uKey = modelo.toUpperCase() + "||" + codigo.toUpperCase();
+            if (uniqueMap.has(uKey)) continue;
+
+            const preco = precoMap.get(codigo.toUpperCase());
+            const existente = existentesMap.get(uKey);
+            if (!existente) novasPecas++;
+
+            let valorFinal = existente?.valor_unitario ?? null;
+            let dataFinal = existente?.data_referencia ?? null;
+            if (preco) {
+              const existeSemData = !existente || existente.valor_unitario === null || existente.valor_unitario === undefined;
+              const novoEhMaisRecente = preco.ts !== null && (!existente?.ts || preco.ts > existente.ts);
+              if (existeSemData || novoEhMaisRecente) {
+                valorFinal = Math.round(preco.valor * 100) / 100;
+                dataFinal = preco.dataNF;
+                if (existente) precosAtualizados++;
+              } else if (existente) {
+                precosMantidos++;
+              }
+            }
+            if (valorFinal === null || valorFinal === undefined) semCusto++;
+
+            uniqueMap.set(uKey, {
+              modelo,
+              categoria: catFinal,
+              codigo: codigo.toUpperCase(),
+              descricao_resumida: resumida,
+              descricao_peca: descPeca ? String(descPeca).trim() : "",
+              valor_unitario: valorFinal,
+              data_referencia: dataFinal
+            });
+          }
+        }
+        registros = Array.from(uniqueMap.values());
+      } else {
+        // ---------- modo só-preço: atualiza custo das peças já cadastradas, sem GSPN ----------
+        setProgresso({ pct: 65, texto: "Atualizando preços das peças já cadastradas..." });
+        await sleep(0);
+        for (const [codigo, precoInfo] of precoMap.entries()) {
+          const candidatos = existentesPorCodigo.get(codigo) || [];
+          for (const c of candidatos) {
+            const existeSemData = c.valor_unitario === null || c.valor_unitario === undefined;
+            const novoEhMaisRecente = precoInfo.ts !== null && (!c.ts || precoInfo.ts > c.ts);
             if (existeSemData || novoEhMaisRecente) {
-              valorFinal = Math.round(preco.valor * 100) / 100;
-              dataFinal = preco.dataNF;
-              if (existente) precosAtualizados++;
-            } else if (existente) {
+              registros.push({
+                modelo: c.modelo,
+                categoria: c.categoria,
+                codigo,
+                descricao_resumida: c.descricao_resumida,
+                descricao_peca: c.descricao_peca,
+                valor_unitario: Math.round(precoInfo.valor * 100) / 100,
+                data_referencia: precoInfo.dataNF
+              });
+              precosAtualizados++;
+            } else {
               precosMantidos++;
             }
           }
-          if (valorFinal === null || valorFinal === undefined) semCusto++;
-
-          uniqueMap.set(uKey, {
-            modelo,
-            categoria: catFinal,
-            codigo: codigo.toUpperCase(),
-            descricao_resumida: resumida,
-            descricao_peca: descPeca ? String(descPeca).trim() : "",
-            valor_unitario: valorFinal,
-            data_referencia: dataFinal
-          });
         }
       }
 
-      const registros = Array.from(uniqueMap.values());
-      const novasPecas = registros.filter((r) => !existentesMap.has(r.modelo.toUpperCase() + "||" + r.codigo.toUpperCase())).length;
-
-      setProgresso({ pct: 80, texto: "Gravando peças (atualizando as existentes, cadastrando as novas)..." });
-      await sleep(0);
-      const LOTE = 500;
-      for (let i = 0; i < registros.length; i += LOTE) {
-        const lote = registros.slice(i, i + LOTE);
-        const { error: upError } = await supabase.from("pecas").upsert(lote, { onConflict: "modelo,codigo" });
-        if (upError) throw new Error("Falha ao gravar peças: " + upError.message);
-        setProgresso({
-          pct: 80 + Math.round((i / registros.length) * 13),
-          texto: `Gravando peças... ${Math.min(i + LOTE, registros.length).toLocaleString("pt-BR")} / ${registros.length.toLocaleString("pt-BR")}`
-        });
+      if (registros.length > 0) {
+        setProgresso({ pct: 80, texto: "Gravando peças..." });
         await sleep(0);
+        const LOTE = 500;
+        for (let i = 0; i < registros.length; i += LOTE) {
+          const lote = registros.slice(i, i + LOTE);
+          const { error: upError } = await supabase.from("pecas").upsert(lote, { onConflict: "modelo,codigo" });
+          if (upError) throw new Error("Falha ao gravar peças: " + upError.message);
+          setProgresso({
+            pct: 80 + Math.round((i / registros.length) * 13),
+            texto: `Gravando peças... ${Math.min(i + LOTE, registros.length).toLocaleString("pt-BR")} / ${registros.length.toLocaleString("pt-BR")}`
+          });
+          await sleep(0);
+        }
       }
 
       const { data: { user } } = await supabase.auth.getUser();
       await supabase.from("pecas_processamentos").insert({
         usuario_id: user?.id,
-        arquivo_pecas: arquivoPecas.name,
-        arquivo_gspn: arquivoGspn.name,
+        arquivo_pecas: arquivoPecas?.name || null,
+        arquivo_gspn: arquivoGspn?.name || null,
         total_registros: registros.length,
         duplicados_removidos: duplicadosRemovidos,
         nao_classificados: naoClassificados,
         sem_custo: semCusto
       });
 
-      setProgresso({ pct: 96, texto: "Salvando lotes por Delivery (sem apagar os antigos)..." });
-      await sleep(0);
-      for (let i = 0; i < lotes.length; i += LOTE) {
-        const bloco = lotes.slice(i, i + LOTE);
-        const { error: upLotesError } = await supabase.from("lotes_pecas").upsert(bloco, { onConflict: "codigo,no_entrega" });
-        if (upLotesError) throw new Error("Falha ao gravar lotes: " + upLotesError.message);
+      if (lotes.length > 0) {
+        setProgresso({ pct: 96, texto: "Salvando lotes por Delivery (sem apagar os antigos)..." });
+        await sleep(0);
+        const LOTE = 500;
+        for (let i = 0; i < lotes.length; i += LOTE) {
+          const bloco = lotes.slice(i, i + LOTE);
+          const { error: upLotesError } = await supabase.from("lotes_pecas").upsert(bloco, { onConflict: "codigo,no_entrega" });
+          if (upLotesError) throw new Error("Falha ao gravar lotes: " + upLotesError.message);
+        }
       }
 
       setProgresso({ pct: 100, texto: "Concluído." });
       await sleep(150);
 
       setResultado({
+        modo: arquivoGspn ? (arquivoPecas ? "completo" : "so-gspn") : "so-precos",
         totalRegistros: registros.length,
         totalModelos: modelosSet.size,
         duplicadosRemovidos,
@@ -318,13 +367,16 @@ export default function CarregarBasesPage() {
     );
   }
 
+  const podeProcessar = (arquivoPecas || arquivoGspn) && !processando && !concluido;
+
   return (
     <AppShell titulo="Carregar Bases">
       <div className="card p-6 max-w-2xl">
         <p className="font-display font-semibold text-[15px] mb-1">Carregar bases de dados</p>
         <p className="text-sm text-muted mb-5">
-          Suba a Base Peças (compras) e a Base GSPN (ordens de serviço). O processamento roda aqui no navegador e
-          substitui a base de peças atual pela nova — cuidado ao reprocessar em horário de uso.
+          Suba as duas bases juntas pra um processamento completo, ou só uma de cada vez: só Base Peças atualiza
+          os custos das peças já cadastradas; só Base GSPN atualiza a classificação/modelo (mantendo os preços que
+          já existiam).
         </p>
 
         <div className="grid grid-cols-2 gap-4 mb-5">
@@ -342,13 +394,21 @@ export default function CarregarBasesPage() {
           </label>
         </div>
 
+        {(arquivoPecas || arquivoGspn) && !(arquivoPecas && arquivoGspn) && (
+          <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
+            {arquivoPecas
+              ? "Só Base Peças selecionada: vai atualizar o custo das peças já cadastradas (não cadastra peça nova)."
+              : "Só Base GSPN selecionada: vai atualizar modelo/categoria/descrição (mantém os preços já cadastrados)."}
+          </p>
+        )}
+
         <button
           className="btn-primary"
-          disabled={!arquivoPecas || !arquivoGspn || processando || concluido}
+          disabled={!podeProcessar}
           onClick={() => setConfirmando(true)}
         >
           <UploadCloud size={16} />
-          {processando ? "Processando..." : concluido ? "Base processada" : "Processar bases"}
+          {processando ? "Processando..." : concluido ? "Base processada" : "Processar"}
         </button>
 
         {processando && (
@@ -366,7 +426,7 @@ export default function CarregarBasesPage() {
       <Modal
         open={confirmando}
         onClose={() => setConfirmando(false)}
-        title="Substituir base de peças?"
+        title="Processar base?"
         footer={
           <>
             <button className="btn-secondary" onClick={() => setConfirmando(false)}>Cancelar</button>
@@ -380,8 +440,12 @@ export default function CarregarBasesPage() {
         }
       >
         <p className="text-sm text-muted">
-          Isso vai apagar a base de peças atual e substituir pelos dois arquivos selecionados. Essa mudança fica
-          visível pra todo mundo que usa o sistema imediatamente.
+          {arquivoPecas && arquivoGspn
+            ? "Isso vai atualizar (ou cadastrar) as peças com base nos dois arquivos selecionados."
+            : arquivoPecas
+              ? "Isso vai atualizar o custo das peças já cadastradas que tiverem código presente nesse arquivo."
+              : "Isso vai atualizar modelo/categoria/descrição das peças com base na Base GSPN, mantendo os custos já cadastrados."}
+          {" "}Essa mudança fica visível pra todo mundo que usa o sistema imediatamente.
         </p>
       </Modal>
 
@@ -397,16 +461,16 @@ export default function CarregarBasesPage() {
       >
         {resultado && (
           <div className="grid grid-cols-2 gap-3">
-            <Stat n={resultado.totalRegistros} label="combinações peça/modelo" />
-            <Stat n={resultado.totalModelos} label="modelos distintos" />
-            <Stat n={resultado.novasPecas} label="peças novas cadastradas" />
+            <Stat n={resultado.totalRegistros} label="registros processados" />
+            {resultado.modo === "completo" && <Stat n={resultado.totalModelos} label="modelos distintos" />}
+            {resultado.modo !== "so-precos" && <Stat n={resultado.novasPecas} label="peças novas cadastradas" />}
             <Stat n={resultado.precosAtualizados} label="preços atualizados (mais recentes)" />
             <Stat n={resultado.precosMantidos} label="preços mantidos (já eram mais novos)" />
-            <Stat n={resultado.duplicadosRemovidos} label="duplicados removidos" />
-            <Stat n={resultado.naoClassificados} label="não classificadas" />
-            <Stat n={resultado.semCusto} label="sem custo encontrado" />
-            <Stat n={resultado.totalLotes} label="lotes por Delivery gravados" />
-            <Stat n={resultado.semEntrega} label="compras sem nº de Delivery" />
+            {resultado.modo === "completo" && <Stat n={resultado.duplicadosRemovidos} label="duplicados removidos" />}
+            {resultado.modo === "completo" && <Stat n={resultado.naoClassificados} label="não classificadas" />}
+            {resultado.modo !== "so-precos" && <Stat n={resultado.semCusto} label="sem custo encontrado" />}
+            {resultado.totalLotes > 0 && <Stat n={resultado.totalLotes} label="lotes por Delivery gravados" />}
+            {resultado.semEntrega > 0 && <Stat n={resultado.semEntrega} label="compras sem nº de Delivery" />}
           </div>
         )}
       </Modal>

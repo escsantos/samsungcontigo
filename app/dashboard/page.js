@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ShieldAlert, TrendingUp, ShoppingBag, Receipt, Wallet, UserPlus, CheckCircle2, AlertTriangle
+  ShieldAlert, TrendingUp, ShoppingBag, Receipt, Wallet, UserPlus, CheckCircle2, AlertTriangle, PackageOpen
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -126,7 +126,11 @@ export default function DashboardPage() {
   const contagemStatus = {};
   ORDEM_STATUS.forEach((s) => (contagemStatus[s] = 0));
   contagemStatus["Rejeitado"] = 0;
-  orcamentos.forEach((o) => { if (contagemStatus[o.status] !== undefined) contagemStatus[o.status]++; });
+  contagemStatus["Entregue"] = 0;
+  orcamentos.forEach((o) => {
+    if (o.status === "Liberado para Retirada/Entrega" && o.entregue) contagemStatus["Entregue"]++;
+    else if (contagemStatus[o.status] !== undefined) contagemStatus[o.status]++;
+  });
 
   const evolucao = useMemo(() => {
     const dias = intervalo ? Math.ceil((intervalo.ate - intervalo.de) / 86400000) : 999;
@@ -219,13 +223,15 @@ export default function DashboardPage() {
       </div>
 
       {pendencias.length > 0 && (
-        <div className="card p-4 mb-4" onClick={() => router.push("/estoque")} style={{ cursor: "pointer" }}>
-          <div className="flex items-center gap-2">
-            <AlertTriangle size={16} style={{ color: "#C2801F" }} />
-            <p className="font-display font-semibold text-sm">{pendencias.length} pedido(s) com pendência de liberação parcial</p>
-            <span className="text-xs text-muted ml-auto">ver no Estoque →</span>
-          </div>
-        </div>
+        <button
+          onClick={() => router.push("/estoque")}
+          className="flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full border border-line text-xs font-medium hover:bg-canvas mb-4"
+        >
+          <span className="relative w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#E1614F" }}>
+            <span className="absolute inset-0 rounded-full animate-ping" style={{ background: "#E1614F", opacity: 0.7 }} />
+          </span>
+          {pendencias.length} pedido(s) com pendência de liberação parcial — ver no Estoque
+        </button>
       )}
 
       {carregando ? (
@@ -243,10 +249,10 @@ export default function DashboardPage() {
 
           <div className="card p-4 mb-5 overflow-x-auto">
             <p className="text-xs text-muted mb-3 font-medium">Pedidos por status</p>
-            <div className="flex gap-2 min-w-[700px]">
-              {[...ORDEM_STATUS, "Rejeitado"].map((s) => {
-                const cor = CORES_STATUS[s];
-                const Icone = ICONES_STATUS[s];
+            <div className="flex gap-2 min-w-[780px]">
+              {[...ORDEM_STATUS, "Entregue", "Rejeitado"].map((s) => {
+                const cor = s === "Entregue" ? { bg: "rgba(44,124,110,0.16)", fg: "#2C7C6E" } : CORES_STATUS[s];
+                const Icone = s === "Entregue" ? PackageOpen : ICONES_STATUS[s];
                 return (
                   <div key={s} className="flex-1 rounded-lg p-2.5 text-center" style={{ background: cor.bg, color: cor.fg }}>
                     <div className="flex items-center justify-center gap-1">

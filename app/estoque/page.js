@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldAlert, ChevronRight, AlertTriangle } from "lucide-react";
+import { ShieldAlert, ChevronRight, AlertTriangle, PackageOpen } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS } from "../../lib/estoque";
@@ -11,12 +11,16 @@ function fmtBRL(v) {
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const COR_ENTREGUE = { bg: "rgba(44,124,110,0.16)", fg: "#2C7C6E" };
+
 export default function EstoquePage() {
   const router = useRouter();
   const [perfil, setPerfil] = useState(undefined);
   const [lista, setLista] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [filtro, setFiltro] = useState(null);
+  const [pendenciasAbertas, setPendenciasAbertas] = useState(false);
+  const balaoRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -29,6 +33,14 @@ export default function EstoquePage() {
       setLista(data || []);
       setCarregando(false);
     })();
+  }, []);
+
+  useEffect(() => {
+    function fora(e) {
+      if (balaoRef.current && !balaoRef.current.contains(e.target)) setPendenciasAbertas(false);
+    }
+    document.addEventListener("mousedown", fora);
+    return () => document.removeEventListener("mousedown", fora);
   }, []);
 
   if (perfil === undefined) {
@@ -49,47 +61,72 @@ export default function EstoquePage() {
 
   const contagem = {};
   ORDEM_STATUS.forEach((s) => (contagem[s] = 0));
-  lista.forEach((o) => { if (contagem[o.status] !== undefined) contagem[o.status]++; });
+  let entreguesCount = 0;
+  lista.forEach((o) => {
+    if (o.status === "Liberado para Retirada/Entrega" && o.entregue) {
+      entreguesCount++;
+    } else if (contagem[o.status] !== undefined) {
+      contagem[o.status]++;
+    }
+  });
   const rejeitados = lista.filter((o) => o.status === "Rejeitado").length;
   const pendencias = lista.filter((o) => o.parcial || o.pedido_pai_id);
 
-  const filtrados = filtro ? lista.filter((o) => o.status === filtro) : lista;
+  const filtrados = filtro === "Entregue"
+    ? lista.filter((o) => o.entregue)
+    : filtro
+      ? lista.filter((o) => o.status === filtro && !o.entregue)
+      : lista;
 
   return (
     <AppShell titulo="Estoque">
-      {pendencias.length > 0 && (
-        <div className="card p-4 mb-4" style={{ borderColor: "#E8A33D" }}>
-          <div className="flex items-center gap-2 mb-2">
-            <AlertTriangle size={16} style={{ color: "#C2801F" }} />
-            <p className="font-display font-semibold text-sm">{pendencias.length} pedido(s) com pendência de liberação parcial</p>
+      <div className="flex items-center justify-between mb-4">
+        <div />
+        {pendencias.length > 0 && (
+          <div className="relative" ref={balaoRef}>
+            <button
+              onClick={() => setPendenciasAbertas((v) => !v)}
+              className="flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full border border-line text-xs font-medium hover:bg-canvas"
+            >
+              <span className="relative w-2.5 h-2.5 rounded-full shrink-0" style={{ background: "#E1614F" }}>
+                <span className="absolute inset-0 rounded-full animate-ping" style={{ background: "#E1614F", opacity: 0.7 }} />
+              </span>
+              {pendencias.length} pendência(s) de liberação parcial
+            </button>
+
+            {pendenciasAbertas && (
+              <div className="absolute right-0 top-10 z-40 card w-96 shadow-2xl p-3">
+                <p className="text-xs font-semibold text-muted px-1 mb-1.5">Pedidos com pendência</p>
+                <div className="max-h-72 overflow-auto space-y-1">
+                  {pendencias.map((o) => (
+                    <button
+                      key={o.id}
+                      onClick={() => { setPendenciasAbertas(false); router.push(`/estoque/${o.id}`); }}
+                      className="w-full text-left flex items-center justify-between text-xs px-2.5 py-2 rounded-lg hover:bg-canvas"
+                    >
+                      <span>
+                        Pedido #{o.id} — {o.clientes?.nome || "—"}{" "}
+                        {o.pedido_pai_id ? (
+                          <span className="text-muted block">peça pendente do pedido #{o.pedido_pai_id}</span>
+                        ) : (
+                          <span className="text-muted block">liberado parcialmente, aguardando o restante</span>
+                        )}
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded shrink-0" style={{ background: (CORES_STATUS[o.status] || {}).bg, color: (CORES_STATUS[o.status] || {}).fg }}>
+                        {o.status}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-          <div className="space-y-1.5">
-            {pendencias.map((o) => (
-              <button
-                key={o.id}
-                onClick={() => router.push(`/estoque/${o.id}`)}
-                className="w-full text-left flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg hover:bg-canvas"
-              >
-                <span>
-                  Pedido #{o.id} — {o.clientes?.nome || "—"}{" "}
-                  {o.pedido_pai_id ? (
-                    <span className="text-muted">(peça pendente do pedido #{o.pedido_pai_id})</span>
-                  ) : (
-                    <span className="text-muted">(liberado parcialmente, aguardando o restante)</span>
-                  )}
-                </span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded" style={{ background: (CORES_STATUS[o.status] || {}).bg, color: (CORES_STATUS[o.status] || {}).fg }}>
-                  {o.status}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="card p-5 mb-4 overflow-x-auto">
         <p className="font-display font-semibold text-[15px] mb-4">Linha do tempo dos pedidos</p>
-        <div className="flex items-stretch gap-1 min-w-[900px]">
+        <div className="flex items-stretch gap-1 min-w-[1000px]">
           {ORDEM_STATUS.map((s, i) => {
             const cor = CORES_STATUS[s];
             const Icone = ICONES_STATUS[s];
@@ -116,10 +153,30 @@ export default function EstoquePage() {
                   <div className="font-mono font-bold text-xl">{contagem[s]}</div>
                   <div className="text-[10px] leading-tight mt-1">{s}</div>
                 </button>
-                {i < ORDEM_STATUS.length - 1 && <ChevronRight size={16} className="text-muted mx-0.5 shrink-0" />}
+                <ChevronRight size={16} className="text-muted mx-0.5 shrink-0" />
               </div>
             );
           })}
+          <button
+            onClick={() => setFiltro(filtro === "Entregue" ? null : "Entregue")}
+            className="flex-1 rounded-xl p-3.5 text-center transition hover:-translate-y-0.5"
+            style={{
+              background: filtro === "Entregue" ? COR_ENTREGUE.fg : COR_ENTREGUE.bg,
+              color: filtro === "Entregue" ? "#fff" : COR_ENTREGUE.fg,
+              outline: filtro === "Entregue" ? `2px solid ${COR_ENTREGUE.fg}` : "none",
+              outlineOffset: "2px",
+              boxShadow: filtro === "Entregue" ? "0 4px 10px rgba(0,0,0,0.12)" : "0 1px 0 rgba(0,0,0,0.04), 0 2px 4px rgba(20,24,31,0.05)"
+            }}
+          >
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center mx-auto mb-2"
+              style={{ background: filtro === "Entregue" ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.6)" }}
+            >
+              <PackageOpen size={17} />
+            </div>
+            <div className="font-mono font-bold text-xl">{entreguesCount}</div>
+            <div className="text-[10px] leading-tight mt-1">Entregue</div>
+          </button>
         </div>
         {rejeitados > 0 && (
           <button
@@ -158,8 +215,8 @@ export default function EstoquePage() {
             </thead>
             <tbody>
               {filtrados.map((o) => {
-                const cor = CORES_STATUS[o.status] || { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
-                const IconeStatus = ICONES_STATUS[o.status];
+                const cor = o.entregue ? COR_ENTREGUE : (CORES_STATUS[o.status] || { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" });
+                const IconeStatus = o.entregue ? PackageOpen : ICONES_STATUS[o.status];
                 return (
                   <tr
                     key={o.id}
@@ -180,7 +237,7 @@ export default function EstoquePage() {
                     <td className="px-4 py-2.5">
                       <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1.5" style={{ background: cor.bg, color: cor.fg }}>
                         {IconeStatus && <IconeStatus size={11} />}
-                        {o.status}
+                        {o.entregue ? "Entregue" : o.status}
                       </span>
                     </td>
                   </tr>

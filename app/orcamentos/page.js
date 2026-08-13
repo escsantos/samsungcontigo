@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Search, ChevronRight } from "lucide-react";
 import { getPerfilAtual, supabase } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { CORES_STATUS, ICONES_STATUS } from "../../lib/estoque";
@@ -17,6 +18,9 @@ export default function OrcamentosPage() {
   const [perfil, setPerfil] = useState(undefined);
   const [lista, setLista] = useState([]);
   const [carregando, setCarregando] = useState(true);
+  const [numeroBusca, setNumeroBusca] = useState("");
+  const [resultadoBusca, setResultadoBusca] = useState(undefined); // undefined = não buscou ainda
+  const [buscando, setBuscando] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -30,10 +34,72 @@ export default function OrcamentosPage() {
     })();
   }, []);
 
+  async function buscarPorNumero(e) {
+    e.preventDefault();
+    const n = parseInt(numeroBusca, 10);
+    if (!n) return;
+    setBuscando(true);
+    const { data } = await supabase
+      .from("orcamentos")
+      .select("*, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome)")
+      .eq("id", n)
+      .maybeSingle();
+    setResultadoBusca(data || null);
+    setBuscando(false);
+  }
+
   const ehCliente = perfil?.cargo === "Cliente";
 
   return (
     <AppShell titulo="Orçamentos">
+      <form onSubmit={buscarPorNumero} className="card p-4 mb-4">
+        <p className="text-xs font-medium mb-2">Consultar orçamento pelo número</p>
+        <div className="flex gap-2 max-w-sm">
+          <input
+            className="field-input"
+            placeholder="Ex: 7"
+            value={numeroBusca}
+            onChange={(e) => setNumeroBusca(e.target.value)}
+            inputMode="numeric"
+          />
+          <button className="btn-primary shrink-0" type="submit" disabled={buscando || !numeroBusca}>
+            <Search size={15} />
+            Buscar
+          </button>
+        </div>
+
+        {resultadoBusca !== undefined && (
+          <div className="mt-4">
+            {resultadoBusca === null ? (
+              <p className="text-sm text-danger">Nenhum orçamento encontrado com o número #{numeroBusca}.</p>
+            ) : (() => {
+              const cor = CORES_STATUS[resultadoBusca.status] || CORES_STATUS_FALLBACK;
+              const IconeStatus = ICONES_STATUS[resultadoBusca.status];
+              return (
+                <button
+                  onClick={() => router.push(`/orcamentos/${resultadoBusca.id}`)}
+                  className="w-full flex items-center justify-between p-3.5 rounded-lg border border-line hover:bg-canvas text-left"
+                >
+                  <div>
+                    <p className="text-sm font-semibold">Pedido #{resultadoBusca.id} — {resultadoBusca.clientes?.nome || "—"}</p>
+                    <p className="text-xs text-muted mt-0.5">
+                      Vendedor: {resultadoBusca.perfis?.nome || "—"} · {fmtBRL(resultadoBusca.valor_total)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1.5" style={{ background: cor.bg, color: cor.fg }}>
+                      {IconeStatus && <IconeStatus size={11} />}
+                      {resultadoBusca.entregue ? "Entregue" : resultadoBusca.status}
+                    </span>
+                    <ChevronRight size={16} className="text-muted" />
+                  </div>
+                </button>
+              );
+            })()}
+          </div>
+        )}
+      </form>
+
       <p className="text-sm text-muted mb-3">{lista.length} orçamento(s)</p>
 
       <div className="card overflow-hidden">
