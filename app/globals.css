@@ -159,6 +159,31 @@ body {
     opacity: 1;
     transform: translateY(-50%) translateX(0);
   }
+
+  .tooltip-abaixo { position: relative; display: inline-block; cursor: help; border-bottom: 1px dashed var(--line); }
+  .tooltip-abaixo .tooltip-bubble-abaixo {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    width: max-content;
+    max-width: 320px;
+    background: var(--ink);
+    color: var(--canvas);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 10px 12px;
+    border-radius: 8px;
+    white-space: normal;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.15s, transform 0.15s;
+    z-index: 40;
+  }
+  .tooltip-abaixo:hover .tooltip-bubble-abaixo {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media print {

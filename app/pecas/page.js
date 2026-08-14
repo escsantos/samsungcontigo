@@ -327,7 +327,6 @@ export default function ConsultaPecasPage() {
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Categoria</th>
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Código</th>
                   <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição resumida</th>
-                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição da peça</th>
                   <th className="sticky top-0 bg-canvas text-center px-4 py-2.5 z-10">Qtd</th>
                   {mostraCusto && (
                     <>
@@ -362,8 +361,16 @@ export default function ConsultaPecasPage() {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 font-mono" style={{ color: "var(--accent)" }}>{r.codigo}</td>
-                      <td className="px-4 py-2.5">{r.descricao_resumida}</td>
-                      <td className="px-4 py-2.5 text-muted text-xs max-w-[240px]">{r.descricao_peca}</td>
+                      <td className="px-4 py-2.5">
+                        {r.descricao_peca ? (
+                          <span className="tooltip-abaixo">
+                            {r.descricao_resumida}
+                            <span className="tooltip-bubble-abaixo">{r.descricao_peca}</span>
+                          </span>
+                        ) : (
+                          r.descricao_resumida
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="number"
