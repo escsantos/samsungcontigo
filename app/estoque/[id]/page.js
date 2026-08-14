@@ -57,6 +57,9 @@ export default function EstoquePedidoPage() {
   const [pedidosIrmaos, setPedidosIrmaos] = useState([]);
   const [selecionados, setSelecionados] = useState([]);
 
+  const [editandoPagamento, setEditandoPagamento] = useState(null);
+  const [edicaoPagamento, setEdicaoPagamento] = useState({});
+
   useEffect(() => {
     carregar();
   }, [id]);
@@ -323,9 +326,6 @@ export default function EstoquePedidoPage() {
     setProcessando(false);
     carregar();
   }
-
-  const [editandoPagamento, setEditandoPagamento] = useState(null);
-  const [edicaoPagamento, setEdicaoPagamento] = useState({});
 
   function iniciarEdicaoPagamento(p) {
     setEditandoPagamento(p.id);
