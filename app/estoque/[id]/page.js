@@ -101,6 +101,9 @@ export default function EstoquePedidoPage() {
   }
 
   const cor = CORES_STATUS[orcamento.status] || { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
+  const totalPagoGeral = pagamentos.reduce((s, p) => s + Number(p.valor), 0);
+  const faltandoGeral = Number(orcamento.valor_total || 0) - totalPagoGeral;
+  const aindaSemPagamento = orcamento.sem_pagamento && faltandoGeral > 0.004;
   const IconeAtual = ICONES_STATUS[orcamento.status];
   const podeInformarDelivery = ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status);
   const todosLiberados = itens.length > 0 && itens.every((i) => i.liberado);
@@ -290,8 +293,9 @@ export default function EstoquePedidoPage() {
 
     const { data: pagsAtuais } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", id);
     const totalPago = (pagsAtuais || []).reduce((s, p) => s + Number(p.valor), 0);
+    const completo = totalPago >= Number(orcamento.valor_total) - 0.01;
 
-    if (totalPago >= Number(orcamento.valor_total) - 0.01) {
+    if (completo && orcamento.status === "Em Estoque - Aguardando Faturamento") {
       await supabase
         .from("orcamentos")
         .update({
@@ -299,9 +303,12 @@ export default function EstoquePedidoPage() {
           data_pagamento: dataPagamento,
           pagamento_validado_por: user.id,
           pagamento_validado_em: new Date().toISOString(),
-          status: "Faturamento Efetuado"
+          status: "Faturamento Efetuado",
+          sem_pagamento: false
         })
         .eq("id", id);
+    } else if (completo && orcamento.sem_pagamento) {
+      await supabase.from("orcamentos").update({ valor_pago: totalPago, sem_pagamento: false }).eq("id", id);
     }
 
     setArquivoAnexo(null);
@@ -400,6 +407,15 @@ export default function EstoquePedidoPage() {
           <p className="text-xs mt-2 font-medium" style={{ color: "#2C7C6E" }}>
             ✓ Entregue em {new Date(orcamento.entregue_em).toLocaleDateString("pt-BR")}
           </p>
+        )}
+        {aindaSemPagamento && (
+          <div
+            className="mt-3 rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-2"
+            style={{ background: "rgba(214,51,108,0.12)", color: "#D6336C" }}
+          >
+            <AlertTriangle size={14} />
+            SEM PAGAMENTO — faltam {fmtBRL(faltandoGeral)}. Precisa quitar antes de liberar a entrega.
+          </div>
         )}
         {orcamento.pedido_pai_id && (
           <div className="mt-3 rounded-lg px-3 py-2 text-xs" style={{ background: "rgba(122,79,176,0.10)", color: "#7A4FB0" }}>
@@ -573,11 +589,11 @@ export default function EstoquePedidoPage() {
         title="Registrar pagamento"
         tamanho="lg"
       >
-        {orcamento.status !== "Em Estoque - Aguardando Faturamento" ? (
+        {faltandoGeral <= 0.004 ? (
           <div className="text-center py-4">
             <Check size={32} className="mx-auto mb-3" style={{ color: "#2C7C6E" }} />
-            <p className="font-display font-semibold mb-1">Faturamento completo!</p>
-            <p className="text-sm text-muted mb-5">O pedido avançou para "{orcamento.status}".</p>
+            <p className="font-display font-semibold mb-1">Pagamento completo!</p>
+            <p className="text-sm text-muted mb-5">O valor do pedido já está totalmente pago.</p>
             <button className="btn-primary" onClick={() => setPagamentoModalAberto(false)}>Fechar</button>
           </div>
         ) : (() => {
@@ -692,15 +708,29 @@ export default function EstoquePedidoPage() {
       )}
 
       {orcamento.status === "Liberado para Retirada/Entrega" && !orcamento.entregue && (
-        <div className="card p-5 mb-4 flex items-center justify-between">
-          <div>
-            <p className="font-display font-semibold text-sm">Pronto pra entrega</p>
-            <p className="text-xs text-muted mt-0.5">Gere o romaneio e confirme a entrega ao cliente.</p>
+        <div className="card p-5 mb-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="font-display font-semibold text-sm">Pronto pra entrega</p>
+              <p className="text-xs text-muted mt-0.5">
+                {aindaSemPagamento
+                  ? "Ainda falta pagamento — quite antes de confirmar a entrega."
+                  : "Gere o romaneio e confirme a entrega ao cliente."}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {aindaSemPagamento && (
+                <button className="btn-secondary" onClick={() => setPagamentoModalAberto(true)}>
+                  <Receipt size={15} />
+                  Registrar pagamento
+                </button>
+              )}
+              <button className="btn-primary" disabled={aindaSemPagamento} onClick={abrirRomaneio} title={aindaSemPagamento ? "Quite o pagamento antes de liberar a entrega" : ""}>
+                <Send size={15} />
+                Confirmar Entrega
+              </button>
+            </div>
           </div>
-          <button className="btn-primary" onClick={abrirRomaneio}>
-            <Send size={15} />
-            Confirmar Entrega
-          </button>
         </div>
       )}
 

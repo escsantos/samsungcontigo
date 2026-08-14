@@ -481,3 +481,14 @@ create policy "estoque cria notificacao de pendencia"
 
 -- 11. Desconto no orçamento
 alter table orcamentos add column if not exists desconto numeric(12,2) default 0;
+
+-- 12. Pagamento na revisão do vendedor + marca "sem pagamento"
+alter table orcamentos add column if not exists sem_pagamento boolean default false;
+
+alter table notificacoes drop constraint if exists notificacoes_tipo_check;
+alter table notificacoes add constraint notificacoes_tipo_check
+  check (tipo in ('esqueci_senha', 'pedido_pendente_pronto', 'pedido_sem_pagamento'));
+
+create policy "vendedor avisa pedido sem pagamento"
+  on notificacoes for insert
+  with check (tipo = 'pedido_sem_pagamento' and pode_gerenciar_clientes());

@@ -132,7 +132,16 @@ export default function OrcamentosPage() {
                     onClick={() => router.push(`/orcamentos/${o.id}`)}
                   >
                     <td className="px-4 py-2.5 font-mono text-muted">#{o.id}</td>
-                    {!ehCliente && <td className="px-4 py-2.5 font-medium">{o.clientes?.nome || "—"}</td>}
+                    {!ehCliente && (
+                      <td className="px-4 py-2.5 font-medium">
+                        {o.clientes?.nome || "—"}
+                        {o.sem_pagamento && (
+                          <span className="ml-2 text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(214,51,108,0.14)", color: "#D6336C" }}>
+                            SEM PAGAMENTO
+                          </span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-2.5 text-muted">{o.perfis?.nome || "—"}</td>
                     <td className="px-4 py-2.5 text-muted">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</td>
                     <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmtBRL(o.valor_total)}</td>

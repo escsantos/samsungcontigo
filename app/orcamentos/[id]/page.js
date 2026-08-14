@@ -1,17 +1,20 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2, Receipt, Paperclip, ExternalLink, AlertTriangle } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
-import { CORES_STATUS, ICONES_STATUS } from "../../../lib/estoque";
+import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../../lib/estoque";
 import { calcularPreco } from "../../../lib/precos";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function hoje() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 const CORES_STATUS_FALLBACK = { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
@@ -35,6 +38,16 @@ export default function DetalheOrcamentoPage() {
   const [pecasAdicionadasAgora, setPecasAdicionadasAgora] = useState([]);
   const [desconto, setDesconto] = useState("0");
 
+  // pagamento na revisão
+  const [pagamentos, setPagamentos] = useState([]);
+  const [seguirSemPagamento, setSeguirSemPagamento] = useState(false);
+  const [pagamentoModalAberto, setPagamentoModalAberto] = useState(false);
+  const [formaPagamento, setFormaPagamento] = useState(FORMAS_PAGAMENTO[0]);
+  const [valorPagamento, setValorPagamento] = useState("");
+  const [dataPagamento, setDataPagamento] = useState(hoje());
+  const [arquivoAnexo, setArquivoAnexo] = useState(null);
+  const [processandoPagamento, setProcessandoPagamento] = useState(false);
+
   useEffect(() => {
     carregar();
   }, [id]);
@@ -46,6 +59,13 @@ export default function DetalheOrcamentoPage() {
     setDesconto(String(orc?.desconto || 0));
     const { data: its } = await supabase.from("orcamento_itens").select("*").eq("orcamento_id", id).order("id");
     setItens(its || []);
+    const { data: pags } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", id).order("registrado_em");
+    setPagamentos(pags || []);
+    if (orc) {
+      const totalPago = (pags || []).reduce((s, p) => s + Number(p.valor), 0);
+      const faltando = Number(orc.valor_total || 0) - totalPago;
+      setValorPagamento(faltando > 0 ? faltando.toFixed(2) : "");
+    }
   }
 
   const subtotalItens = itens.reduce((s, i) => s + Number(i.venda_total || 0), 0);
@@ -204,13 +224,93 @@ export default function DetalheOrcamentoPage() {
     carregar();
   }
 
+  const totalPagoAgora = pagamentos.reduce((s, p) => s + Number(p.valor), 0);
+  const faltandoAgora = Number(orcamento?.valor_total || 0) - totalPagoAgora;
+  const pagamentoCompleto = faltandoAgora <= 0.004;
+
+  async function adicionarPagamentoRevisao() {
+    const valor = parseFloat(valorPagamento);
+    if (!valor || valor <= 0 || !dataPagamento) return;
+    setProcessandoPagamento(true);
+    setErro("");
+
+    let anexoPath = null;
+    if (arquivoAnexo) {
+      const nomeArquivo = `${id}/${Date.now()}-${arquivoAnexo.name}`;
+      const { error: errUpload } = await supabase.storage.from("comprovantes").upload(nomeArquivo, arquivoAnexo);
+      if (errUpload) {
+        setProcessandoPagamento(false);
+        setErro("Falha ao subir o anexo: " + errUpload.message);
+        return;
+      }
+      anexoPath = nomeArquivo;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from("pagamentos_orcamento").insert({
+      orcamento_id: id,
+      forma_pagamento: formaPagamento,
+      valor,
+      data_pagamento: dataPagamento,
+      anexo_url: anexoPath,
+      registrado_por: user.id
+    });
+
+    if (error) {
+      setProcessandoPagamento(false);
+      setErro("Falha ao registrar pagamento: " + error.message);
+      return;
+    }
+
+    const { data: pagsAtuais } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", id);
+    const totalPago = (pagsAtuais || []).reduce((s, p) => s + Number(p.valor), 0);
+    if (totalPago >= Number(orcamento.valor_total) - 0.01 && orcamento.sem_pagamento) {
+      await supabase.from("orcamentos").update({ sem_pagamento: false }).eq("id", id);
+    }
+
+    setArquivoAnexo(null);
+    setProcessandoPagamento(false);
+    setPagamentoModalAberto(false);
+    carregar();
+  }
+
+  async function excluirPagamentoRevisao(pagamentoId) {
+    setProcessando(true);
+    await supabase.from("pagamentos_orcamento").delete().eq("id", pagamentoId);
+    setProcessando(false);
+    carregar();
+  }
+
+  async function verComprovanteRevisao(anexoUrl) {
+    if (!anexoUrl) return;
+    const { data, error } = await supabase.storage.from("comprovantes").createSignedUrl(anexoUrl, 3600);
+    if (!error && data) window.open(data.signedUrl, "_blank");
+  }
+
   async function aprovar() {
+    if (!pagamentoCompleto && !seguirSemPagamento) {
+      setErro("Registre o pagamento completo ou marque \"Seguir sem pagamento\" antes de aprovar.");
+      return;
+    }
     setProcessando(true);
     setErro("");
     const { data: { user } } = await supabase.auth.getUser();
+
+    if (!pagamentoCompleto && seguirSemPagamento) {
+      await supabase.from("notificacoes").insert({
+        tipo: "pedido_sem_pagamento",
+        mensagem: `Pedido #${id} (${orcamento.clientes?.nome || ""}) foi aprovado sem pagamento completo. Falta ${fmtBRL(faltandoAgora)}.`
+      });
+    }
+
     const { error } = await supabase
       .from("orcamentos")
-      .update({ status: "Aguardando Separação/Compra", revisado_por: user.id, revisado_em: new Date().toISOString() })
+      .update({
+        status: "Aguardando Separação/Compra",
+        revisado_por: user.id,
+        revisado_em: new Date().toISOString(),
+        sem_pagamento: !pagamentoCompleto && seguirSemPagamento
+      })
       .eq("id", id);
     setProcessando(false);
     if (error) {
@@ -273,6 +373,15 @@ export default function DetalheOrcamentoPage() {
             {orcamento.status}
           </span>
         </div>
+        {orcamento.sem_pagamento && (
+          <div
+            className="mt-4 rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-2"
+            style={{ background: "rgba(214,51,108,0.12)", color: "#D6336C" }}
+          >
+            <AlertTriangle size={14} />
+            SEM PAGAMENTO — este pedido segue o fluxo antes do pagamento estar completo
+          </div>
+        )}
         {orcamento.status === "Rejeitado" && orcamento.motivo_rejeicao && (
           <div className="mt-4 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">
             Motivo: {orcamento.motivo_rejeicao}
@@ -437,6 +546,49 @@ export default function DetalheOrcamentoPage() {
         </div>
       )}
 
+      {podeRevisar && !ajustando && (
+        <div className="card p-5 mb-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="font-display font-semibold text-sm flex items-center gap-2 mb-1">
+                <Receipt size={16} style={{ color: "var(--accent)" }} />
+                Pagamento
+              </p>
+              <p className="text-xs text-muted">
+                Total pago: <b className="font-mono text-ink">{fmtBRL(totalPagoAgora)}</b>
+                {" · "}
+                {pagamentoCompleto ? (
+                  <span className="font-semibold" style={{ color: "#2C7C6E" }}>Completo ✓</span>
+                ) : (
+                  <span className="font-semibold text-danger">Faltam {fmtBRL(faltandoAgora)}</span>
+                )}
+              </p>
+            </div>
+            <button className="btn-secondary" onClick={() => setPagamentoModalAberto(true)}>
+              <Plus size={15} />
+              Registrar pagamento
+            </button>
+          </div>
+
+          {!pagamentoCompleto && (
+            <label className="flex items-start gap-2.5 mt-4 p-3 rounded-lg border border-line cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={seguirSemPagamento}
+                onChange={(e) => setSeguirSemPagamento(e.target.checked)}
+              />
+              <span className="text-xs">
+                <span className="font-medium">Seguir sem pagamento</span>
+                <span className="block text-muted mt-0.5">
+                  O pedido segue o fluxo mesmo sem o pagamento completo. O gerente é avisado, e o pedido fica marcado até o pagamento ser concluído.
+                </span>
+              </span>
+            </label>
+          )}
+        </div>
+      )}
+
       <div className="card p-5 flex items-center justify-between mb-4">
         <div>
           <p className="text-xs text-muted">Total do orçamento</p>
@@ -466,7 +618,12 @@ export default function DetalheOrcamentoPage() {
                   <X size={15} />
                   Rejeitar
                 </button>
-                <button className="btn-primary" disabled={processando} onClick={aprovar}>
+                <button
+                  className="btn-primary"
+                  disabled={processando || (!pagamentoCompleto && !seguirSemPagamento)}
+                  onClick={aprovar}
+                  title={!pagamentoCompleto && !seguirSemPagamento ? "Registre o pagamento ou marque 'Seguir sem pagamento'" : ""}
+                >
                   <Check size={15} />
                   Aprovar
                 </button>
@@ -477,6 +634,100 @@ export default function DetalheOrcamentoPage() {
       </div>
 
       {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
+
+      <Modal
+        open={pagamentoModalAberto}
+        onClose={() => setPagamentoModalAberto(false)}
+        title="Registrar pagamento"
+        tamanho="lg"
+      >
+        <p className="text-xs text-muted mb-4">
+          Valor do pedido: <b className="text-ink">{fmtBRL(orcamento.valor_total)}</b>. Pode registrar quantas formas de pagamento precisar.
+        </p>
+
+        {pagamentos.length > 0 && (
+          <div className="mb-4 border border-line rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
+                  <th className="text-left px-3 py-2">Forma</th>
+                  <th className="text-left px-3 py-2">Data</th>
+                  <th className="text-right px-3 py-2">Valor</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagamentos.map((p) => (
+                  <tr key={p.id} className="border-b border-line last:border-0">
+                    <td className="px-3 py-2">{p.forma_pagamento}</td>
+                    <td className="px-3 py-2 text-muted">{new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(p.valor)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {p.anexo_url && (
+                          <button onClick={() => verComprovanteRevisao(p.anexo_url)} className="text-muted hover:text-ink" title="Ver comprovante">
+                            <ExternalLink size={13} />
+                          </button>
+                        )}
+                        <button onClick={() => excluirPagamentoRevisao(p.id)} className="text-muted hover:text-danger" title="Excluir">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between mb-4 px-1">
+          <span className="text-xs text-muted">Total pago: <b className="font-mono text-ink">{fmtBRL(totalPagoAgora)}</b></span>
+          {pagamentoCompleto ? (
+            <span className="text-xs font-semibold" style={{ color: "#2C7C6E" }}>Valor completo ✓</span>
+          ) : (
+            <span className="text-xs font-semibold text-danger">Faltam {fmtBRL(faltandoAgora)}</span>
+          )}
+        </div>
+
+        {!pagamentoCompleto && (
+          <>
+            <p className="text-xs font-semibold mb-2">{pagamentos.length > 0 ? "Adicionar mais uma forma de pagamento" : "Registrar pagamento"}</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="field-label">Forma de pagamento</label>
+                <select className="field-input" value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
+                  {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="field-label">Valor</label>
+                <input type="number" step="0.01" className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
+              </div>
+              <div>
+                <label className="field-label">Data do pagamento</label>
+                <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
+              </div>
+              <div>
+                <label className="field-label">Anexo (opcional)</label>
+                <label className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm text-muted hover:border-brand-400 truncate">
+                  <Paperclip size={14} className="shrink-0" />
+                  <span className="truncate">{arquivoAnexo ? arquivoAnexo.name : "Escolher arquivo"}</span>
+                  <input type="file" className="hidden" onChange={(e) => setArquivoAnexo(e.target.files[0] || null)} />
+                </label>
+              </div>
+            </div>
+            <button
+              className="btn-primary mt-5"
+              disabled={processandoPagamento || !valorPagamento || !dataPagamento}
+              onClick={adicionarPagamentoRevisao}
+            >
+              <Plus size={15} />
+              {processandoPagamento ? "Salvando..." : "Adicionar pagamento"}
+            </button>
+          </>
+        )}
+      </Modal>
 
       <Modal
         open={confirmarRejeitar}
