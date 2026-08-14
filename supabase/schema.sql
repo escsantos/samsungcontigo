@@ -10,7 +10,7 @@ create table if not exists perfis (
   id uuid primary key references auth.users(id) on delete cascade,
   login text unique not null,
   nome text not null,
-  cargo text not null check (cargo in ('Administrador','Diretor','Gerente','Vendedor','Estoque','Cliente')),
+  cargo text not null check (cargo in ('Administrador','Diretor','Gerente','Vendedor','Estoque','Financeiro','Cliente')),
   cor_accent text default '#4A90D9',
   bloqueado boolean default false,
   senha_temporaria boolean default true,
@@ -492,3 +492,73 @@ alter table notificacoes add constraint notificacoes_tipo_check
 create policy "vendedor avisa pedido sem pagamento"
   on notificacoes for insert
   with check (tipo = 'pedido_sem_pagamento' and pode_gerenciar_clientes());
+
+-- 13. Ajustes de permissão: Vendedor gerencia pagamento, tela de Pagamentos vê qualquer pedido
+drop policy if exists "criar pagamentos" on pagamentos_orcamento;
+create policy "criar pagamentos"
+  on pagamentos_orcamento for insert
+  with check (exists (select 1 from orcamentos o where o.id = orcamento_id and (pode_gerenciar_clientes() or pode_gerenciar_estoque())));
+
+create policy "editar pagamentos"
+  on pagamentos_orcamento for update
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (pode_gerenciar_clientes() or pode_gerenciar_estoque())));
+
+drop policy if exists "excluir pagamentos" on pagamentos_orcamento;
+create policy "excluir pagamentos"
+  on pagamentos_orcamento for delete
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (pode_gerenciar_clientes() or pode_gerenciar_estoque())));
+
+drop policy if exists "ver orcamentos" on orcamentos;
+create policy "ver orcamentos"
+  on orcamentos for select
+  using (cliente_id = meu_cliente_id() or vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque() or pode_gerenciar_clientes());
+
+drop policy if exists "ver itens de orcamento" on orcamento_itens;
+create policy "ver itens de orcamento"
+  on orcamento_itens for select
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.cliente_id = meu_cliente_id() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque() or pode_gerenciar_clientes())));
+
+drop policy if exists "ver pagamentos" on pagamentos_orcamento;
+create policy "ver pagamentos"
+  on pagamentos_orcamento for select
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.cliente_id = meu_cliente_id() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque() or pode_gerenciar_clientes())));
+
+-- 14. Módulo Financeiro
+create or replace function eh_financeiro()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Financeiro'));
+$$;
+
+alter table orcamentos add column if not exists recebimento_confirmado boolean default false;
+alter table orcamentos add column if not exists recebimento_confirmado_por uuid references perfis(id);
+alter table orcamentos add column if not exists recebimento_confirmado_em timestamptz;
+
+create policy "financeiro confirma recebimento"
+  on orcamentos for update
+  using (eh_financeiro())
+  with check (eh_financeiro());
+
+alter table orcamento_itens add column if not exists custo_pago_fabricante boolean default false;
+alter table orcamento_itens add column if not exists custo_pago_fabricante_por uuid references perfis(id);
+alter table orcamento_itens add column if not exists custo_pago_fabricante_em timestamptz;
+
+create policy "financeiro confirma pagamento fabricante"
+  on orcamento_itens for update
+  using (eh_financeiro())
+  with check (eh_financeiro());
+
+create policy "financeiro le orcamentos"
+  on orcamentos for select
+  using (eh_financeiro());
+
+create policy "financeiro le itens"
+  on orcamento_itens for select
+  using (eh_financeiro());
+
+create policy "financeiro le pagamentos"
+  on pagamentos_orcamento for select
+  using (eh_financeiro());
+
+create policy "financeiro le clientes"
+  on clientes for select
+  using (eh_financeiro());

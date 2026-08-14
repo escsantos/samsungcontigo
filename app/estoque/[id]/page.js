@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, ShieldAlert, Search, Check, AlertTriangle, Package,
-  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight
+  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight, Pencil, Save
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
@@ -324,6 +324,27 @@ export default function EstoquePedidoPage() {
     carregar();
   }
 
+  const [editandoPagamento, setEditandoPagamento] = useState(null);
+  const [edicaoPagamento, setEdicaoPagamento] = useState({});
+
+  function iniciarEdicaoPagamento(p) {
+    setEditandoPagamento(p.id);
+    setEdicaoPagamento({ forma_pagamento: p.forma_pagamento, valor: String(p.valor), data_pagamento: p.data_pagamento });
+  }
+
+  async function salvarEdicaoPagamento(pagamentoId) {
+    const valor = parseFloat(edicaoPagamento.valor);
+    if (!valor || valor <= 0 || !edicaoPagamento.data_pagamento) return;
+    setProcessando(true);
+    await supabase
+      .from("pagamentos_orcamento")
+      .update({ forma_pagamento: edicaoPagamento.forma_pagamento, valor, data_pagamento: edicaoPagamento.data_pagamento })
+      .eq("id", pagamentoId);
+    setProcessando(false);
+    setEditandoPagamento(null);
+    carregar();
+  }
+
   async function confirmarSeparacao() {
     setProcessando(true);
     setErro("");
@@ -617,25 +638,57 @@ export default function EstoquePedidoPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {pagamentos.map((p) => (
-                        <tr key={p.id} className="border-b border-line last:border-0">
-                          <td className="px-3 py-2">{p.forma_pagamento}</td>
-                          <td className="px-3 py-2 text-muted">{new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}</td>
-                          <td className="px-3 py-2 text-right font-mono">{fmtBRL(p.valor)}</td>
-                          <td className="px-3 py-2 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              {p.anexo_url && (
-                                <button onClick={() => verComprovante(p.anexo_url)} className="text-muted hover:text-ink" title="Ver comprovante">
-                                  <ExternalLink size={13} />
-                                </button>
+                      {pagamentos.map((p) => {
+                        const emEdicao = editandoPagamento === p.id;
+                        return (
+                          <tr key={p.id} className="border-b border-line last:border-0">
+                            <td className="px-3 py-2">
+                              {emEdicao ? (
+                                <select className="field-input py-1 text-xs" value={edicaoPagamento.forma_pagamento} onChange={(e) => setEdicaoPagamento((a) => ({ ...a, forma_pagamento: e.target.value }))}>
+                                  {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
+                                </select>
+                              ) : (
+                                p.forma_pagamento
                               )}
-                              <button onClick={() => excluirPagamento(p.id)} className="text-muted hover:text-danger" title="Excluir">
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-3 py-2 text-muted">
+                              {emEdicao ? (
+                                <input type="date" className="field-input py-1 text-xs" value={edicaoPagamento.data_pagamento} onChange={(e) => setEdicaoPagamento((a) => ({ ...a, data_pagamento: e.target.value }))} />
+                              ) : (
+                                new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono">
+                              {emEdicao ? (
+                                <input type="number" step="0.01" className="field-input py-1 text-xs text-right w-24 ml-auto" value={edicaoPagamento.valor} onChange={(e) => setEdicaoPagamento((a) => ({ ...a, valor: e.target.value }))} />
+                              ) : (
+                                fmtBRL(p.valor)
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                {emEdicao ? (
+                                  <button onClick={() => salvarEdicaoPagamento(p.id)} className="text-muted hover:text-ink" title="Salvar">
+                                    <Save size={13} />
+                                  </button>
+                                ) : (
+                                  <button onClick={() => iniciarEdicaoPagamento(p)} className="text-muted hover:text-ink" title="Editar">
+                                    <Pencil size={13} />
+                                  </button>
+                                )}
+                                {p.anexo_url && (
+                                  <button onClick={() => verComprovante(p.anexo_url)} className="text-muted hover:text-ink" title="Ver comprovante">
+                                    <ExternalLink size={13} />
+                                  </button>
+                                )}
+                                <button onClick={() => excluirPagamento(p.id)} className="text-muted hover:text-danger" title="Excluir">
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

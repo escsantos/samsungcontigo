@@ -39,6 +39,7 @@ const PERIODOS = [
 export default function RelatorioCustoPage() {
   const [perfil, setPerfil] = useState(undefined);
   const [linhas, setLinhas] = useState([]);
+  const [fatoresPedido, setFatoresPedido] = useState({}); // orcamentoId -> { fator, totalPago }
   const [carregando, setCarregando] = useState(true);
   const [periodo, setPeriodo] = useState("mes");
   const [dataDe, setDataDe] = useState("");
@@ -47,12 +48,40 @@ export default function RelatorioCustoPage() {
   useEffect(() => {
     (async () => {
       setPerfil(await getPerfilAtual());
-      const { data } = await supabase
+
+      const { data: liberados } = await supabase
         .from("orcamento_itens")
-        .select("*, orcamentos(id, margem, imposto_total, criado_em, clientes(nome))")
+        .select("*, orcamentos(id, margem, imposto_total, criado_em, valor_total, desconto, clientes(nome))")
         .eq("liberado", true)
         .order("liberado_em", { ascending: false });
-      setLinhas(data || []);
+      setLinhas(liberados || []);
+
+      const idsPedidos = [...new Set((liberados || []).map((l) => l.orcamentos?.id).filter(Boolean))];
+      const fatores = {};
+      if (idsPedidos.length > 0) {
+        // subtotal real de cada pedido (soma de TODOS os itens, não só os liberados) — pra achar a proporção do desconto
+        const { data: todosItens } = await supabase.from("orcamento_itens").select("orcamento_id, venda_total").in("orcamento_id", idsPedidos);
+        const subtotalPorPedido = {};
+        (todosItens || []).forEach((i) => {
+          subtotalPorPedido[i.orcamento_id] = (subtotalPorPedido[i.orcamento_id] || 0) + Number(i.venda_total || 0);
+        });
+
+        // total pago de cada pedido
+        const { data: pagamentos } = await supabase.from("pagamentos_orcamento").select("orcamento_id, valor").in("orcamento_id", idsPedidos);
+        const pagoPorPedido = {};
+        (pagamentos || []).forEach((p) => {
+          pagoPorPedido[p.orcamento_id] = (pagoPorPedido[p.orcamento_id] || 0) + Number(p.valor || 0);
+        });
+
+        for (const l of liberados || []) {
+          const orc = l.orcamentos;
+          if (!orc || fatores[orc.id]) continue;
+          const subtotal = subtotalPorPedido[orc.id] || 0;
+          const fator = subtotal > 0 ? Number(orc.valor_total || 0) / subtotal : 1;
+          fatores[orc.id] = { fator, totalPago: pagoPorPedido[orc.id] || 0 };
+        }
+      }
+      setFatoresPedido(fatores);
       setCarregando(false);
     })();
   }, []);
@@ -82,19 +111,20 @@ export default function RelatorioCustoPage() {
       const orc = l.orcamentos;
       const impostoPct = Number(orc?.imposto_total || 0);
       const custoTotal = Number(l.custo_real || 0) * l.qtd;
-      const vendaTotal = Number(l.venda_total || 0);
-      const impostoValor = vendaTotal * (impostoPct / 100);
-      const lucroLiquido = vendaTotal - custoTotal - impostoValor;
-      const percentualLucro = vendaTotal > 0 ? (lucroLiquido / vendaTotal) * 100 : 0;
-      return { ...l, custoTotal, impostoValor, lucroLiquido, percentualLucro };
+      const info = fatoresPedido[orc?.id] || { fator: 1, totalPago: 0 };
+      const vendaLiquida = Number(l.venda_total || 0) * info.fator;
+      const impostoValor = vendaLiquida * (impostoPct / 100);
+      const lucroLiquido = vendaLiquida - custoTotal - impostoValor;
+      const percentualLucro = vendaLiquida > 0 ? (lucroLiquido / vendaLiquida) * 100 : 0;
+      return { ...l, custoTotal, impostoValor, vendaLiquida, lucroLiquido, percentualLucro, totalPagoPedido: info.totalPago };
     });
-  }, [linhasNoPeriodo]);
+  }, [linhasNoPeriodo, fatoresPedido]);
 
   const totais = calculadas.reduce(
     (acc, l) => ({
       custo: acc.custo + l.custoTotal,
       imposto: acc.imposto + l.impostoValor,
-      venda: acc.venda + Number(l.venda_total || 0),
+      venda: acc.venda + l.vendaLiquida,
       lucro: acc.lucro + l.lucroLiquido
     }),
     { custo: 0, imposto: 0, venda: 0, lucro: 0 }
@@ -109,12 +139,13 @@ export default function RelatorioCustoPage() {
       Qtd: l.qtd,
       "Custo (R$)": Number(l.custoTotal.toFixed(2)),
       "Imposto (R$)": Number(l.impostoValor.toFixed(2)),
-      "Venda (R$)": Number(Number(l.venda_total || 0).toFixed(2)),
+      "Venda líquida (R$)": Number(l.vendaLiquida.toFixed(2)),
       "Lucro Líquido (R$)": Number(l.lucroLiquido.toFixed(2)),
-      "% Lucro": Number(l.percentualLucro.toFixed(1))
+      "% Lucro": Number(l.percentualLucro.toFixed(1)),
+      "Valor pago no pedido (R$)": Number(l.totalPagoPedido.toFixed(2))
     }));
     const ws = XLSX.utils.json_to_sheet(linhasExport);
-    ws["!cols"] = [{ wch: 8 }, { wch: 24 }, { wch: 13 }, { wch: 14 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 9 }];
+    ws["!cols"] = [{ wch: 8 }, { wch: 24 }, { wch: 13 }, { wch: 14 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 14 }, { wch: 9 }, { wch: 15 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Custo de Peças");
     const sufixo = periodo === "tudo" ? "todos" : periodo;
@@ -141,7 +172,7 @@ export default function RelatorioCustoPage() {
     <AppShell titulo="Relatório de Custo de Peças">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4 no-print">
         <p className="text-sm text-muted">
-          Peças já liberadas (com Delivery confirmada) — use para conferência e pagamento ao fornecedor.
+          Peças já liberadas (com Delivery confirmada) — valores já descontam eventuais descontos aplicados no pedido.
         </p>
         <div className="flex gap-2">
           <button className="btn-secondary text-xs py-2" onClick={exportarExcel}>
@@ -187,7 +218,7 @@ export default function RelatorioCustoPage() {
           <p className="font-mono font-bold text-lg">{fmtBRL(totais.imposto)}</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-muted mb-1">Venda total</p>
+          <p className="text-xs text-muted mb-1">Venda líquida total</p>
           <p className="font-mono font-bold text-lg">{fmtBRL(totais.venda)}</p>
         </div>
         <div className="card p-4">
@@ -202,33 +233,35 @@ export default function RelatorioCustoPage() {
         ) : calculadas.length === 0 ? (
           <p className="text-sm text-muted p-6 text-center">Nenhuma peça liberada nesse período.</p>
         ) : (
-          <div className="overflow-auto max-h-[calc(100vh-420px)] print:max-h-none print:overflow-visible">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-canvas border-b border-line text-[10.5px] uppercase tracking-wide text-muted font-mono">
-                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5">Pedido</th>
-                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5">Cliente</th>
-                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5">Código</th>
-                  <th className="sticky top-0 bg-canvas text-center px-4 py-2.5">Qtd</th>
-                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5">Custo</th>
-                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5">Imposto</th>
-                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5">Venda</th>
-                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5">Lucro Líquido</th>
-                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5">% Lucro</th>
+                  <th className="text-left px-4 py-2.5 whitespace-nowrap">Pedido</th>
+                  <th className="text-left px-4 py-2.5 whitespace-nowrap">Cliente</th>
+                  <th className="text-left px-4 py-2.5 whitespace-nowrap">Código</th>
+                  <th className="text-center px-4 py-2.5 whitespace-nowrap">Qtd</th>
+                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Custo</th>
+                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Imposto</th>
+                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Venda líquida</th>
+                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Lucro Líquido</th>
+                  <th className="text-right px-4 py-2.5 whitespace-nowrap">% Lucro</th>
+                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Pago no pedido</th>
                 </tr>
               </thead>
               <tbody>
                 {calculadas.map((l) => (
                   <tr key={l.id} className="border-b border-line last:border-0 hover:bg-canvas">
-                    <td className="px-4 py-2.5 font-mono text-muted">#{l.orcamentos?.id}</td>
-                    <td className="px-4 py-2.5">{l.orcamentos?.clientes?.nome || "—"}</td>
-                    <td className="px-4 py-2.5 font-mono" style={{ color: "var(--accent)" }}>{l.codigo}</td>
+                    <td className="px-4 py-2.5 font-mono text-muted whitespace-nowrap">#{l.orcamentos?.id}</td>
+                    <td className="px-4 py-2.5 whitespace-nowrap">{l.orcamentos?.clientes?.nome || "—"}</td>
+                    <td className="px-4 py-2.5 font-mono whitespace-nowrap" style={{ color: "var(--accent)" }}>{l.codigo}</td>
                     <td className="px-4 py-2.5 text-center">{l.qtd}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(l.custoTotal)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(l.impostoValor)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(l.venda_total)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: "#2C7C6E" }}>{fmtBRL(l.lucroLiquido)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{l.percentualLucro.toFixed(1)}%</td>
+                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap">{fmtBRL(l.custoTotal)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap">{fmtBRL(l.impostoValor)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap">{fmtBRL(l.vendaLiquida)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-semibold whitespace-nowrap" style={{ color: "#2C7C6E" }}>{fmtBRL(l.lucroLiquido)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap">{l.percentualLucro.toFixed(1)}%</td>
+                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap">{fmtBRL(l.totalPagoPedido)}</td>
                   </tr>
                 ))}
               </tbody>

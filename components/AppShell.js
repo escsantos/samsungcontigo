@@ -4,7 +4,8 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
-  ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X
+  ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
+  Wallet, ClipboardCheck, Truck
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import BotaoTema from "./BotaoTema";
@@ -29,7 +30,8 @@ export const GRUPOS_MENU = [
     itens: [
       { href: "/dashboard", label: "Dashboard de Vendas", icone: LayoutDashboard, cor: "#3FA796", descricao: "Cards, gráficos e ranking de vendas por período.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
       { href: "/clientes", label: "Clientes", icone: Contact, cor: "#8B5CF6", descricao: "Cadastre e gerencie os clientes da loja.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
-      { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cor: "#4A90D9", descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"] }
+      { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cor: "#4A90D9", descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"] },
+      { href: "/pagamentos", label: "Pagamentos", icone: Receipt, cor: "#E1614F", descricao: "Busque um pedido pelo número e registre ou ajuste o pagamento.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Estoque"] }
     ]
   },
   {
@@ -41,6 +43,17 @@ export const GRUPOS_MENU = [
       { href: "/estoque", label: "Painel de Estoque", icone: Warehouse, cor: "#2E7F97", descricao: "Acompanhe a linha do tempo dos pedidos e libere peças por Delivery.", cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
       { href: "/estoque/pedidos", label: "Relatório de Pedidos", icone: ClipboardList, cor: "#7A4FB0", descricao: "Todos os pedidos com filtros completos, exporta para Excel.", cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
       { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cor: "#4338CA", descricao: "Custo real, imposto e lucro líquido das peças já liberadas.", cargos: ["Administrador", "Diretor", "Gerente"] }
+    ]
+  },
+  {
+    id: "financeiro",
+    label: "Financeiro",
+    icone: Wallet,
+    href: "/financeiro",
+    itens: [
+      { href: "/financeiro", label: "Dashboard Financeiro", icone: Wallet, cor: "#2C7C6E", descricao: "Recebido, pago ao fabricante e margem, com filtro por período.", cargos: ["Administrador", "Financeiro"] },
+      { href: "/financeiro/recebimentos", label: "Confirmar Recebimentos", icone: ClipboardCheck, cor: "#3FA796", descricao: "Confirme se o pagamento do cliente realmente entrou.", cargos: ["Administrador", "Financeiro"] },
+      { href: "/financeiro/fornecedor", label: "Pagamento ao Fabricante", icone: Truck, cor: "#E1614F", descricao: "Confirme o pagamento do custo das peças à Samsung, por semana/cliente/data.", cargos: ["Administrador", "Financeiro"] }
     ]
   },
   {

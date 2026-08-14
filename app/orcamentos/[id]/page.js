@@ -227,6 +227,9 @@ export default function DetalheOrcamentoPage() {
   const totalPagoAgora = pagamentos.reduce((s, p) => s + Number(p.valor), 0);
   const faltandoAgora = Number(orcamento?.valor_total || 0) - totalPagoAgora;
   const pagamentoCompleto = faltandoAgora <= 0.004;
+  const percentualPagoAgora = Number(orcamento?.valor_total || 0) > 0 ? (totalPagoAgora / Number(orcamento.valor_total)) * 100 : 0;
+  const atingiu30Porcento = percentualPagoAgora >= 30;
+  const podeAprovar = atingiu30Porcento || seguirSemPagamento;
 
   async function adicionarPagamentoRevisao() {
     const valor = parseFloat(valorPagamento);
@@ -281,6 +284,27 @@ export default function DetalheOrcamentoPage() {
     carregar();
   }
 
+  const [editandoPagamento, setEditandoPagamento] = useState(null);
+  const [edicaoPagamento, setEdicaoPagamento] = useState({});
+
+  function iniciarEdicaoPagamento(p) {
+    setEditandoPagamento(p.id);
+    setEdicaoPagamento({ forma_pagamento: p.forma_pagamento, valor: String(p.valor), data_pagamento: p.data_pagamento });
+  }
+
+  async function salvarEdicaoPagamento(pagamentoId) {
+    const valor = parseFloat(edicaoPagamento.valor);
+    if (!valor || valor <= 0 || !edicaoPagamento.data_pagamento) return;
+    setProcessando(true);
+    await supabase
+      .from("pagamentos_orcamento")
+      .update({ forma_pagamento: edicaoPagamento.forma_pagamento, valor, data_pagamento: edicaoPagamento.data_pagamento })
+      .eq("id", pagamentoId);
+    setProcessando(false);
+    setEditandoPagamento(null);
+    carregar();
+  }
+
   async function verComprovanteRevisao(anexoUrl) {
     if (!anexoUrl) return;
     const { data, error } = await supabase.storage.from("comprovantes").createSignedUrl(anexoUrl, 3600);
@@ -288,18 +312,18 @@ export default function DetalheOrcamentoPage() {
   }
 
   async function aprovar() {
-    if (!pagamentoCompleto && !seguirSemPagamento) {
-      setErro("Registre o pagamento completo ou marque \"Seguir sem pagamento\" antes de aprovar.");
+    if (!podeAprovar) {
+      setErro("Receba pelo menos 30% do valor ou marque \"Concordo em seguir com pagamento inferior a 30%\" antes de aprovar.");
       return;
     }
     setProcessando(true);
     setErro("");
     const { data: { user } } = await supabase.auth.getUser();
 
-    if (!pagamentoCompleto && seguirSemPagamento) {
+    if (!atingiu30Porcento && seguirSemPagamento) {
       await supabase.from("notificacoes").insert({
         tipo: "pedido_sem_pagamento",
-        mensagem: `Pedido #${id} (${orcamento.clientes?.nome || ""}) foi aprovado sem pagamento completo. Falta ${fmtBRL(faltandoAgora)}.`
+        mensagem: `Pedido #${id} (${orcamento.clientes?.nome || ""}) foi aprovado com pagamento abaixo de 30% (recebido ${fmtBRL(totalPagoAgora)} de ${fmtBRL(orcamento.valor_total)}).`
       });
     }
 
@@ -309,7 +333,7 @@ export default function DetalheOrcamentoPage() {
         status: "Aguardando Separação/Compra",
         revisado_por: user.id,
         revisado_em: new Date().toISOString(),
-        sem_pagamento: !pagamentoCompleto && seguirSemPagamento
+        sem_pagamento: !pagamentoCompleto
       })
       .eq("id", id);
     setProcessando(false);
@@ -556,11 +580,13 @@ export default function DetalheOrcamentoPage() {
               </p>
               <p className="text-xs text-muted">
                 Total pago: <b className="font-mono text-ink">{fmtBRL(totalPagoAgora)}</b>
-                {" · "}
+                {" ("}{percentualPagoAgora.toFixed(0)}%{") · "}
                 {pagamentoCompleto ? (
                   <span className="font-semibold" style={{ color: "#2C7C6E" }}>Completo ✓</span>
+                ) : atingiu30Porcento ? (
+                  <span className="font-semibold" style={{ color: "#2C7C6E" }}>≥ 30% recebido — pode aprovar ✓</span>
                 ) : (
-                  <span className="font-semibold text-danger">Faltam {fmtBRL(faltandoAgora)}</span>
+                  <span className="font-semibold text-danger">Faltam {fmtBRL(faltandoAgora)} pra completar (mín. 30%: {fmtBRL(Number(orcamento.valor_total) * 0.3)})</span>
                 )}
               </p>
             </div>
@@ -570,7 +596,7 @@ export default function DetalheOrcamentoPage() {
             </button>
           </div>
 
-          {!pagamentoCompleto && (
+          {!atingiu30Porcento && (
             <label className="flex items-start gap-2.5 mt-4 p-3 rounded-lg border border-line cursor-pointer">
               <input
                 type="checkbox"
@@ -579,9 +605,9 @@ export default function DetalheOrcamentoPage() {
                 onChange={(e) => setSeguirSemPagamento(e.target.checked)}
               />
               <span className="text-xs">
-                <span className="font-medium">Seguir sem pagamento</span>
+                <span className="font-medium">Concordo em seguir com pagamento inferior a 30%</span>
                 <span className="block text-muted mt-0.5">
-                  O pedido segue o fluxo mesmo sem o pagamento completo. O gerente é avisado, e o pedido fica marcado até o pagamento ser concluído.
+                  O pedido segue o fluxo mesmo abaixo dos 30%. O gerente é avisado, e o pedido fica marcado até o pagamento ser concluído.
                 </span>
               </span>
             </label>
@@ -620,9 +646,9 @@ export default function DetalheOrcamentoPage() {
                 </button>
                 <button
                   className="btn-primary"
-                  disabled={processando || (!pagamentoCompleto && !seguirSemPagamento)}
+                  disabled={processando || !podeAprovar}
                   onClick={aprovar}
-                  title={!pagamentoCompleto && !seguirSemPagamento ? "Registre o pagamento ou marque 'Seguir sem pagamento'" : ""}
+                  title={!podeAprovar ? "Receba pelo menos 30% ou marque a caixa de concordância" : ""}
                 >
                   <Check size={15} />
                   Aprovar
@@ -657,25 +683,57 @@ export default function DetalheOrcamentoPage() {
                 </tr>
               </thead>
               <tbody>
-                {pagamentos.map((p) => (
-                  <tr key={p.id} className="border-b border-line last:border-0">
-                    <td className="px-3 py-2">{p.forma_pagamento}</td>
-                    <td className="px-3 py-2 text-muted">{new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtBRL(p.valor)}</td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {p.anexo_url && (
-                          <button onClick={() => verComprovanteRevisao(p.anexo_url)} className="text-muted hover:text-ink" title="Ver comprovante">
-                            <ExternalLink size={13} />
-                          </button>
+                {pagamentos.map((p) => {
+                  const emEdicao = editandoPagamento === p.id;
+                  return (
+                    <tr key={p.id} className="border-b border-line last:border-0">
+                      <td className="px-3 py-2">
+                        {emEdicao ? (
+                          <select className="field-input py-1 text-xs" value={edicaoPagamento.forma_pagamento} onChange={(e) => setEdicaoPagamento((a) => ({ ...a, forma_pagamento: e.target.value }))}>
+                            {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
+                          </select>
+                        ) : (
+                          p.forma_pagamento
                         )}
-                        <button onClick={() => excluirPagamentoRevisao(p.id)} className="text-muted hover:text-danger" title="Excluir">
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-3 py-2 text-muted">
+                        {emEdicao ? (
+                          <input type="date" className="field-input py-1 text-xs" value={edicaoPagamento.data_pagamento} onChange={(e) => setEdicaoPagamento((a) => ({ ...a, data_pagamento: e.target.value }))} />
+                        ) : (
+                          new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {emEdicao ? (
+                          <input type="number" step="0.01" className="field-input py-1 text-xs text-right w-24 ml-auto" value={edicaoPagamento.valor} onChange={(e) => setEdicaoPagamento((a) => ({ ...a, valor: e.target.value }))} />
+                        ) : (
+                          fmtBRL(p.valor)
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {emEdicao ? (
+                            <button onClick={() => salvarEdicaoPagamento(p.id)} className="text-muted hover:text-ink" title="Salvar">
+                              <Save size={13} />
+                            </button>
+                          ) : (
+                            <button onClick={() => iniciarEdicaoPagamento(p)} className="text-muted hover:text-ink" title="Editar">
+                              <Pencil size={13} />
+                            </button>
+                          )}
+                          {p.anexo_url && (
+                            <button onClick={() => verComprovanteRevisao(p.anexo_url)} className="text-muted hover:text-ink" title="Ver comprovante">
+                              <ExternalLink size={13} />
+                            </button>
+                          )}
+                          <button onClick={() => excluirPagamentoRevisao(p.id)} className="text-muted hover:text-danger" title="Excluir">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
