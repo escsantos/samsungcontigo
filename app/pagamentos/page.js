@@ -42,15 +42,20 @@ export default function PagamentosPage() {
     setBuscando(true);
     setErro("");
     setNaoEncontrado(false);
-    const { data: orc } = await supabase.from("orcamentos").select("*, clientes(nome, celular, email)").eq("id", n).maybeSingle();
+    const { data: orcs } = await supabase.rpc("buscar_orcamento_pagamento", { pid: n });
+    const orc = orcs?.[0];
     if (!orc) {
       setOrcamento(null);
       setNaoEncontrado(true);
       setBuscando(false);
       return;
     }
+    if (orc.cliente_id) {
+      const { data: cliente } = await supabase.from("clientes").select("nome, celular, email").eq("id", orc.cliente_id).single();
+      orc.clientes = cliente || null;
+    }
     setOrcamento(orc);
-    const { data: pags } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", n).order("registrado_em");
+    const { data: pags } = await supabase.rpc("buscar_pagamentos_pagamento", { pid: n });
     setPagamentos(pags || []);
     const totalPago = (pags || []).reduce((s, p) => s + Number(p.valor), 0);
     const faltando = Number(orc.valor_total || 0) - totalPago;
@@ -60,9 +65,14 @@ export default function PagamentosPage() {
 
   async function recarregarPedido() {
     if (!orcamento) return;
-    const { data: orc } = await supabase.from("orcamentos").select("*, clientes(nome, celular, email)").eq("id", orcamento.id).single();
-    setOrcamento(orc);
-    const { data: pags } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", orcamento.id).order("registrado_em");
+    const { data: orcs } = await supabase.rpc("buscar_orcamento_pagamento", { pid: orcamento.id });
+    const orc = orcs?.[0];
+    if (orc && orc.cliente_id) {
+      const { data: cliente } = await supabase.from("clientes").select("nome, celular, email").eq("id", orc.cliente_id).single();
+      orc.clientes = cliente || null;
+    }
+    setOrcamento(orc || orcamento);
+    const { data: pags } = await supabase.rpc("buscar_pagamentos_pagamento", { pid: orcamento.id });
     setPagamentos(pags || []);
   }
 

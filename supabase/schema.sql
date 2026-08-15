@@ -511,17 +511,41 @@ create policy "excluir pagamentos"
 drop policy if exists "ver orcamentos" on orcamentos;
 create policy "ver orcamentos"
   on orcamentos for select
-  using (cliente_id = meu_cliente_id() or vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque() or pode_gerenciar_clientes());
+  using (cliente_id = meu_cliente_id() or vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque());
 
 drop policy if exists "ver itens de orcamento" on orcamento_itens;
 create policy "ver itens de orcamento"
   on orcamento_itens for select
-  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.cliente_id = meu_cliente_id() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque() or pode_gerenciar_clientes())));
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.cliente_id = meu_cliente_id() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())));
 
 drop policy if exists "ver pagamentos" on pagamentos_orcamento;
 create policy "ver pagamentos"
   on pagamentos_orcamento for select
-  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.cliente_id = meu_cliente_id() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque() or pode_gerenciar_clientes())));
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.cliente_id = meu_cliente_id() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())));
+
+-- Busca pontual por número exato pra tela de Pagamentos — não abre listagem geral
+create or replace function buscar_orcamento_pagamento(pid bigint)
+returns setof orcamentos
+language sql security definer set search_path = public stable as $$
+  select * from orcamentos where id = pid and (pode_gerenciar_clientes() or pode_gerenciar_estoque());
+$$;
+
+create or replace function buscar_itens_pagamento(pid bigint)
+returns setof orcamento_itens
+language sql security definer set search_path = public stable as $$
+  select oi.* from orcamento_itens oi
+  where oi.orcamento_id = pid
+  and exists (select 1 from orcamentos o where o.id = pid and (pode_gerenciar_clientes() or pode_gerenciar_estoque()));
+$$;
+
+create or replace function buscar_pagamentos_pagamento(pid bigint)
+returns setof pagamentos_orcamento
+language sql security definer set search_path = public stable as $$
+  select po.* from pagamentos_orcamento po
+  where po.orcamento_id = pid
+  and exists (select 1 from orcamentos o where o.id = pid and (pode_gerenciar_clientes() or pode_gerenciar_estoque()))
+  order by po.registrado_em;
+$$;
 
 -- 14. Módulo Financeiro
 create or replace function eh_financeiro()
