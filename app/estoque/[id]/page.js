@@ -267,6 +267,12 @@ export default function EstoquePedidoPage() {
   async function adicionarPagamentoModal() {
     const valor = parseFloat(valorPagamento);
     if (!valor || valor <= 0 || !dataPagamento) return;
+    const jaPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
+    const restante = Number(orcamento.valor_total) - jaPago;
+    if (valor > restante + 0.004) {
+      setErro(`O valor não pode ser maior que o restante do pedido (${fmtBRL(restante)}).`);
+      return;
+    }
     setProcessandoPagamento(true);
     setErro("");
 
@@ -727,7 +733,7 @@ export default function EstoquePedidoPage() {
                     </div>
                     <div>
                       <label className="field-label">Valor</label>
-                      <input type="number" step="0.01" className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
+                      <input type="number" step="0.01" max={faltando > 0 ? faltando.toFixed(2) : undefined} className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
                     </div>
                     <div>
                       <label className="field-label">Data do pagamento</label>

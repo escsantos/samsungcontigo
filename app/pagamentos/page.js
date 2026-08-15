@@ -73,6 +73,10 @@ export default function PagamentosPage() {
   async function adicionarPagamento() {
     const valor = parseFloat(valorPagamento);
     if (!valor || valor <= 0 || !dataPagamento || !orcamento) return;
+    if (valor > faltando + 0.004) {
+      setErro(`O valor não pode ser maior que o restante do pedido (${fmtBRL(faltando)}).`);
+      return;
+    }
     setProcessando(true);
     setErro("");
 
@@ -298,7 +302,7 @@ export default function PagamentosPage() {
               </div>
               <div>
                 <label className="field-label">Valor</label>
-                <input type="number" step="0.01" className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
+                <input type="number" step="0.01" max={faltando > 0 ? faltando.toFixed(2) : undefined} className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
               </div>
               <div>
                 <label className="field-label">Data</label>

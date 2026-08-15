@@ -235,6 +235,10 @@ export default function DetalheOrcamentoPage() {
   async function adicionarPagamentoRevisao() {
     const valor = parseFloat(valorPagamento);
     if (!valor || valor <= 0 || !dataPagamento) return;
+    if (valor > faltandoAgora + 0.004) {
+      setErro(`O valor não pode ser maior que o restante do pedido (${fmtBRL(faltandoAgora)}).`);
+      return;
+    }
     setProcessandoPagamento(true);
     setErro("");
 
@@ -763,7 +767,7 @@ export default function DetalheOrcamentoPage() {
               </div>
               <div>
                 <label className="field-label">Valor</label>
-                <input type="number" step="0.01" className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
+                <input type="number" step="0.01" max={faltandoAgora > 0 ? faltandoAgora.toFixed(2) : undefined} className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
               </div>
               <div>
                 <label className="field-label">Data do pagamento</label>
