@@ -66,7 +66,7 @@ export default function PagamentosPage() {
     setPagamentos(pags || []);
   }
 
-  const totalPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0);
+  const totalPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
   const faltando = orcamento ? Number(orcamento.valor_total || 0) - totalPago : 0;
   const completo = faltando <= 0.004;
 

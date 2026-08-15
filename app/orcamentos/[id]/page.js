@@ -5,6 +5,7 @@ import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2, 
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
+import LinhaDoTempo from "../../../components/LinhaDoTempo";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../../lib/estoque";
 import { calcularPreco } from "../../../lib/precos";
@@ -224,7 +225,7 @@ export default function DetalheOrcamentoPage() {
     carregar();
   }
 
-  const totalPagoAgora = pagamentos.reduce((s, p) => s + Number(p.valor), 0);
+  const totalPagoAgora = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
   const faltandoAgora = Number(orcamento?.valor_total || 0) - totalPagoAgora;
   const pagamentoCompleto = faltandoAgora <= 0.004;
   const percentualPagoAgora = Number(orcamento?.valor_total || 0) > 0 ? (totalPagoAgora / Number(orcamento.valor_total)) * 100 : 0;
@@ -659,7 +660,9 @@ export default function DetalheOrcamentoPage() {
         )}
       </div>
 
-      {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
+      {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2 mb-4">{erro}</div>}
+
+      <LinhaDoTempo orcamento={orcamento} itens={itens} pagamentos={pagamentos} />
 
       <Modal
         open={pagamentoModalAberto}

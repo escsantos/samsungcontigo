@@ -103,6 +103,19 @@ function RomaneioConteudo() {
             </tbody>
           </table>
           <p style={{ textAlign: "right", fontSize: 12, fontWeight: 700, marginTop: 4 }}>Subtotal: {fmtBRL(p.valor_total)}</p>
+          {Number(p.desconto) > 0 && (
+            <div style={{ textAlign: "right", fontSize: 11, color: "#6B7482", marginTop: 2 }}>
+              <p style={{ margin: "1px 0" }}>Valor inicial: {fmtBRL(Number(p.valor_total) + Number(p.desconto))}</p>
+              <p style={{ margin: "1px 0", color: "#D6336C", fontWeight: 700 }}>DESCONTO PROMOCIONAL: -{fmtBRL(p.desconto)}</p>
+            </div>
+          )}
+          {p.pedido_pai_id && Number(p.valor_herdado_pai) > 0 && (
+            <div style={{ marginTop: 6, background: "#EFEBFA", borderRadius: 4, padding: "6px 10px" }}>
+              <p style={{ fontSize: 11, margin: 0 }}>
+                <b>{fmtBRL(p.valor_herdado_pai)}</b> deste valor já foi pago no pedido original #{p.pedido_pai_id} (peça pendente separada por liberação parcial).
+              </p>
+            </div>
+          )}
           {p.pagamentos.length > 0 && (
             <div style={{ marginTop: 6, background: "#F9FAFB", borderRadius: 4, padding: "6px 10px" }}>
               <p style={{ fontSize: 10.5, fontWeight: 700, color: "#6B7482", margin: "0 0 3px" }}>Pagamento</p>

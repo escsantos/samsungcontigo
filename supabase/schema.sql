@@ -562,3 +562,6 @@ create policy "financeiro le pagamentos"
 create policy "financeiro le clientes"
   on clientes for select
   using (eh_financeiro());
+
+-- 15. Pagamento herdado do pedido pai (liberação parcial)
+alter table orcamentos add column if not exists valor_herdado_pai numeric(12,2) default 0;

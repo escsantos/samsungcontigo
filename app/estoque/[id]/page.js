@@ -8,6 +8,7 @@ import {
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
+import LinhaDoTempo from "../../../components/LinhaDoTempo";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../../lib/estoque";
 
@@ -104,7 +105,7 @@ export default function EstoquePedidoPage() {
   }
 
   const cor = CORES_STATUS[orcamento.status] || { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
-  const totalPagoGeral = pagamentos.reduce((s, p) => s + Number(p.valor), 0);
+  const totalPagoGeral = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
   const faltandoGeral = Number(orcamento.valor_total || 0) - totalPagoGeral;
   const aindaSemPagamento = orcamento.sem_pagamento && faltandoGeral > 0.004;
   const IconeAtual = ICONES_STATUS[orcamento.status];
@@ -176,17 +177,7 @@ export default function EstoquePedidoPage() {
     setItens(itensAtualizados);
 
     if (itensAtualizados.every((i) => i.liberado)) {
-      if (orcamento.pedido_pai_id) {
-        // pedido filho (peça pendente que acabou de chegar): avança e avisa sozinho, sem faturamento manual de novo
-        await supabase.from("orcamentos").update({ status: "Liberado para Retirada/Entrega" }).eq("id", id);
-        await supabase.from("notificacoes").insert({
-          tipo: "pedido_pendente_pronto",
-          mensagem: `A peça pendente do pedido #${orcamento.pedido_pai_id} chegou — pedido #${id} está pronto para retirada/entrega.`
-        });
-        carregar();
-      } else {
-        setConfirmarAvanco({ de: orcamento.status, para: "Em Estoque - Aguardando Faturamento" });
-      }
+      setConfirmarAvanco({ de: orcamento.status, para: "Em Estoque - Aguardando Faturamento" });
     }
   }
 
@@ -203,7 +194,14 @@ export default function EstoquePedidoPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     const valorPendente = itensPendentes.reduce((s, i) => s + Number(i.venda_total || 0), 0);
+    const valorPronto = itensProntos.reduce((s, i) => s + Number(i.venda_total || 0), 0);
     const statusFilho = orcamento.numero_pedido_compra ? "Peças Compradas - Aguardando Chegada" : "Aguardando Separação/Compra";
+
+    // calcula quanto do que já foi pago no pedido original "pertence" proporcionalmente à parte que fica pendente
+    const subtotalOriginal = valorPronto + valorPendente;
+    const jaPagoNoOriginal = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento.valor_herdado_pai || 0);
+    const proporcaoPendente = subtotalOriginal > 0 ? valorPendente / subtotalOriginal : 0;
+    const herdadoParaFilho = Math.round(jaPagoNoOriginal * proporcaoPendente * 100) / 100;
 
     const { data: novoPedido, error: errNovo } = await supabase
       .from("orcamentos")
@@ -216,7 +214,8 @@ export default function EstoquePedidoPage() {
         margem: orcamento.margem,
         imposto_total: orcamento.imposto_total,
         numero_pedido_compra: orcamento.numero_pedido_compra,
-        pedido_pai_id: id
+        pedido_pai_id: id,
+        valor_herdado_pai: herdadoParaFilho
       })
       .select()
       .single();
@@ -235,7 +234,6 @@ export default function EstoquePedidoPage() {
       return;
     }
 
-    const valorPronto = itensProntos.reduce((s, i) => s + Number(i.venda_total || 0), 0);
     const { error: errAtualiza } = await supabase
       .from("orcamentos")
       .update({ valor_total: valorPronto, status: "Em Estoque - Aguardando Faturamento", parcial: true })
@@ -254,6 +252,12 @@ export default function EstoquePedidoPage() {
     if (!confirmarAvanco) return;
     setProcessando(true);
     const { error } = await supabase.from("orcamentos").update({ status: confirmarAvanco.para }).eq("id", id);
+    if (!error && orcamento.pedido_pai_id) {
+      await supabase.from("notificacoes").insert({
+        tipo: "pedido_pendente_pronto",
+        mensagem: `A peça pendente do pedido #${orcamento.pedido_pai_id} chegou — pedido #${id} está em "${confirmarAvanco.para}".`
+      });
+    }
     setProcessando(false);
     setConfirmarAvanco(null);
     if (error) { setErro("Falha ao avançar etapa: " + error.message); return; }
@@ -444,6 +448,11 @@ export default function EstoquePedidoPage() {
             <button onClick={() => router.push(`/estoque/${orcamento.pedido_pai_id}`)} className="underline font-medium">
               pedido #{orcamento.pedido_pai_id}
             </button>.
+            {Number(orcamento.valor_herdado_pai) > 0 && (
+              <span className="block mt-1">
+                <b>{fmtBRL(orcamento.valor_herdado_pai)}</b> já foi pago lá e conta aqui automaticamente.
+              </span>
+            )}
           </div>
         )}
         {orcamento.parcial && pedidoFilho && (
@@ -575,7 +584,7 @@ export default function EstoquePedidoPage() {
       )}
 
       {orcamento.status === "Em Estoque - Aguardando Faturamento" && (() => {
-        const totalPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0);
+        const totalPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
         const faltando = Number(orcamento.valor_total) - totalPago;
         return (
           <div className="card p-5 mb-4">
@@ -587,6 +596,9 @@ export default function EstoquePedidoPage() {
                 </p>
                 <p className="text-xs text-muted">
                   Total pago: <b className="font-mono text-ink">{fmtBRL(totalPago)}</b>
+                  {orcamento.pedido_pai_id && Number(orcamento.valor_herdado_pai) > 0 && (
+                    <span> (inclui {fmtBRL(orcamento.valor_herdado_pai)} já pago no pedido #{orcamento.pedido_pai_id})</span>
+                  )}
                   {" · "}
                   {faltando > 0.004 ? (
                     <span className="font-semibold text-danger">Faltam {fmtBRL(faltando)}</span>
@@ -618,7 +630,7 @@ export default function EstoquePedidoPage() {
             <button className="btn-primary" onClick={() => setPagamentoModalAberto(false)}>Fechar</button>
           </div>
         ) : (() => {
-          const totalPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0);
+          const totalPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
           const faltando = Number(orcamento.valor_total) - totalPago;
           return (
             <>
@@ -787,7 +799,9 @@ export default function EstoquePedidoPage() {
         </div>
       )}
 
-      {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
+      {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2 mb-4">{erro}</div>}
+
+      <LinhaDoTempo orcamento={orcamento} itens={itens} pagamentos={pagamentos} />
 
       <Modal
         open={!!confirmarAvanco}
