@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, KeyRound, Lock, Unlock, Trash2, ShieldAlert, Pencil } from "lucide-react";
+import { UserPlus, KeyRound, Lock, Unlock, Trash2, ShieldAlert, Pencil, Building2 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { CARGOS } from "../../../lib/usuarios";
 import AppShell from "../../../components/AppShell";
@@ -35,6 +35,8 @@ export default function UsuariosPage() {
   const [nome, setNome] = useState("");
   const [sobrenome, setSobrenome] = useState("");
   const [cargoNovo, setCargoNovo] = useState("Vendedor");
+  const [unidadesDisponiveis, setUnidadesDisponiveis] = useState([]);
+  const [unidadesSelecionadas, setUnidadesSelecionadas] = useState([]);
   const [criando, setCriando] = useState(false);
 
   const [confirmar, setConfirmar] = useState(null); // { tipo: 'resetar'|'excluir', usuario }
@@ -45,6 +47,8 @@ export default function UsuariosPage() {
     (async () => {
       setPerfil(await getPerfilAtual());
       await recarregar();
+      const { data: unidades } = await supabase.from("unidades").select("id, nome").eq("ativo", true).order("nome");
+      setUnidadesDisponiveis(unidades || []);
     })();
   }, []);
 
@@ -55,18 +59,23 @@ export default function UsuariosPage() {
     setCarregandoLista(false);
   }
 
+  function alternarUnidadeSelecionada(id) {
+    setUnidadesSelecionadas((atual) => (atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]));
+  }
+
   async function criarUsuario() {
     setErro("");
     setCriando(true);
     try {
       const res = await chamarApi("/api/usuarios", {
         method: "POST",
-        body: JSON.stringify({ nome, sobrenome, cargo: cargoNovo })
+        body: JSON.stringify({ nome, sobrenome, cargo: cargoNovo, unidadeIds: unidadesSelecionadas })
       });
       setModalNovo(false);
       setNome("");
       setSobrenome("");
       setCargoNovo("Vendedor");
+      setUnidadesSelecionadas([]);
       await recarregar();
       setCredenciais(res);
     } catch (e) {
@@ -248,6 +257,29 @@ export default function UsuariosPage() {
               {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
+          {unidadesDisponiveis.length > 0 && (
+            <div>
+              <label className="field-label flex items-center gap-1.5">
+                <Building2 size={13} />
+                Unidade(s)
+              </label>
+              <div className="space-y-1.5">
+                {unidadesDisponiveis.map((u) => (
+                  <label key={u.id} className="flex items-center gap-2 p-2 rounded-lg border border-line cursor-pointer text-sm">
+                    <input type="checkbox" checked={unidadesSelecionadas.includes(u.id)} onChange={() => alternarUnidadeSelecionada(u.id)} />
+                    {u.nome}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted mt-1">
+                {unidadesSelecionadas.length === 0
+                  ? "Se nenhuma for marcada, esse login não vai conseguir entrar no sistema."
+                  : unidadesSelecionadas.length === 1
+                    ? "Só uma unidade marcada — o login entra direto nela, sem precisar escolher."
+                    : "Mais de uma marcada — o login vai escolher a unidade ao entrar."}
+              </p>
+            </div>
+          )}
           <p className="text-xs text-muted">
             Login gerado automaticamente (nome.sobrenome). Senha inicial: <span className="font-mono">samsungcontigo001</span>
           </p>

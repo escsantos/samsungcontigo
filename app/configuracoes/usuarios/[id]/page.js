@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, KeyRound, Lock, Unlock, Trash2, ShieldAlert, ShieldCheck, ShieldX, Save, Check } from "lucide-react";
+import { ArrowLeft, KeyRound, Lock, Unlock, Trash2, ShieldAlert, ShieldCheck, ShieldX, Save, Check, Building2 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../../lib/supabaseClient";
 import { CARGOS } from "../../../../lib/usuarios";
 import { calcularCompletude, permissoesAtivas } from "../../../../lib/perfilUtils";
@@ -41,6 +41,12 @@ export default function DetalheUsuarioPage() {
   const [credenciais, setCredenciais] = useState(null);
   const [erro, setErro] = useState("");
 
+  const [unidadesDisponiveis, setUnidadesDisponiveis] = useState([]);
+  const [unidadesVinculadas, setUnidadesVinculadas] = useState([]);
+  const [unidadesOriginais, setUnidadesOriginais] = useState([]);
+  const [salvandoUnidades, setSalvandoUnidades] = useState(false);
+  const [unidadesSalvas, setUnidadesSalvas] = useState(false);
+
   useEffect(() => {
     (async () => {
       setGestor(await getPerfilAtual());
@@ -51,8 +57,33 @@ export default function DetalheUsuarioPage() {
       setClienteIdEditado(data?.cliente_id || "");
       const { data: clientes } = await supabase.from("clientes").select("id, nome").order("nome");
       setClientesDisponiveis(clientes || []);
+
+      const { data: unidades } = await supabase.from("unidades").select("id, nome").eq("ativo", true).order("nome");
+      setUnidadesDisponiveis(unidades || []);
+      const { data: vinculos } = await supabase.from("perfis_unidades").select("unidade_id").eq("perfil_id", id);
+      const idsVinculados = (vinculos || []).map((v) => v.unidade_id);
+      setUnidadesVinculadas(idsVinculados);
+      setUnidadesOriginais(idsVinculados);
     })();
   }, [id]);
+
+  function alternarUnidade(unidadeId) {
+    setUnidadesVinculadas((atual) => (atual.includes(unidadeId) ? atual.filter((x) => x !== unidadeId) : [...atual, unidadeId]));
+  }
+
+  const unidadesMudaram = JSON.stringify([...unidadesVinculadas].sort()) !== JSON.stringify([...unidadesOriginais].sort());
+
+  async function salvarUnidades() {
+    setSalvandoUnidades(true);
+    await supabase.from("perfis_unidades").delete().eq("perfil_id", id);
+    if (unidadesVinculadas.length > 0) {
+      await supabase.from("perfis_unidades").insert(unidadesVinculadas.map((unidadeId) => ({ perfil_id: id, unidade_id: unidadeId })));
+    }
+    setUnidadesOriginais(unidadesVinculadas);
+    setSalvandoUnidades(false);
+    setUnidadesSalvas(true);
+    setTimeout(() => setUnidadesSalvas(false), 2500);
+  }
 
   const houveMudanca =
     usuario &&
@@ -237,6 +268,35 @@ export default function DetalheUsuarioPage() {
             </div>
           </div>
         </div>
+
+        {unidadesDisponiveis.length > 0 && (
+          <div className="card p-6">
+            <p className="font-display font-semibold text-[15px] mb-1 flex items-center gap-2">
+              <Building2 size={16} style={{ color: "var(--accent)" }} />
+              Unidades
+            </p>
+            <p className="text-xs text-muted mb-4">
+              Se só uma estiver marcada, esse login entra direto nela. Com mais de uma, escolhe qual usar ao entrar (e pode trocar depois, sem deslogar).
+            </p>
+            <div className="space-y-1.5">
+              {unidadesDisponiveis.map((u) => (
+                <label key={u.id} className="flex items-center gap-2 p-2.5 rounded-lg border border-line cursor-pointer text-sm">
+                  <input type="checkbox" checked={unidadesVinculadas.includes(u.id)} onChange={() => alternarUnidade(u.id)} />
+                  {u.nome}
+                </label>
+              ))}
+            </div>
+            {unidadesSalvas && (
+              <div className="mt-3 flex items-center gap-1.5 text-sm" style={{ color: "#2C7C6E" }}>
+                <Check size={14} /> Unidades atualizadas!
+              </div>
+            )}
+            <button className="btn-primary mt-4" disabled={!unidadesMudaram || salvandoUnidades} onClick={salvarUnidades}>
+              <Save size={15} />
+              {salvandoUnidades ? "Salvando..." : "Salvar unidades"}
+            </button>
+          </div>
+        )}
 
         <div className="card p-6">
           <p className="font-display font-semibold text-[15px] mb-4">Permissões ativas</p>

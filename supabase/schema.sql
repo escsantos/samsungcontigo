@@ -589,3 +589,42 @@ create policy "financeiro le clientes"
 
 -- 15. Pagamento herdado do pedido pai (liberação parcial)
 alter table orcamentos add column if not exists valor_herdado_pai numeric(12,2) default 0;
+
+-- 16. Multi-unidade — Fase 1: cadastro de unidades e vínculo com usuários
+create table if not exists unidades (
+  id bigint generated always as identity primary key,
+  nome text not null,
+  asc_cod text not null unique check (asc_cod ~ '^[0-9]{7}$'),
+  proximo_numero_pedido integer not null default 1,
+  ativo boolean not null default true,
+  criado_em timestamptz default now()
+);
+
+create table if not exists perfis_unidades (
+  id bigint generated always as identity primary key,
+  perfil_id uuid not null references perfis(id) on delete cascade,
+  unidade_id bigint not null references unidades(id) on delete cascade,
+  criado_em timestamptz default now(),
+  unique (perfil_id, unidade_id)
+);
+
+alter table unidades enable row level security;
+alter table perfis_unidades enable row level security;
+
+create policy "ve unidades vinculadas ou gestor"
+  on unidades for select
+  using (pode_gerenciar_usuarios() or exists (select 1 from perfis_unidades pu where pu.unidade_id = unidades.id and pu.perfil_id = auth.uid()));
+
+create policy "admin gerencia unidades"
+  on unidades for all
+  using (is_administrador())
+  with check (is_administrador());
+
+create policy "ve proprios vinculos ou gestor"
+  on perfis_unidades for select
+  using (perfil_id = auth.uid() or pode_gerenciar_usuarios());
+
+create policy "gestor gerencia vinculos"
+  on perfis_unidades for all
+  using (pode_gerenciar_usuarios())
+  with check (pode_gerenciar_usuarios());
