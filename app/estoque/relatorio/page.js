@@ -242,46 +242,50 @@ export default function RelatorioCustoPage() {
         ) : calculadas.length === 0 ? (
           <p className="text-sm text-muted p-6 text-center">Nenhuma peça liberada nesse período.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-canvas border-b border-line text-[10.5px] uppercase tracking-wide text-muted font-mono">
-                  <th className="text-left px-4 py-2.5 whitespace-nowrap">Pedido</th>
-                  <th className="text-left px-4 py-2.5 whitespace-nowrap">Cliente</th>
-                  <th className="text-left px-4 py-2.5 whitespace-nowrap">Código</th>
-                  <th className="text-center px-4 py-2.5 whitespace-nowrap">Qtd</th>
-                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Custo</th>
-                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Imposto</th>
-                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Venda bruta</th>
-                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Desconto</th>
-                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Venda líquida</th>
-                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Lucro Líquido</th>
-                  <th className="text-right px-4 py-2.5 whitespace-nowrap">% Lucro</th>
-                  <th className="text-right px-4 py-2.5 whitespace-nowrap">Pago no pedido</th>
+          <table className="w-full text-sm table-fixed">
+            <thead>
+              <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
+                <th className="text-left px-3 py-2.5" style={{ width: "22%" }}>Pedido / Cliente</th>
+                <th className="text-left px-3 py-2.5" style={{ width: "16%" }}>Peça</th>
+                <th className="text-right px-3 py-2.5" style={{ width: "16%" }}>Custo / Imposto</th>
+                <th className="text-right px-3 py-2.5" style={{ width: "18%" }}>Venda</th>
+                <th className="text-right px-3 py-2.5" style={{ width: "16%" }}>Resultado</th>
+                <th className="text-right px-3 py-2.5" style={{ width: "12%" }}>Pago</th>
+              </tr>
+            </thead>
+            <tbody>
+              {calculadas.map((l) => (
+                <tr key={l.id} className="border-b border-line last:border-0 hover:bg-canvas align-top">
+                  <td className="px-3 py-2.5">
+                    <p className="font-mono text-muted text-xs">#{l.orcamentos?.id}</p>
+                    <p className="truncate">{l.orcamentos?.clientes?.nome || "—"}</p>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <p className="font-mono text-xs truncate" style={{ color: "var(--accent)" }}>{l.codigo}</p>
+                    <p className="text-muted text-xs">×{l.qtd}</p>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs">
+                    <p>{fmtBRL(l.custoTotal)}</p>
+                    <p className="text-muted">imp. {fmtBRL(l.impostoValor)}</p>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs">
+                    {l.descontoItem > 0.004 && (
+                      <>
+                        <p className="text-muted line-through">{fmtBRL(l.vendaBruta)}</p>
+                        <p style={{ color: "#D6336C" }}>-{fmtBRL(l.descontoItem)}</p>
+                      </>
+                    )}
+                    <p className="font-semibold text-sm">{fmtBRL(l.vendaLiquida)}</p>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs">
+                    <p className="font-semibold text-sm" style={{ color: "#2C7C6E" }}>{fmtBRL(l.lucroLiquido)}</p>
+                    <p className="text-muted">{l.percentualLucro.toFixed(1)}%</p>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs">{fmtBRL(l.totalPagoPedido)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {calculadas.map((l) => (
-                  <tr key={l.id} className="border-b border-line last:border-0 hover:bg-canvas">
-                    <td className="px-4 py-2.5 font-mono text-muted whitespace-nowrap">#{l.orcamentos?.id}</td>
-                    <td className="px-4 py-2.5 whitespace-nowrap">{l.orcamentos?.clientes?.nome || "—"}</td>
-                    <td className="px-4 py-2.5 font-mono whitespace-nowrap" style={{ color: "var(--accent)" }}>{l.codigo}</td>
-                    <td className="px-4 py-2.5 text-center">{l.qtd}</td>
-                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap">{fmtBRL(l.custoTotal)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap">{fmtBRL(l.impostoValor)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap text-muted">{fmtBRL(l.vendaBruta)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap" style={{ color: l.descontoItem > 0.004 ? "#D6336C" : undefined }}>
-                      {l.descontoItem > 0.004 ? `-${fmtBRL(l.descontoItem)}` : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap">{fmtBRL(l.vendaLiquida)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono font-semibold whitespace-nowrap" style={{ color: "#2C7C6E" }}>{fmtBRL(l.lucroLiquido)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap">{l.percentualLucro.toFixed(1)}%</td>
-                    <td className="px-4 py-2.5 text-right font-mono whitespace-nowrap">{fmtBRL(l.totalPagoPedido)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </AppShell>

@@ -437,24 +437,19 @@ export default function DetalheOrcamentoPage() {
       )}
 
       <div className="card overflow-hidden mb-4">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed">
           <thead>
-            <tr className="bg-canvas border-b border-line text-[10.5px] uppercase tracking-wide text-muted font-mono">
-              <th className="text-left px-4 py-2.5">Modelo</th>
-              <th className="text-left px-4 py-2.5">Categoria</th>
-              <th className="text-left px-4 py-2.5">Código</th>
-              <th className="text-left px-4 py-2.5">Descrição</th>
-              <th className="text-center px-4 py-2.5">Qtd</th>
+            <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
+              <th className="text-left px-3 py-2.5" style={{ width: mostraCusto ? "34%" : "58%" }}>Peça</th>
+              <th className="text-center px-3 py-2.5" style={{ width: "10%" }}>Qtd</th>
               {mostraCusto && (
                 <>
-                  <th className="text-right px-4 py-2.5">Custo</th>
-                  <th className="text-right px-4 py-2.5">Imposto</th>
-                  <th className="text-right px-4 py-2.5">Lucro Líquido</th>
-                  <th className="text-right px-4 py-2.5">Margem</th>
+                  <th className="text-right px-3 py-2.5" style={{ width: "18%" }}>Custo / Imposto</th>
+                  <th className="text-right px-3 py-2.5" style={{ width: "16%" }}>Lucro / Margem</th>
                 </>
               )}
-              <th className="text-right px-4 py-2.5">{mostraCusto ? "Venda" : "Valor"}</th>
-              {ajustando && <th></th>}
+              <th className="text-right px-3 py-2.5" style={{ width: "16%" }}>{mostraCusto ? "Venda" : "Valor"}</th>
+              {ajustando && <th style={{ width: "6%" }}></th>}
             </tr>
           </thead>
           <tbody>
@@ -467,17 +462,17 @@ export default function DetalheOrcamentoPage() {
               const lucroLiquido = Number(i.venda_total || 0) - custoTotal - impostoValor;
               const margemItem = Number(i.venda_total || 0) > 0 ? (lucroLiquido / Number(i.venda_total)) * 100 : 0;
               return (
-                <tr key={i.id} className="border-b border-line last:border-0" style={{ background: i._novo ? "var(--accent-soft)" : "transparent" }}>
-                  <td className="px-4 py-2.5 font-mono font-medium">{i.modelo}</td>
-                  <td className="px-4 py-2.5">
-                    <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1" style={{ background: corCat.bg, color: corCat.fg }}>
-                      <Icone size={11} />
+                <tr key={i.id} className="border-b border-line last:border-0 align-top" style={{ background: i._novo ? "var(--accent-soft)" : "transparent" }}>
+                  <td className="px-3 py-2.5">
+                    <p className="font-mono font-medium text-xs truncate">{i.modelo}</p>
+                    <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1 my-1" style={{ background: corCat.bg, color: corCat.fg }}>
+                      <Icone size={10} />
                       {i.categoria}
                     </span>
+                    <p className="font-mono text-xs truncate" style={{ color: "var(--accent)" }}>{i.codigo}</p>
+                    <p className="text-muted text-xs truncate">{i.descricao_resumida}</p>
                   </td>
-                  <td className="px-4 py-2.5 font-mono" style={{ color: "var(--accent)" }}>{i.codigo}</td>
-                  <td className="px-4 py-2.5">{i.descricao_resumida}</td>
-                  <td className="px-4 py-2.5 text-center">
+                  <td className="px-3 py-2.5 text-center">
                     {ajustando ? (
                       <input
                         type="number"
@@ -492,28 +487,30 @@ export default function DetalheOrcamentoPage() {
                   </td>
                   {mostraCusto && (
                     <>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="px-3 py-2.5 text-right text-xs">
                         {ajustando ? (
                           <input
                             type="number"
                             step="0.01"
-                            className="field-input py-1 px-1.5 text-right font-mono w-24 ml-auto"
+                            className="field-input py-1 px-1.5 text-right font-mono w-full"
                             value={i.custo_unitario ?? ""}
                             onChange={(e) => mudarCustoItem(i.id, e.target.value)}
                             title="Custo editável só pra este pedido — não altera a base de peças"
                           />
                         ) : (
-                          <span className="font-mono">{fmtBRL(custoTotal)}</span>
+                          <p className="font-mono">{fmtBRL(custoTotal)}</p>
                         )}
+                        <p className="font-mono text-muted mt-0.5">imp. {fmtBRL(impostoValor)}</p>
                       </td>
-                      <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(impostoValor)}</td>
-                      <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(lucroLiquido)}</td>
-                      <td className="px-4 py-2.5 text-right font-mono">{margemItem.toFixed(1)}%</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs">
+                        <p>{fmtBRL(lucroLiquido)}</p>
+                        <p className="text-muted">{margemItem.toFixed(1)}%</p>
+                      </td>
                     </>
                   )}
-                  <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: mostraCusto ? "#2C7C6E" : undefined }}>{fmtBRL(i.venda_total)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono font-semibold text-sm" style={{ color: mostraCusto ? "#2C7C6E" : undefined }}>{fmtBRL(i.venda_total)}</td>
                   {ajustando && (
-                    <td className="px-4 py-2.5 text-right">
+                    <td className="px-3 py-2.5 text-right">
                       <button onClick={() => removerItem(i.id)} className="text-muted hover:text-danger">
                         <Trash2 size={15} />
                       </button>

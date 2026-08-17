@@ -491,18 +491,15 @@ export default function EstoquePedidoPage() {
       )}
 
       <div className="card overflow-hidden mb-4">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed">
           <thead>
-            <tr className="bg-canvas border-b border-line text-[10.5px] uppercase tracking-wide text-muted font-mono">
-              <th className="text-left px-4 py-2.5">Modelo</th>
-              <th className="text-left px-4 py-2.5">Código</th>
-              <th className="text-left px-4 py-2.5">Descrição</th>
-              <th className="text-center px-4 py-2.5">Qtd</th>
-              <th className="text-left px-4 py-2.5">Delivery</th>
-              <th className="text-right px-4 py-2.5">Custo real (un.)</th>
-              <th className="text-right px-4 py-2.5">Custo Total</th>
-              <th className="text-right px-4 py-2.5">Venda</th>
-              <th className="text-center px-4 py-2.5">Status</th>
+            <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
+              <th className="text-left px-3 py-2.5" style={{ width: "28%" }}>Peça</th>
+              <th className="text-center px-3 py-2.5" style={{ width: "8%" }}>Qtd</th>
+              <th className="text-left px-3 py-2.5" style={{ width: "20%" }}>Delivery</th>
+              <th className="text-right px-3 py-2.5" style={{ width: "18%" }}>Custo</th>
+              <th className="text-right px-3 py-2.5" style={{ width: "16%" }}>Venda</th>
+              <th className="text-center px-3 py-2.5" style={{ width: "10%" }}>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -511,10 +508,10 @@ export default function EstoquePedidoPage() {
               const Icone = iconeCategoria(i.categoria);
               const custoTotalItem = Number(i.custo_real || 0) * i.qtd;
               return (
-                <tr key={i.id} className="border-b border-line last:border-0">
-                  <td className="px-4 py-2.5 font-mono font-medium">{i.modelo}</td>
-                  <td className="px-4 py-2.5 font-mono" style={{ color: "var(--accent)" }}>
-                    <span className="inline-flex items-center gap-1.5">
+                <tr key={i.id} className="border-b border-line last:border-0 align-top">
+                  <td className="px-3 py-2.5">
+                    <p className="font-mono font-medium text-xs truncate">{i.modelo}</p>
+                    <span className="inline-flex items-center gap-1.5 font-mono text-xs" style={{ color: "var(--accent)" }}>
                       <Icone size={11} style={{ color: corCat.fg }} />
                       {i.codigo}
                       <button
@@ -522,19 +519,19 @@ export default function EstoquePedidoPage() {
                         title="Copiar código"
                         className="text-muted hover:text-ink"
                       >
-                        {codigoCopiado === i.codigo ? <Check size={12} style={{ color: "#2C7C6E" }} /> : <Copy size={12} />}
+                        {codigoCopiado === i.codigo ? <Check size={11} style={{ color: "#2C7C6E" }} /> : <Copy size={11} />}
                       </button>
                     </span>
+                    <p className="text-muted text-xs truncate">{i.descricao_resumida}</p>
                   </td>
-                  <td className="px-4 py-2.5">{i.descricao_resumida}</td>
-                  <td className="px-4 py-2.5 text-center">{i.qtd}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-3 py-2.5 text-center">{i.qtd}</td>
+                  <td className="px-3 py-2.5">
                     {i.liberado ? (
                       <span className="font-mono text-xs">{i.no_entrega}</span>
                     ) : podeInformarDelivery ? (
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1">
                         <input
-                          className="field-input py-1.5 text-xs w-28"
+                          className="field-input py-1.5 text-xs w-full"
                           placeholder="nº delivery"
                           value={deliveries[i.id] || ""}
                           onChange={(e) => setDeliveries((atual) => ({ ...atual, [i.id]: e.target.value }))}
@@ -551,13 +548,15 @@ export default function EstoquePedidoPage() {
                       <span className="text-xs text-muted">—</span>
                     )}
                     {erroItem[i.id] && (
-                      <p className="text-[10.5px] text-danger mt-1 max-w-[220px] leading-snug">{erroItem[i.id]}</p>
+                      <p className="text-[10px] text-danger mt-1 leading-snug">{erroItem[i.id]}</p>
                     )}
-                    </td>
-                  <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(i.custo_real)}</td>
-                  <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmtBRL(custoTotalItem)}</td>
-                  <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: "#2C7C6E" }}>{fmtBRL(i.venda_total)}</td>
-                  <td className="px-4 py-2.5 text-center">
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs">
+                    <p>{fmtBRL(i.custo_real)} un.</p>
+                    <p className="font-semibold">{fmtBRL(custoTotalItem)}</p>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono font-semibold text-sm" style={{ color: "#2C7C6E" }}>{fmtBRL(i.venda_total)}</td>
+                  <td className="px-3 py-2.5 text-center">
                     {i.liberado ? <Check size={16} style={{ color: "#2C7C6E" }} className="inline" /> : <AlertTriangle size={16} className="text-muted inline" />}
                   </td>
                 </tr>
@@ -566,10 +565,9 @@ export default function EstoquePedidoPage() {
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-line bg-canvas font-semibold">
-              <td className="px-4 py-2.5" colSpan={5}>Total</td>
-              <td></td>
-              <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(itens.reduce((s, i) => s + Number(i.custo_real || 0) * i.qtd, 0))}</td>
-              <td className="px-4 py-2.5 text-right font-mono" style={{ color: "#2C7C6E" }}>{fmtBRL(itens.reduce((s, i) => s + Number(i.venda_total || 0), 0))}</td>
+              <td className="px-3 py-2.5" colSpan={3}>Total</td>
+              <td className="px-3 py-2.5 text-right font-mono text-xs">{fmtBRL(itens.reduce((s, i) => s + Number(i.custo_real || 0) * i.qtd, 0))}</td>
+              <td className="px-3 py-2.5 text-right font-mono text-sm" style={{ color: "#2C7C6E" }}>{fmtBRL(itens.reduce((s, i) => s + Number(i.venda_total || 0), 0))}</td>
               <td></td>
             </tr>
           </tfoot>

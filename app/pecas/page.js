@@ -320,26 +320,21 @@ export default function ConsultaPecasPage() {
           </div>
         ) : (
           <div className="max-h-[calc(100vh-280px)] overflow-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm table-fixed">
               <thead>
-                <tr className="bg-canvas border-b border-line text-[10.5px] uppercase tracking-wide text-muted font-mono">
-                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Modelo</th>
-                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Categoria</th>
-                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Código</th>
-                  <th className="sticky top-0 bg-canvas text-left px-4 py-2.5 z-10">Descrição resumida</th>
-                  <th className="sticky top-0 bg-canvas text-center px-4 py-2.5 z-10">Qtd</th>
+                <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
+                  <th className="sticky top-0 bg-canvas text-left px-3 py-2.5 z-10" style={{ width: mostraCusto ? "30%" : "50%" }}>Peça</th>
+                  <th className="sticky top-0 bg-canvas text-center px-3 py-2.5 z-10" style={{ width: "8%" }}>Qtd</th>
                   {mostraCusto && (
                     <>
-                      <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Custo</th>
-                      <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Imposto</th>
-                      <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Lucro Líquido</th>
-                      <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">Margem</th>
+                      <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "18%" }}>Custo / Imposto</th>
+                      <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "16%" }}>Lucro / Margem</th>
                     </>
                   )}
-                  <th className="sticky top-0 bg-canvas text-right px-4 py-2.5 z-10">
+                  <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "18%" }}>
                     {mostraCusto ? "Venda Sugerida" : "Valor de Venda"}
                   </th>
-                  {podeComprar && <th className="sticky top-0 bg-canvas text-center px-4 py-2.5 z-10"></th>}
+                  {podeComprar && <th className="sticky top-0 bg-canvas text-center px-3 py-2.5 z-10" style={{ width: "8%" }}></th>}
                 </tr>
               </thead>
               <tbody>
@@ -350,28 +345,28 @@ export default function ConsultaPecasPage() {
                   return (
                     <tr
                       key={r.id}
-                      className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
+                      className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer align-top"
                       onClick={() => setPecaSelecionada(r)}
                     >
-                      <td className="px-4 py-2.5 font-mono font-medium">{r.modelo}</td>
-                      <td className="px-4 py-2.5">
-                        <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1" style={{ background: cor.bg, color: cor.fg }}>
-                          <Icone size={11} />
+                      <td className="px-3 py-2.5">
+                        <p className="font-mono font-medium text-xs truncate">{r.modelo}</p>
+                        <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1 my-1" style={{ background: cor.bg, color: cor.fg }}>
+                          <Icone size={10} />
                           {r.categoria}
                         </span>
+                        <p className="font-mono text-xs truncate" style={{ color: "var(--accent)" }}>{r.codigo}</p>
+                        <p className="text-muted text-xs truncate">
+                          {r.descricao_peca ? (
+                            <span className="tooltip-abaixo">
+                              {r.descricao_resumida}
+                              <span className="tooltip-bubble-abaixo">{r.descricao_peca}</span>
+                            </span>
+                          ) : (
+                            r.descricao_resumida
+                          )}
+                        </p>
                       </td>
-                      <td className="px-4 py-2.5 font-mono" style={{ color: "var(--accent)" }}>{r.codigo}</td>
-                      <td className="px-4 py-2.5">
-                        {r.descricao_peca ? (
-                          <span className="tooltip-abaixo">
-                            {r.descricao_resumida}
-                            <span className="tooltip-bubble-abaixo">{r.descricao_peca}</span>
-                          </span>
-                        ) : (
-                          r.descricao_resumida
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="number"
                           min={1}
@@ -382,30 +377,32 @@ export default function ConsultaPecasPage() {
                       </td>
                       {mostraCusto && (
                         <>
-                          <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                          <td className="px-3 py-2.5 text-right text-xs" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="number"
                               step="0.01"
-                              className="field-input py-1 px-1.5 text-right font-mono w-24 ml-auto"
+                              className="field-input py-1 px-1.5 text-right font-mono w-full"
                               style={{ color: corLinha }}
                               value={r.custoUnit ?? ""}
                               onChange={(e) => mudarCusto(r.id, e.target.value)}
                               title="Custo editável — só vale pra este pedido, não altera a base de peças"
                             />
+                            <p className="font-mono text-muted mt-0.5" style={{ color: corLinha }}>imp. {fmtBRL(r.impostoTotal)}</p>
                           </td>
-                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.impostoTotal)}</td>
-                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha }}>{fmtBRL(r.lucroLiquidoTotal)}</td>
-                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: corLinha || statusMargem.cor }}>{margemEfetiva}%</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs" style={{ color: corLinha }}>
+                            <p>{fmtBRL(r.lucroLiquidoTotal)}</p>
+                            <p style={{ color: corLinha || statusMargem.cor }}>{margemEfetiva}%</p>
+                          </td>
                         </>
                       )}
                       <td
-                        className="px-4 py-2.5 text-right font-mono font-semibold"
+                        className="px-3 py-2.5 text-right font-mono font-semibold text-sm"
                         style={{ color: corLinha || "#2C7C6E" }}
                       >
                         {fmtBRL(r.vendaTotal)}
                       </td>
                       {podeComprar && (
-                        <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={(e) => adicionarAoCarrinho(r, e)}
                             disabled={!carrinhoPronto}
