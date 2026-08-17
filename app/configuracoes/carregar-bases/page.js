@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { UploadCloud, ShieldAlert } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
-import { classifyDesc, categoria, normKey, parseBRDate, findExact } from "../../../lib/classificacao";
+import { classifyDesc, categoria, normKey, parseBRDate, parseValorFlexivel, findExact } from "../../../lib/classificacao";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 
@@ -108,8 +108,8 @@ export default function CarregarBasesPage() {
           if (!existente || (completo && !existente._completo)) {
             dedupMap.set(key, {
               codigo: code.toUpperCase(),
-              qtd: Number(row[idxQtd]) || 0,
-              valor: Number(row[idxValor]) || 0,
+              qtd: parseValorFlexivel(row[idxQtd]) || 0,
+              valor: parseValorFlexivel(row[idxValor]) || 0,
               dataNF: idxDataNF >= 0 ? row[idxDataNF] : "",
               entrega: idxEntrega >= 0 ? String(row[idxEntrega] || "").trim() : "",
               _completo: completo

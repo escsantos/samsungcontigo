@@ -55,6 +55,7 @@ export default function ConsultaPecasPage() {
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clientesEncontrados, setClientesEncontrados] = useState([]);
   const [itemAdicionado, setItemAdicionado] = useState(null);
+  const [tooltipDesc, setTooltipDesc] = useState(null); // { texto, top, left }
   const carrinho = useCarrinho();
 
   useEffect(() => {
@@ -363,9 +364,16 @@ export default function ConsultaPecasPage() {
                       <td className="px-3 py-2.5 font-mono text-xs truncate" style={{ color: "var(--accent)" }}>{r.codigo}</td>
                       <td className="px-3 py-2.5 text-xs truncate">
                         {r.descricao_peca ? (
-                          <span className="tooltip-abaixo">
+                          <span
+                            className="border-b border-dashed cursor-help"
+                            style={{ borderColor: "var(--line)" }}
+                            onMouseEnter={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setTooltipDesc({ texto: r.descricao_peca, top: rect.bottom + 8, left: rect.left });
+                            }}
+                            onMouseLeave={() => setTooltipDesc(null)}
+                          >
                             {r.descricao_resumida}
-                            <span className="tooltip-bubble-abaixo">{r.descricao_peca}</span>
                           </span>
                         ) : (
                           r.descricao_resumida
@@ -467,6 +475,15 @@ export default function ConsultaPecasPage() {
           )}
         </div>
       </Modal>
+
+      {tooltipDesc && (
+        <div
+          className="fixed z-[999] max-w-xs px-3 py-2.5 rounded-lg text-xs leading-relaxed pointer-events-none"
+          style={{ top: tooltipDesc.top, left: tooltipDesc.left, background: "var(--ink)", color: "var(--canvas)" }}
+        >
+          {tooltipDesc.texto}
+        </div>
+      )}
     </AppShell>
   );
 }
