@@ -323,18 +323,23 @@ export default function ConsultaPecasPage() {
             <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
-                  <th className="sticky top-0 bg-canvas text-left px-3 py-2.5 z-10" style={{ width: mostraCusto ? "30%" : "50%" }}>Peça</th>
-                  <th className="sticky top-0 bg-canvas text-center px-3 py-2.5 z-10" style={{ width: "8%" }}>Qtd</th>
+                  <th className="sticky top-0 bg-canvas text-left px-3 py-2.5 z-10" style={{ width: "12%" }}>Modelo</th>
+                  <th className="sticky top-0 bg-canvas text-left px-3 py-2.5 z-10" style={{ width: "9%" }}>Categoria</th>
+                  <th className="sticky top-0 bg-canvas text-left px-3 py-2.5 z-10" style={{ width: "11%" }}>Código</th>
+                  <th className="sticky top-0 bg-canvas text-left px-3 py-2.5 z-10" style={{ width: mostraCusto ? "16%" : "38%" }}>Descrição</th>
+                  <th className="sticky top-0 bg-canvas text-center px-3 py-2.5 z-10" style={{ width: "6%" }}>Qtd</th>
                   {mostraCusto && (
                     <>
-                      <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "18%" }}>Custo / Imposto</th>
-                      <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "16%" }}>Lucro / Margem</th>
+                      <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "14%" }}>Custo</th>
+                      <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "9%" }}>Imposto</th>
+                      <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "9%" }}>Lucro</th>
+                      <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "6%" }}>Marg.</th>
                     </>
                   )}
-                  <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "18%" }}>
+                  <th className="sticky top-0 bg-canvas text-right px-3 py-2.5 z-10" style={{ width: "12%" }}>
                     {mostraCusto ? "Venda Sugerida" : "Valor de Venda"}
                   </th>
-                  {podeComprar && <th className="sticky top-0 bg-canvas text-center px-3 py-2.5 z-10" style={{ width: "8%" }}></th>}
+                  {podeComprar && <th className="sticky top-0 bg-canvas text-center px-3 py-2.5 z-10" style={{ width: "6%" }}></th>}
                 </tr>
               </thead>
               <tbody>
@@ -345,26 +350,26 @@ export default function ConsultaPecasPage() {
                   return (
                     <tr
                       key={r.id}
-                      className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer align-top"
+                      className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
                       onClick={() => setPecaSelecionada(r)}
                     >
+                      <td className="px-3 py-2.5 font-mono font-medium text-xs truncate">{r.modelo}</td>
                       <td className="px-3 py-2.5">
-                        <p className="font-mono font-medium text-xs truncate">{r.modelo}</p>
-                        <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1 my-1" style={{ background: cor.bg, color: cor.fg }}>
+                        <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1" style={{ background: cor.bg, color: cor.fg }}>
                           <Icone size={10} />
                           {r.categoria}
                         </span>
-                        <p className="font-mono text-xs truncate" style={{ color: "var(--accent)" }}>{r.codigo}</p>
-                        <p className="text-muted text-xs truncate">
-                          {r.descricao_peca ? (
-                            <span className="tooltip-abaixo">
-                              {r.descricao_resumida}
-                              <span className="tooltip-bubble-abaixo">{r.descricao_peca}</span>
-                            </span>
-                          ) : (
-                            r.descricao_resumida
-                          )}
-                        </p>
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-xs truncate" style={{ color: "var(--accent)" }}>{r.codigo}</td>
+                      <td className="px-3 py-2.5 text-xs truncate">
+                        {r.descricao_peca ? (
+                          <span className="tooltip-abaixo">
+                            {r.descricao_resumida}
+                            <span className="tooltip-bubble-abaixo">{r.descricao_peca}</span>
+                          </span>
+                        ) : (
+                          r.descricao_resumida
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <input
@@ -377,22 +382,23 @@ export default function ConsultaPecasPage() {
                       </td>
                       {mostraCusto && (
                         <>
-                          <td className="px-3 py-2.5 text-right text-xs" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="number"
-                              step="0.01"
-                              className="field-input py-1 px-1.5 text-right font-mono w-full"
-                              style={{ color: corLinha }}
-                              value={r.custoUnit ?? ""}
-                              onChange={(e) => mudarCusto(r.id, e.target.value)}
-                              title="Custo editável — só vale pra este pedido, não altera a base de peças"
-                            />
-                            <p className="font-mono text-muted mt-0.5" style={{ color: corLinha }}>imp. {fmtBRL(r.impostoTotal)}</p>
+                          <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center border border-line rounded-[8px] pl-2 bg-surface focus-within:border-brand-400" style={{ borderColor: "var(--line)" }}>
+                              <span className="text-xs text-muted shrink-0">R$</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                className="py-1 px-1.5 text-right font-mono w-full bg-transparent outline-none text-xs"
+                                style={{ color: corLinha }}
+                                value={r.custoUnit ?? ""}
+                                onChange={(e) => mudarCusto(r.id, e.target.value)}
+                                title="Custo editável — só vale pra este pedido, não altera a base de peças"
+                              />
+                            </div>
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs" style={{ color: corLinha }}>
-                            <p>{fmtBRL(r.lucroLiquidoTotal)}</p>
-                            <p style={{ color: corLinha || statusMargem.cor }}>{margemEfetiva}%</p>
-                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs" style={{ color: corLinha }}>{fmtBRL(r.impostoTotal)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs" style={{ color: corLinha }}>{fmtBRL(r.lucroLiquidoTotal)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs" style={{ color: corLinha || statusMargem.cor }}>{margemEfetiva}%</td>
                         </>
                       )}
                       <td
