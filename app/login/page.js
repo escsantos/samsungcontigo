@@ -26,6 +26,9 @@ function LoginForm() {
     if (params.get("bloqueado") === "1") {
       setErro("Seu acesso foi bloqueado. Fale com o Administrador do sistema.");
     }
+    if (params.get("semunidade") === "1") {
+      setErro("Seu usuário ainda não tem nenhuma unidade vinculada. Fale com o Administrador do sistema.");
+    }
   }, [params]);
 
   async function entrar(e) {

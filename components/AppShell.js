@@ -8,6 +8,7 @@ import {
   Wallet, ClipboardCheck, Truck, Building2
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
+import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
 import Avatar from "./Avatar";
@@ -78,6 +79,8 @@ export default function AppShell({ titulo, children }) {
   const [perfil, setPerfil] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
+  const [unidadeAtiva, setUnidadeAtivaState] = useState(null);
+  const [unidadesDoUsuario, setUnidadesDoUsuario] = useState([]);
   const pathname = usePathname();
   const router = useRouter();
   const heartbeatRef = useRef(null);
@@ -93,6 +96,7 @@ export default function AppShell({ titulo, children }) {
       const p = await getPerfilAtual();
       if (p?.bloqueado) {
         await supabase.auth.signOut();
+        limparUnidadeAtiva();
         router.replace("/login?bloqueado=1");
         return;
       }
@@ -100,6 +104,27 @@ export default function AppShell({ titulo, children }) {
         router.replace("/trocar-senha");
         return;
       }
+
+      const unidades = await buscarUnidadesDoUsuario(supabase, p.id);
+      let ativa = getUnidadeAtiva();
+      if (ativa && !unidades.some((u) => u.id === ativa.id)) ativa = null;
+      if (!ativa) {
+        if (unidades.length === 0) {
+          await supabase.auth.signOut();
+          limparUnidadeAtiva();
+          router.replace("/login?semunidade=1");
+          return;
+        } else if (unidades.length === 1) {
+          setUnidadeAtiva(unidades[0]);
+          ativa = unidades[0];
+        } else {
+          router.replace("/selecionar-unidade");
+          return;
+        }
+      }
+      setUnidadeAtivaState(ativa);
+      setUnidadesDoUsuario(unidades);
+
       setPerfil(p);
       if (p?.cor_accent) {
         aplicarAccent(p.cor_accent);
@@ -131,6 +156,7 @@ export default function AppShell({ titulo, children }) {
 
   async function sair() {
     await supabase.auth.signOut();
+    limparUnidadeAtiva();
     router.replace("/login");
   }
 
@@ -257,6 +283,22 @@ export default function AppShell({ titulo, children }) {
             </button>
             <SininhoNotificacoes visivel={["Administrador", "Diretor", "Gerente"].includes(perfil?.cargo)} />
             <h1 className="font-display font-semibold text-[15px] text-ink truncate">{titulo}</h1>
+            {unidadeAtiva && (
+              <button
+                onClick={() => unidadesDoUsuario.length > 1 && router.push("/selecionar-unidade?trocar=1")}
+                title={unidadesDoUsuario.length > 1 ? "Clique pra trocar de unidade" : unidadeAtiva.nome}
+                className="hidden sm:flex items-center gap-1.5 text-[10.5px] font-mono font-bold px-2.5 py-1 rounded-full shrink-0"
+                style={{
+                  background: "var(--accent-soft)",
+                  color: "var(--accent)",
+                  cursor: unidadesDoUsuario.length > 1 ? "pointer" : "default"
+                }}
+              >
+                <Building2 size={11} />
+                {unidadeAtiva.nome}
+                {unidadesDoUsuario.length > 1 && <ChevronDown size={10} />}
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
             {podeComprar && (
