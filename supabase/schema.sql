@@ -628,3 +628,98 @@ create policy "gestor gerencia vinculos"
   on perfis_unidades for all
   using (pode_gerenciar_usuarios())
   with check (pode_gerenciar_usuarios());
+-- ================================================================
+-- MULTI-UNIDADE — FASE 3: Catálogo compartilhado + preço por unidade
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- 1. Renomeia "pecas" -> "pecas_catalogo" (preserva todos os ids e a
+--    referência que orcamento_itens.peca_id já tem pra essa tabela)
+alter table pecas rename to pecas_catalogo;
+
+-- 2. Nova tabela de preços — isolada por unidade
+create table if not exists pecas_precos (
+  id bigint generated always as identity primary key,
+  unidade_id bigint not null references unidades(id),
+  codigo text not null,
+  valor_unitario numeric(12,2),
+  data_referencia text,
+  atualizado_em timestamptz default now(),
+  unique (unidade_id, codigo)
+);
+create index if not exists idx_pecas_precos_codigo on pecas_precos (codigo);
+create index if not exists idx_pecas_precos_unidade on pecas_precos (unidade_id);
+
+-- 3. Migra os preços que já existem hoje pra ESC Santos
+insert into pecas_precos (unidade_id, codigo, valor_unitario, data_referencia, atualizado_em)
+select distinct on (pc.codigo)
+  (select id from unidades where asc_cod = '3197760'),
+  pc.codigo, pc.valor_unitario, pc.data_referencia, pc.atualizado_em
+from pecas_catalogo pc
+where pc.valor_unitario is not null
+order by pc.codigo, pc.atualizado_em desc nulls last
+on conflict (unidade_id, codigo) do nothing;
+
+-- 4. Remove as colunas de preço do catálogo (agora vivem em pecas_precos)
+alter table pecas_catalogo drop column if exists valor_unitario;
+alter table pecas_catalogo drop column if exists data_referencia;
+
+-- 5. lotes_pecas ganha unidade_id (delivery/lote é sempre de uma unidade específica)
+alter table lotes_pecas add column if not exists unidade_id bigint references unidades(id);
+update lotes_pecas set unidade_id = (select id from unidades where asc_cod = '3197760') where unidade_id is null;
+alter table lotes_pecas alter column unidade_id set not null;
+alter table lotes_pecas drop constraint if exists lotes_pecas_codigo_no_entrega_key;
+alter table lotes_pecas add constraint lotes_pecas_unidade_codigo_entrega_key unique (unidade_id, codigo, no_entrega);
+
+-- 6. pecas_processamentos ganha unidade_id (rastreia quem subiu o quê, de qual unidade)
+alter table pecas_processamentos add column if not exists unidade_id bigint references unidades(id);
+update pecas_processamentos set unidade_id = (select id from unidades where asc_cod = '3197760') where unidade_id is null;
+
+-- 7. RLS de pecas_precos — só vê/gerencia preço de unidade que tem vínculo
+alter table pecas_precos enable row level security;
+
+create policy "ve precos da propria unidade"
+  on pecas_precos for select
+  using (exists (select 1 from perfis_unidades pu where pu.unidade_id = pecas_precos.unidade_id and pu.perfil_id = auth.uid()));
+
+create policy "admin grava precos da propria unidade"
+  on pecas_precos for insert
+  with check (is_administrador() and exists (select 1 from perfis_unidades pu where pu.unidade_id = pecas_precos.unidade_id and pu.perfil_id = auth.uid()));
+
+create policy "admin atualiza precos da propria unidade"
+  on pecas_precos for update
+  using (is_administrador() and exists (select 1 from perfis_unidades pu where pu.unidade_id = pecas_precos.unidade_id and pu.perfil_id = auth.uid()))
+  with check (is_administrador() and exists (select 1 from perfis_unidades pu where pu.unidade_id = pecas_precos.unidade_id and pu.perfil_id = auth.uid()));
+
+-- 8. RLS de lotes_pecas — mesma regra, agora por unidade
+drop policy if exists "estoque le lotes" on lotes_pecas;
+create policy "estoque le lotes"
+  on lotes_pecas for select
+  using (pode_gerenciar_estoque() and exists (select 1 from perfis_unidades pu where pu.unidade_id = lotes_pecas.unidade_id and pu.perfil_id = auth.uid()));
+
+drop policy if exists "administrador gerencia lotes" on lotes_pecas;
+create policy "administrador gerencia lotes"
+  on lotes_pecas for all
+  using (is_administrador() and exists (select 1 from perfis_unidades pu where pu.unidade_id = lotes_pecas.unidade_id and pu.perfil_id = auth.uid()))
+  with check (is_administrador() and exists (select 1 from perfis_unidades pu where pu.unidade_id = lotes_pecas.unidade_id and pu.perfil_id = auth.uid()));
+
+-- 9. Função que junta catálogo (compartilhado) + preço (da unidade pedida)
+--    substitui a antiga consulta direta em "pecas" nas telas do sistema
+create or replace function buscar_pecas(p_unidade_id bigint)
+returns table (
+  id bigint,
+  modelo text,
+  categoria text,
+  codigo text,
+  descricao_resumida text,
+  descricao_peca text,
+  valor_unitario numeric,
+  data_referencia text
+)
+language sql stable as $$
+  select c.id, c.modelo, c.categoria, c.codigo, c.descricao_resumida, c.descricao_peca,
+         p.valor_unitario, p.data_referencia
+  from pecas_catalogo c
+  left join pecas_precos p on p.codigo = c.codigo and p.unidade_id = p_unidade_id;
+$$;
+-- 17. Multi-unidade — Fase 3 (ver fase3_catalogo_precos.sql, já incluído acima)

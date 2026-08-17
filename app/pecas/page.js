@@ -8,6 +8,7 @@ import { calcularPreco, corMargem } from "../../lib/precos";
 import DetalhePecaModal from "../../components/DetalhePecaModal";
 import Modal from "../../components/Modal";
 import { useCarrinho } from "../../contexts/CarrinhoContext";
+import { getUnidadeAtiva } from "../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -56,6 +57,7 @@ export default function ConsultaPecasPage() {
   const [clientesEncontrados, setClientesEncontrados] = useState([]);
   const [itemAdicionado, setItemAdicionado] = useState(null);
   const [tooltipDesc, setTooltipDesc] = useState(null); // { texto, top, left }
+  const [unidadeAtiva] = useState(() => getUnidadeAtiva());
   const carrinho = useCarrinho();
 
   useEffect(() => {
@@ -83,10 +85,10 @@ export default function ConsultaPecasPage() {
 
   useEffect(() => {
     (async () => {
-      const { count } = await supabase.from("pecas").select("*", { count: "exact", head: true });
+      const { count } = await supabase.from("pecas_catalogo").select("*", { count: "exact", head: true });
       setTotalGeral(count || 0);
 
-      const linhas = await buscarColunaCompleta("pecas", "categoria");
+      const linhas = await buscarColunaCompleta("pecas_catalogo", "categoria");
       const contagem = {};
       linhas.forEach((r) => { contagem[r.categoria] = (contagem[r.categoria] || 0) + 1; });
       setCategorias(Object.entries(contagem).sort((a, b) => a[0].localeCompare(b[0])));
@@ -94,6 +96,7 @@ export default function ConsultaPecasPage() {
       const { data: log } = await supabase
         .from("pecas_processamentos")
         .select("processado_em, total_registros, perfis(nome)")
+        .eq("unidade_id", unidadeAtiva?.id)
         .order("processado_em", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -111,9 +114,10 @@ export default function ConsultaPecasPage() {
       setResultados([]);
       return;
     }
+    if (!unidadeAtiva) return;
     const timer = setTimeout(async () => {
       setBuscando(true);
-      let query = supabase.from("pecas").select("*").order("modelo").limit(300);
+      let query = supabase.rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id }).order("modelo").limit(300);
       if (categoriaAtiva) query = query.eq("categoria", categoriaAtiva);
       termos.forEach((t) => {
         const like = `%${t}%`;
@@ -124,7 +128,7 @@ export default function ConsultaPecasPage() {
       setBuscando(false);
     }, 300);
     return () => clearTimeout(timer);
-  }, [termo, categoriaAtiva]);
+  }, [termo, categoriaAtiva, unidadeAtiva]);
 
   const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : margem;
 

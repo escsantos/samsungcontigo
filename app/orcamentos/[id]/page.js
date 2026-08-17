@@ -7,6 +7,7 @@ import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import LinhaDoTempo from "../../../components/LinhaDoTempo";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
+import { getUnidadeAtiva } from "../../../lib/unidade";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../../lib/estoque";
 import { calcularPreco } from "../../../lib/precos";
 
@@ -110,12 +111,13 @@ export default function DetalheOrcamentoPage() {
       setResultadosBusca([]);
       return;
     }
+    const unidadeAtiva = getUnidadeAtiva();
+    if (!unidadeAtiva) return;
     setBuscando(true);
     const t = setTimeout(async () => {
       const like = `%${termo}%`;
       const { data } = await supabase
-        .from("pecas")
-        .select("*")
+        .rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id })
         .or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`)
         .limit(30);
       setResultadosBusca(data || []);

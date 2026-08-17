@@ -1,11 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
-import { UploadCloud, ShieldAlert } from "lucide-react";
+import { UploadCloud, ShieldAlert, Building2 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { classifyDesc, categoria, normKey, parseBRDate, parseValorFlexivel, findExact } from "../../../lib/classificacao";
+import { getUnidadeAtiva, extrairAscCod } from "../../../lib/unidade";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
+
+// posição das colunas de ASC COD nos arquivos-padrão exportados (0-indexado)
+const COL_ASC_COD_PECAS = 19; // coluna T
+const COL_ASC_COD_GSPN = 3;   // coluna D
 
 function sleep(ms) {
   return new Promise((res) => setTimeout(res, ms));
@@ -29,8 +34,27 @@ function lerPlanilha(file) {
   });
 }
 
+// confere se a planilha bate com a unidade ativa, olhando a coluna do ASC COD
+// nas primeiras linhas com dado. Não bloqueia se a coluna não existir/estiver vazia
+// (arquivo fora do padrão) — só bloqueia quando encontra um código DIFERENTE.
+function conferirUnidade(rows, colIndex, unidadeAtiva, nomeArquivo) {
+  for (let r = 1; r < Math.min(rows.length, 30); r++) {
+    const row = rows[r];
+    if (!row || row.length === 0) continue;
+    const cod = extrairAscCod(row[colIndex]);
+    if (!cod) continue;
+    if (cod !== unidadeAtiva.asc_cod) {
+      throw new Error(
+        `${nomeArquivo} parece ser da unidade com ASC COD. ${cod}, mas você está na unidade ${unidadeAtiva.nome} (ASC COD. ${unidadeAtiva.asc_cod}). Confira se subiu o arquivo certo antes de processar.`
+      );
+    }
+    return; // achou e bateu, não precisa checar mais linhas
+  }
+}
+
 export default function CarregarBasesPage() {
   const [perfil, setPerfil] = useState(undefined);
+  const [unidadeAtiva, setUnidadeAtivaState] = useState(null);
   const [arquivoPecas, setArquivoPecas] = useState(null);
   const [arquivoGspn, setArquivoGspn] = useState(null);
   const [processando, setProcessando] = useState(false);
@@ -42,6 +66,7 @@ export default function CarregarBasesPage() {
 
   useEffect(() => {
     (async () => setPerfil(await getPerfilAtual()))();
+    setUnidadeAtivaState(getUnidadeAtiva());
   }, []);
 
   function fecharPopupResultado() {
@@ -56,6 +81,8 @@ export default function CarregarBasesPage() {
     setErro("");
     setProcessando(true);
     try {
+      if (!unidadeAtiva) throw new Error("Não identifiquei a unidade ativa. Recarregue a página e tente de novo.");
+
       let precoMap = new Map();
       let lotes = [];
       let duplicadosRemovidos = 0;
@@ -67,6 +94,8 @@ export default function CarregarBasesPage() {
         await sleep(0);
         const pecasRows = await lerPlanilha(arquivoPecas);
         const pHeaders = pecasRows[0].map(normKey);
+
+        conferirUnidade(pecasRows, COL_ASC_COD_PECAS, unidadeAtiva, "Base Peças");
 
         const idxDataNF = findExact(pHeaders, "data nf");
         const idxPecasEnv = findExact(pHeaders, "pecas enviadas");
@@ -138,6 +167,7 @@ export default function CarregarBasesPage() {
           if (!p.entrega) { semEntrega++; continue; }
           const chave = `${p.codigo}||${p.entrega}`;
           lotesMap.set(chave, {
+            unidade_id: unidadeAtiva.id,
             codigo: p.codigo,
             no_entrega: p.entrega,
             valor_unitario: Math.round((p.valor / p.qtd) * 100) / 100,
@@ -148,34 +178,31 @@ export default function CarregarBasesPage() {
         lotes = Array.from(lotesMap.values());
       }
 
-      // ---------- peças já cadastradas no Supabase (sempre precisa) ----------
-      setProgresso({ pct: 40, texto: "Lendo peças já cadastradas no Supabase..." });
+      // ---------- catálogo compartilhado + preços da unidade ativa (sempre precisa) ----------
+      setProgresso({ pct: 40, texto: "Lendo catálogo e preços já cadastrados..." });
       await sleep(0);
-      const existentesMap = new Map(); // modelo||codigo -> {...}
-      const existentesPorCodigo = new Map(); // codigo -> [ {...} ]
+      const existentesMap = new Map(); // modelo||codigo -> {...catálogo}
+      const existentesPorCodigo = new Map(); // codigo -> [ {...catálogo} ]
       {
         const PAGINA = 1000;
         let inicio = 0;
         while (true) {
           const { data, error } = await supabase
-            .from("pecas")
-            .select("modelo, codigo, categoria, descricao_resumida, descricao_peca, valor_unitario, data_referencia")
+            .from("pecas_catalogo")
+            .select("modelo, codigo, categoria, descricao_resumida, descricao_peca")
             .range(inicio, inicio + PAGINA - 1);
-          if (error) throw new Error("Falha ao ler peças existentes: " + error.message);
+          if (error) throw new Error("Falha ao ler catálogo existente: " + error.message);
           if (!data || data.length === 0) break;
           for (const p of data) {
             const info = {
               modelo: p.modelo,
               categoria: p.categoria,
               descricao_resumida: p.descricao_resumida,
-              descricao_peca: p.descricao_peca,
-              valor_unitario: p.valor_unitario,
-              ts: parseBRDate(p.data_referencia),
-              data_referencia: p.data_referencia
+              descricao_peca: p.descricao_peca
             };
             existentesMap.set(p.modelo.toUpperCase() + "||" + p.codigo.toUpperCase(), info);
             const lista = existentesPorCodigo.get(p.codigo.toUpperCase()) || [];
-            lista.push(info);
+            lista.push({ ...info, codigo: p.codigo.toUpperCase() });
             existentesPorCodigo.set(p.codigo.toUpperCase(), lista);
           }
           if (data.length < PAGINA) break;
@@ -183,16 +210,57 @@ export default function CarregarBasesPage() {
         }
       }
 
-      let registros = [];
+      const precosExistentes = new Map(); // codigo -> { valor_unitario, ts, data_referencia }
+      {
+        const PAGINA = 1000;
+        let inicio = 0;
+        while (true) {
+          const { data, error } = await supabase
+            .from("pecas_precos")
+            .select("codigo, valor_unitario, data_referencia")
+            .eq("unidade_id", unidadeAtiva.id)
+            .range(inicio, inicio + PAGINA - 1);
+          if (error) throw new Error("Falha ao ler preços existentes: " + error.message);
+          if (!data || data.length === 0) break;
+          for (const p of data) {
+            precosExistentes.set(p.codigo.toUpperCase(), {
+              valor_unitario: p.valor_unitario,
+              ts: parseBRDate(p.data_referencia),
+              data_referencia: p.data_referencia
+            });
+          }
+          if (data.length < PAGINA) break;
+          inicio += PAGINA;
+        }
+      }
+
+      let registrosCatalogo = [];
+      let registrosPrecos = [];
       let modelosSet = new Set();
       let naoClassificados = 0, semCusto = 0, precosAtualizados = 0, precosMantidos = 0, novasPecas = 0;
 
+      function decidirPreco(codigo, precoNovo) {
+        const existente = precosExistentes.get(codigo);
+        if (!precoNovo) return existente ? { valor: existente.valor_unitario, data: existente.data_referencia, mudou: false } : { valor: null, data: null, mudou: false };
+        const existeSemData = !existente || existente.valor_unitario === null || existente.valor_unitario === undefined;
+        const novoEhMaisRecente = precoNovo.ts !== null && (!existente?.ts || precoNovo.ts > existente.ts);
+        if (existeSemData || novoEhMaisRecente) {
+          if (existente) precosAtualizados++;
+          return { valor: Math.round(precoNovo.valor * 100) / 100, data: precoNovo.dataNF, mudou: true };
+        }
+        if (existente) precosMantidos++;
+        return { valor: existente.valor_unitario, data: existente.data_referencia, mudou: false };
+      }
+
       if (arquivoGspn) {
-        // ---------- modo completo: classifica pelo GSPN, cruza preço se tiver Base Peças ----------
+        // ---------- modo completo: classifica pelo GSPN (catálogo compartilhado), cruza preço da unidade ----------
         setProgresso({ pct: 50, texto: "Lendo Base GSPN..." });
         await sleep(0);
         const gspnRows = await lerPlanilha(arquivoGspn);
         const gHeaders = gspnRows[0].map(normKey);
+
+        conferirUnidade(gspnRows, COL_ASC_COD_GSPN, unidadeAtiva, "Base GSPN");
+
         const idxModelo = findExact(gHeaders, "modelo");
         const idxBH = findExact(gHeaders, "service product description");
         if (idxModelo < 0 || idxBH < 0) {
@@ -211,7 +279,8 @@ export default function CarregarBasesPage() {
 
         setProgresso({ pct: 65, texto: "Classificando peças e cruzando dados..." });
         await sleep(0);
-        const uniqueMap = new Map();
+        const uniqueCatalogo = new Map();
+        const uniquePrecos = new Map();
 
         for (let r = 1; r < gspnRows.length; r++) {
           const grow = gspnRows[r];
@@ -225,82 +294,71 @@ export default function CarregarBasesPage() {
           for (const slot of slots) {
             const codigo = String(grow[slot.cod] || "").trim();
             if (!codigo) continue;
+            const codigoUpper = codigo.toUpperCase();
             const descPeca = grow[slot.desc];
             const resumida = classifyDesc(descPeca);
             if (resumida === "Outros / Não Classificado") naoClassificados++;
-            const catFinal = cat;
-            const uKey = modelo.toUpperCase() + "||" + codigo.toUpperCase();
-            if (uniqueMap.has(uKey)) continue;
+            const uKey = modelo.toUpperCase() + "||" + codigoUpper;
+            if (uniqueCatalogo.has(uKey)) continue;
 
-            const preco = precoMap.get(codigo.toUpperCase());
-            const existente = existentesMap.get(uKey);
-            if (!existente) novasPecas++;
+            const existenteCatalogo = existentesMap.get(uKey);
+            if (!existenteCatalogo) novasPecas++;
 
-            let valorFinal = existente?.valor_unitario ?? null;
-            let dataFinal = existente?.data_referencia ?? null;
-            if (preco) {
-              const existeSemData = !existente || existente.valor_unitario === null || existente.valor_unitario === undefined;
-              const novoEhMaisRecente = preco.ts !== null && (!existente?.ts || preco.ts > existente.ts);
-              if (existeSemData || novoEhMaisRecente) {
-                valorFinal = Math.round(preco.valor * 100) / 100;
-                dataFinal = preco.dataNF;
-                if (existente) precosAtualizados++;
-              } else if (existente) {
-                precosMantidos++;
-              }
-            }
-            if (valorFinal === null || valorFinal === undefined) semCusto++;
-
-            uniqueMap.set(uKey, {
+            uniqueCatalogo.set(uKey, {
               modelo,
-              categoria: catFinal,
-              codigo: codigo.toUpperCase(),
+              categoria: cat,
+              codigo: codigoUpper,
               descricao_resumida: resumida,
-              descricao_peca: descPeca ? String(descPeca).trim() : "",
-              valor_unitario: valorFinal,
-              data_referencia: dataFinal
+              descricao_peca: descPeca ? String(descPeca).trim() : ""
             });
+
+            if (!uniquePrecos.has(codigoUpper)) {
+              const precoNovo = precoMap.get(codigoUpper);
+              const decisao = decidirPreco(codigoUpper, precoNovo);
+              if (decisao.valor === null || decisao.valor === undefined) semCusto++;
+              uniquePrecos.set(codigoUpper, { unidade_id: unidadeAtiva.id, codigo: codigoUpper, valor_unitario: decisao.valor, data_referencia: decisao.data });
+            }
           }
         }
-        registros = Array.from(uniqueMap.values());
+        registrosCatalogo = Array.from(uniqueCatalogo.values());
+        registrosPrecos = Array.from(uniquePrecos.values());
       } else {
         // ---------- modo só-preço: atualiza custo das peças já cadastradas, sem GSPN ----------
         setProgresso({ pct: 65, texto: "Atualizando preços das peças já cadastradas..." });
         await sleep(0);
         for (const [codigo, precoInfo] of precoMap.entries()) {
           const candidatos = existentesPorCodigo.get(codigo) || [];
-          for (const c of candidatos) {
-            const existeSemData = c.valor_unitario === null || c.valor_unitario === undefined;
-            const novoEhMaisRecente = precoInfo.ts !== null && (!c.ts || precoInfo.ts > c.ts);
-            if (existeSemData || novoEhMaisRecente) {
-              registros.push({
-                modelo: c.modelo,
-                categoria: c.categoria,
-                codigo,
-                descricao_resumida: c.descricao_resumida,
-                descricao_peca: c.descricao_peca,
-                valor_unitario: Math.round(precoInfo.valor * 100) / 100,
-                data_referencia: precoInfo.dataNF
-              });
-              precosAtualizados++;
-            } else {
-              precosMantidos++;
-            }
+          if (candidatos.length === 0) continue; // sem GSPN não sabemos o modelo, não cadastra peça nova
+          const decisao = decidirPreco(codigo, precoInfo);
+          if (decisao.mudou) {
+            registrosPrecos.push({ unidade_id: unidadeAtiva.id, codigo, valor_unitario: decisao.valor, data_referencia: decisao.data });
           }
         }
       }
 
-      if (registros.length > 0) {
-        setProgresso({ pct: 80, texto: "Gravando peças..." });
+      if (registrosCatalogo.length > 0) {
+        setProgresso({ pct: 75, texto: "Gravando catálogo (compartilhado entre unidades)..." });
         await sleep(0);
         const LOTE = 500;
-        for (let i = 0; i < registros.length; i += LOTE) {
-          const lote = registros.slice(i, i + LOTE);
-          const { error: upError } = await supabase.from("pecas").upsert(lote, { onConflict: "modelo,codigo" });
-          if (upError) throw new Error("Falha ao gravar peças: " + upError.message);
+        for (let i = 0; i < registrosCatalogo.length; i += LOTE) {
+          const lote = registrosCatalogo.slice(i, i + LOTE);
+          const { error: upError } = await supabase.from("pecas_catalogo").upsert(lote, { onConflict: "modelo,codigo" });
+          if (upError) throw new Error("Falha ao gravar catálogo: " + upError.message);
+          await sleep(0);
+        }
+      }
+
+      if (registrosPrecos.length > 0) {
+        setProgresso({ pct: 85, texto: `Gravando preços da unidade ${unidadeAtiva.nome}...` });
+        await sleep(0);
+        const LOTE = 500;
+        for (let i = 0; i < registrosPrecos.length; i += LOTE) {
+          const lote = registrosPrecos.slice(i, i + LOTE);
+          const { error: upError } = await supabase.from("pecas_precos").upsert(lote, { onConflict: "unidade_id,codigo" });
+          if (upError) throw new Error("Falha ao gravar preços: " + upError.message);
           setProgresso({
-            pct: 80 + Math.round((i / registros.length) * 13),
-            texto: `Gravando peças... ${Math.min(i + LOTE, registros.length).toLocaleString("pt-BR")} / ${registros.length.toLocaleString("pt-BR")}`
+            pct: 85 + Math.round((i / registrosPrecos.length) * 8),
+            texto: `Gravando preços... ${Math.min(i + LOTE, registrosPrecos.length).toLocaleString("pt-BR")} / ${registrosPrecos.length.toLocaleString("pt-BR")}`
           });
           await sleep(0);
         }
@@ -309,9 +367,10 @@ export default function CarregarBasesPage() {
       const { data: { user } } = await supabase.auth.getUser();
       await supabase.from("pecas_processamentos").insert({
         usuario_id: user?.id,
+        unidade_id: unidadeAtiva.id,
         arquivo_pecas: arquivoPecas?.name || null,
         arquivo_gspn: arquivoGspn?.name || null,
-        total_registros: registros.length,
+        total_registros: registrosCatalogo.length || registrosPrecos.length,
         duplicados_removidos: duplicadosRemovidos,
         nao_classificados: naoClassificados,
         sem_custo: semCusto
@@ -323,7 +382,7 @@ export default function CarregarBasesPage() {
         const LOTE = 500;
         for (let i = 0; i < lotes.length; i += LOTE) {
           const bloco = lotes.slice(i, i + LOTE);
-          const { error: upLotesError } = await supabase.from("lotes_pecas").upsert(bloco, { onConflict: "codigo,no_entrega" });
+          const { error: upLotesError } = await supabase.from("lotes_pecas").upsert(bloco, { onConflict: "unidade_id,codigo,no_entrega" });
           if (upLotesError) throw new Error("Falha ao gravar lotes: " + upLotesError.message);
         }
       }
@@ -333,7 +392,7 @@ export default function CarregarBasesPage() {
 
       setResultado({
         modo: arquivoGspn ? (arquivoPecas ? "completo" : "so-gspn") : "so-precos",
-        totalRegistros: registros.length,
+        totalRegistros: registrosCatalogo.length || registrosPrecos.length,
         totalModelos: modelosSet.size,
         duplicadosRemovidos,
         naoClassificados,
@@ -367,16 +426,24 @@ export default function CarregarBasesPage() {
     );
   }
 
-  const podeProcessar = (arquivoPecas || arquivoGspn) && !processando && !concluido;
+  const podeProcessar = (arquivoPecas || arquivoGspn) && !processando && !concluido && unidadeAtiva;
 
   return (
     <AppShell titulo="Carregar Bases">
       <div className="card p-6 max-w-2xl">
+        {unidadeAtiva && (
+          <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
+            <Building2 size={15} />
+            <p className="text-sm">
+              Subindo pra unidade <b>{unidadeAtiva.nome}</b> (ASC COD. {unidadeAtiva.asc_cod}). O catálogo de peças é compartilhado entre unidades — só o preço fica separado.
+            </p>
+          </div>
+        )}
         <p className="font-display font-semibold text-[15px] mb-1">Carregar bases de dados</p>
         <p className="text-sm text-muted mb-5">
           Suba as duas bases juntas pra um processamento completo, ou só uma de cada vez: só Base Peças atualiza
-          os custos das peças já cadastradas; só Base GSPN atualiza a classificação/modelo (mantendo os preços que
-          já existiam).
+          os custos das peças já cadastradas (na unidade ativa); só Base GSPN atualiza a classificação/modelo
+          (compartilhado, vale pra todas as unidades).
         </p>
 
         <div className="grid grid-cols-2 gap-4 mb-5">
@@ -397,8 +464,8 @@ export default function CarregarBasesPage() {
         {(arquivoPecas || arquivoGspn) && !(arquivoPecas && arquivoGspn) && (
           <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
             {arquivoPecas
-              ? "Só Base Peças selecionada: vai atualizar o custo das peças já cadastradas (não cadastra peça nova)."
-              : "Só Base GSPN selecionada: vai atualizar modelo/categoria/descrição (mantém os preços já cadastrados)."}
+              ? "Só Base Peças selecionada: vai atualizar o custo das peças já cadastradas nesta unidade (não cadastra peça nova)."
+              : "Só Base GSPN selecionada: vai atualizar modelo/categoria/descrição no catálogo compartilhado (mantém os preços já cadastrados de todas as unidades)."}
           </p>
         )}
 
@@ -440,11 +507,7 @@ export default function CarregarBasesPage() {
         }
       >
         <p className="text-sm text-muted">
-          {arquivoPecas && arquivoGspn
-            ? "Isso vai atualizar (ou cadastrar) as peças com base nos dois arquivos selecionados."
-            : arquivoPecas
-              ? "Isso vai atualizar o custo das peças já cadastradas que tiverem código presente nesse arquivo."
-              : "Isso vai atualizar modelo/categoria/descrição das peças com base na Base GSPN, mantendo os custos já cadastrados."}
+          Isso vai atualizar (ou cadastrar) peças com base no(s) arquivo(s) selecionado(s), pra unidade <b>{unidadeAtiva?.nome}</b>.
           {" "}Essa mudança fica visível pra todo mundo que usa o sistema imediatamente.
         </p>
       </Modal>
@@ -463,7 +526,7 @@ export default function CarregarBasesPage() {
           <div className="grid grid-cols-2 gap-3">
             <Stat n={resultado.totalRegistros} label="registros processados" />
             {resultado.modo === "completo" && <Stat n={resultado.totalModelos} label="modelos distintos" />}
-            {resultado.modo !== "so-precos" && <Stat n={resultado.novasPecas} label="peças novas cadastradas" />}
+            {resultado.modo !== "so-precos" && <Stat n={resultado.novasPecas} label="peças novas no catálogo" />}
             <Stat n={resultado.precosAtualizados} label="preços atualizados (mais recentes)" />
             <Stat n={resultado.precosMantidos} label="preços mantidos (já eram mais novos)" />
             {resultado.modo === "completo" && <Stat n={resultado.duplicadosRemovidos} label="duplicados removidos" />}

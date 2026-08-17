@@ -6,6 +6,7 @@ import {
   Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight, Pencil, Save
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
+import { getUnidadeAtiva } from "../../../lib/unidade";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import LinhaDoTempo from "../../../components/LinhaDoTempo";
@@ -139,11 +140,13 @@ export default function EstoquePedidoPage() {
     setBuscandoItem((b) => ({ ...b, [item.id]: true }));
     setErroItem((e) => ({ ...e, [item.id]: "" }));
 
+    const unidadeAtiva = getUnidadeAtiva();
     const { data: lote } = await supabase
       .from("lotes_pecas")
       .select("*")
       .eq("codigo", item.codigo)
       .eq("no_entrega", valor)
+      .eq("unidade_id", unidadeAtiva?.id)
       .maybeSingle();
 
     if (!lote) {
