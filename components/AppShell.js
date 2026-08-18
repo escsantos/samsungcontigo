@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
   ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
-  Wallet, ClipboardCheck, Truck, Building2
+  Wallet, ClipboardCheck, Truck, Building2, Database
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
@@ -67,7 +67,8 @@ export const GRUPOS_MENU = [
       { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cor: "#2E6DA8", descricao: "Suba as planilhas de peças e ordens de serviço para atualizar a base.", cargos: ["Administrador"] },
       { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cor: "#C2801F", descricao: "Cadastre os impostos usados no cálculo do preço de venda.", cargos: ["Administrador"] },
       { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cor: "#7A4FB0", descricao: "Crie logins, defina cargos e controle o acesso ao sistema.", cargos: ["Administrador", "Diretor", "Gerente"] },
-      { href: "/configuracoes/unidades", label: "Unidades", icone: Building2, cor: "#2C7C6E", descricao: "Cadastre as unidades do grupo e o ASC COD. de cada uma.", cargos: ["Administrador"] }
+      { href: "/configuracoes/unidades", label: "Unidades", icone: Building2, cor: "#2C7C6E", descricao: "Cadastre as unidades do grupo e o ASC COD. de cada uma.", cargos: ["Administrador"] },
+      { href: "/configuracoes/manutencao", label: "Manutenção", icone: Database, cor: "#E1614F", descricao: "Contagem de registros, backup manual e limpeza de orçamentos por unidade.", cargos: ["Administrador"] }
     ]
   }
 ];

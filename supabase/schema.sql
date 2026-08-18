@@ -1023,3 +1023,38 @@ create policy "gestores de clientes gerenciam"
       )
     )
   );
+-- ================================================================
+-- MANUTENÇÃO DO BANCO — logs de auditoria + permissão de exclusão
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- Log de toda ação de manutenção (auditoria — quem fez, quando, o quê)
+create table if not exists manutencao_logs (
+  id bigint generated always as identity primary key,
+  acao text not null,
+  unidade_id bigint references unidades(id),
+  executado_por uuid references perfis(id),
+  detalhes jsonb,
+  executado_em timestamptz default now()
+);
+
+alter table manutencao_logs enable row level security;
+
+create policy "admin ve logs de manutencao"
+  on manutencao_logs for select
+  using (is_administrador());
+
+create policy "admin cria logs de manutencao"
+  on manutencao_logs for insert
+  with check (is_administrador());
+
+-- Exclusão de orçamentos: só Administrador, só da(s) unidade(s) que tem vínculo.
+-- orcamento_itens e pagamentos_orcamento já têm "on delete cascade" configurado,
+-- então excluir aqui já limpa tudo que depende do pedido automaticamente.
+drop policy if exists "admin exclui orcamentos" on orcamentos;
+create policy "admin exclui orcamentos"
+  on orcamentos for delete
+  using (
+    is_administrador()
+    and exists (select 1 from perfis_unidades pu where pu.unidade_id = orcamentos.unidade_id and pu.perfil_id = auth.uid())
+  );
