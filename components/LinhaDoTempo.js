@@ -10,7 +10,7 @@ function fmtBRL(v) {
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [] }) {
+export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [], numeroPedidoPai = null }) {
   if (!orcamento) return null;
 
   const eventos = [];
@@ -53,7 +53,7 @@ export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [] })
     eventos.push({
       icone: DollarSign,
       cor: "#7A4FB0",
-      titulo: `${fmtBRL(orcamento.valor_herdado_pai)} herdado do pedido #${orcamento.pedido_pai_id}`,
+      titulo: `${fmtBRL(orcamento.valor_herdado_pai)} herdado do pedido #${numeroPedidoPai ?? orcamento.pedido_pai_id}`,
       data: orcamento.criado_em
     });
   }

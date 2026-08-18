@@ -261,7 +261,7 @@ export default function RelatorioCustoPage() {
               {calculadas.map((l) => (
                 <tr key={l.id} className="border-b border-line last:border-0 hover:bg-canvas align-top">
                   <td className="px-3 py-2.5">
-                    <p className="font-mono text-muted text-xs">#{l.orcamentos?.id}</p>
+                    <p className="font-mono text-muted text-xs">#{l.orcamentos?.numero_unidade}</p>
                     <p className="truncate">{l.orcamentos?.clientes?.nome || "—"}</p>
                   </td>
                   <td className="px-3 py-2.5">

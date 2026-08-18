@@ -54,6 +54,7 @@ export default function EstoquePedidoPage() {
   const [confirmarParcial, setConfirmarParcial] = useState(false);
   const [processandoParcial, setProcessandoParcial] = useState(false);
   const [pedidoFilho, setPedidoFilho] = useState(null);
+  const [pedidoPai, setPedidoPai] = useState(null);
 
   // romaneio
   const [romaneioAberto, setRomaneioAberto] = useState(false);
@@ -82,8 +83,12 @@ export default function EstoquePedidoPage() {
     const { data: pags } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", id).order("registrado_em");
     setPagamentos(pags || []);
     if (orc?.parcial) {
-      const { data: filho } = await supabase.from("orcamentos").select("id, status").eq("pedido_pai_id", id).maybeSingle();
+      const { data: filho } = await supabase.from("orcamentos").select("id, status, numero_unidade").eq("pedido_pai_id", id).maybeSingle();
       setPedidoFilho(filho || null);
+    }
+    if (orc?.pedido_pai_id) {
+      const { data: pai } = await supabase.from("orcamentos").select("id, numero_unidade").eq("id", orc.pedido_pai_id).maybeSingle();
+      setPedidoPai(pai || null);
     }
     if (orc) {
       const totalPago = (pags || []).reduce((s, p) => s + Number(p.valor), 0);
@@ -221,6 +226,13 @@ export default function EstoquePedidoPage() {
     const proporcaoPendente = subtotalOriginal > 0 ? valorPendente / subtotalOriginal : 0;
     const herdadoParaFilho = Math.round(jaPagoNoOriginal * proporcaoPendente * 100) / 100;
 
+    const { data: numeroReservado, error: errNumero } = await supabase.rpc("proximo_numero_pedido", { p_unidade_id: orcamento.unidade_id });
+    if (errNumero) {
+      setProcessandoParcial(false);
+      setErro("Falha ao gerar o número do pedido: " + errNumero.message);
+      return;
+    }
+
     const { data: novoPedido, error: errNovo } = await supabase
       .from("orcamentos")
       .insert({
@@ -234,7 +246,8 @@ export default function EstoquePedidoPage() {
         numero_pedido_compra: orcamento.numero_pedido_compra,
         pedido_pai_id: id,
         valor_herdado_pai: herdadoParaFilho,
-        unidade_id: orcamento.unidade_id
+        unidade_id: orcamento.unidade_id,
+        numero_unidade: numeroReservado
       })
       .select()
       .single();
@@ -274,7 +287,7 @@ export default function EstoquePedidoPage() {
     if (!error && orcamento.pedido_pai_id) {
       await supabase.from("notificacoes").insert({
         tipo: "pedido_pendente_pronto",
-        mensagem: `A peça pendente do pedido #${orcamento.pedido_pai_id} chegou — pedido #${id} está em "${confirmarAvanco.para}".`
+        mensagem: `A peça pendente do pedido #${pedidoPai?.numero_unidade ?? orcamento.pedido_pai_id} chegou — pedido #${orcamento.numero_unidade} está em "${confirmarAvanco.para}".`
       });
     }
     setProcessando(false);
@@ -429,7 +442,7 @@ export default function EstoquePedidoPage() {
   }
 
   return (
-    <AppShell titulo={`Pedido #${orcamento.id}`}>
+    <AppShell titulo={`Pedido #${orcamento.numero_unidade}`}>
       <button onClick={() => router.push("/estoque")} className="flex items-center gap-1.5 text-sm text-muted hover:text-ink mb-4">
         <ArrowLeft size={15} />
         Voltar para Estoque
@@ -472,7 +485,7 @@ export default function EstoquePedidoPage() {
           <div className="mt-3 rounded-lg px-3 py-2 text-xs" style={{ background: "rgba(122,79,176,0.10)", color: "#7A4FB0" }}>
             Este pedido é uma peça pendente separada do{" "}
             <button onClick={() => router.push(`/estoque/${orcamento.pedido_pai_id}`)} className="underline font-medium">
-              pedido #{orcamento.pedido_pai_id}
+              pedido #{pedidoPai?.numero_unidade ?? orcamento.pedido_pai_id}
             </button>.
             {Number(orcamento.valor_herdado_pai) > 0 && (
               <span className="block mt-1">
@@ -486,7 +499,7 @@ export default function EstoquePedidoPage() {
             <span>
               Liberado parcialmente — a peça pendente virou o{" "}
               <button onClick={() => router.push(`/estoque/${pedidoFilho.id}`)} className="underline font-medium">
-                pedido #{pedidoFilho.id}
+                pedido #{pedidoFilho.numero_unidade}
               </button>{" "}
               ({pedidoFilho.status}).
             </span>
@@ -621,7 +634,7 @@ export default function EstoquePedidoPage() {
                 <p className="text-xs text-muted">
                   Total pago: <b className="font-mono text-ink">{fmtBRL(totalPago)}</b>
                   {orcamento.pedido_pai_id && Number(orcamento.valor_herdado_pai) > 0 && (
-                    <span> (inclui {fmtBRL(orcamento.valor_herdado_pai)} já pago no pedido #{orcamento.pedido_pai_id})</span>
+                    <span> (inclui {fmtBRL(orcamento.valor_herdado_pai)} já pago no pedido #{pedidoPai?.numero_unidade ?? orcamento.pedido_pai_id})</span>
                   )}
                   {" · "}
                   {faltando > 0.004 ? (
@@ -825,7 +838,7 @@ export default function EstoquePedidoPage() {
 
       {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2 mb-4">{erro}</div>}
 
-      <LinhaDoTempo orcamento={orcamento} itens={itens} pagamentos={pagamentos} />
+      <LinhaDoTempo orcamento={orcamento} itens={itens} pagamentos={pagamentos} numeroPedidoPai={pedidoPai?.numero_unidade} />
 
       <Modal
         open={!!confirmarAvanco}
@@ -856,7 +869,7 @@ export default function EstoquePedidoPage() {
               </span>
             </div>
             <p className="text-sm text-muted">
-              Todas as peças do pedido #{orcamento.id} já têm Delivery confirmada. Confirma o avanço pra próxima etapa?
+              Todas as peças do pedido #{orcamento.numero_unidade} já têm Delivery confirmada. Confirma o avanço pra próxima etapa?
             </p>
           </>
         )}
@@ -925,7 +938,7 @@ export default function EstoquePedidoPage() {
           {pedidosIrmaos.map((p) => (
             <label key={p.id} className="flex items-center gap-2.5 p-2.5 rounded-lg border border-line cursor-pointer">
               <input type="checkbox" checked={selecionados.includes(p.id)} onChange={() => alternarSelecao(p.id)} />
-              <span className="text-sm">Pedido #{p.id} — {fmtBRL(p.valor_total)}</span>
+              <span className="text-sm">Pedido #{p.numero_unidade} — {fmtBRL(p.valor_total)}</span>
             </label>
           ))}
         </div>

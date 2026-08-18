@@ -128,7 +128,7 @@ export default function RecebimentosPage() {
             <tbody>
               {filtrados.map((o) => (
                 <tr key={o.id} className="border-b border-line last:border-0">
-                  <td className="px-4 py-2.5 font-mono text-muted">#{o.id}</td>
+                  <td className="px-4 py-2.5 font-mono text-muted">#{o.numero_unidade}</td>
                   <td className="px-4 py-2.5 font-medium">{o.clientes?.nome || "—"}</td>
                   <td className="px-4 py-2.5 text-muted">{o.perfis?.nome || "—"}</td>
                   <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(o.valor_total)}</td>

@@ -927,3 +927,51 @@ language sql security definer set search_path = public stable as $$
   )
   order by po.registrado_em;
 $$;
+-- ================================================================
+-- MULTI-UNIDADE — FASE 4b: Numeração própria de pedido por unidade
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- 1. Coluna do número exibido (por unidade)
+alter table orcamentos add column if not exists numero_unidade integer;
+
+-- 2. Pedidos que já existem hoje (todos ESC Santos) mantêm o número que já tinham,
+--    preservando a numeração que você já está acostumado a ver
+update orcamentos set numero_unidade = id where numero_unidade is null;
+alter table orcamentos alter column numero_unidade set not null;
+
+-- 3. O contador de cada unidade continua de onde os pedidos existentes pararam
+update unidades u
+set proximo_numero_pedido = coalesce((select max(o.numero_unidade) + 1 from orcamentos o where o.unidade_id = u.id), 1);
+
+-- 4. Função que reserva o próximo número de forma atômica (evita dois pedidos com o mesmo número)
+create or replace function proximo_numero_pedido(p_unidade_id bigint)
+returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  numero integer;
+begin
+  if not exists (select 1 from perfis_unidades pu where pu.unidade_id = p_unidade_id and pu.perfil_id = auth.uid()) then
+    raise exception 'Sem acesso a essa unidade';
+  end if;
+  update unidades set proximo_numero_pedido = proximo_numero_pedido + 1
+  where id = p_unidade_id
+  returning proximo_numero_pedido - 1 into numero;
+  return numero;
+end;
+$$;
+
+-- 5. Índice pra busca rápida por número dentro da unidade
+create unique index if not exists idx_orcamentos_unidade_numero on orcamentos (unidade_id, numero_unidade);
+
+-- 6. Busca da tela Pagamentos agora é por número da unidade + a unidade ativa (não mais pelo id interno)
+drop function if exists buscar_orcamento_pagamento(bigint);
+create or replace function buscar_orcamento_pagamento(p_numero integer, p_unidade_id bigint)
+returns setof orcamentos
+language sql security definer set search_path = public stable as $$
+  select o.* from orcamentos o
+  where o.numero_unidade = p_numero
+  and o.unidade_id = p_unidade_id
+  and (pode_gerenciar_clientes() or pode_gerenciar_estoque())
+  and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid());
+$$;

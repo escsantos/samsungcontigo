@@ -41,22 +41,17 @@ export default function PagamentosPage() {
     e?.preventDefault();
     const n = parseInt(numeroBusca, 10);
     if (!n) return;
+    const unidadeAtiva = getUnidadeAtiva();
+    if (!unidadeAtiva) return;
     setBuscando(true);
     setErro("");
     setNaoEncontrado(false);
     setOutraUnidade(false);
-    const { data: orcs } = await supabase.rpc("buscar_orcamento_pagamento", { pid: n });
+    const { data: orcs } = await supabase.rpc("buscar_orcamento_pagamento", { p_numero: n, p_unidade_id: unidadeAtiva.id });
     const orc = orcs?.[0];
     if (!orc) {
       setOrcamento(null);
       setNaoEncontrado(true);
-      setBuscando(false);
-      return;
-    }
-    const unidadeAtiva = getUnidadeAtiva();
-    if (unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
-      setOrcamento(null);
-      setOutraUnidade(true);
       setBuscando(false);
       return;
     }
@@ -65,7 +60,7 @@ export default function PagamentosPage() {
       orc.clientes = cliente || null;
     }
     setOrcamento(orc);
-    const { data: pags } = await supabase.rpc("buscar_pagamentos_pagamento", { pid: n });
+    const { data: pags } = await supabase.rpc("buscar_pagamentos_pagamento", { pid: orc.id });
     setPagamentos(pags || []);
     const totalPago = (pags || []).reduce((s, p) => s + Number(p.valor), 0);
     const faltando = Number(orc.valor_total || 0) - totalPago;
@@ -75,7 +70,7 @@ export default function PagamentosPage() {
 
   async function recarregarPedido() {
     if (!orcamento) return;
-    const { data: orcs } = await supabase.rpc("buscar_orcamento_pagamento", { pid: orcamento.id });
+    const { data: orcs } = await supabase.rpc("buscar_orcamento_pagamento", { p_numero: orcamento.numero_unidade, p_unidade_id: orcamento.unidade_id });
     const orc = orcs?.[0];
     if (orc && orc.cliente_id) {
       const { data: cliente } = await supabase.from("clientes").select("nome, celular, email").eq("id", orc.cliente_id).single();
@@ -215,7 +210,7 @@ export default function PagamentosPage() {
           <div className="card p-6 mb-4">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
-                <p className="font-display font-semibold text-lg">Pedido #{orcamento.id} — {orcamento.clientes?.nome}</p>
+                <p className="font-display font-semibold text-lg">Pedido #{orcamento.numero_unidade} — {orcamento.clientes?.nome}</p>
                 <p className="text-sm text-muted">{orcamento.clientes?.celular || orcamento.clientes?.email || ""}</p>
               </div>
               <span className="text-xs font-mono font-bold px-3 py-1 rounded-full inline-flex items-center gap-1.5" style={{ background: cor.bg, color: cor.fg }}>

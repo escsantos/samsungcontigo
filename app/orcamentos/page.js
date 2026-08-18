@@ -50,10 +50,11 @@ export default function OrcamentosPage() {
     const unidadeAtiva = getUnidadeAtiva();
     let query = supabase
       .from("orcamentos")
-      .select("*, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome)")
-      .eq("id", n);
+      .select("*, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome)");
     if (perfil?.cargo !== "Cliente" && unidadeAtiva) {
-      query = query.eq("unidade_id", unidadeAtiva.id);
+      query = query.eq("numero_unidade", n).eq("unidade_id", unidadeAtiva.id);
+    } else {
+      query = query.eq("id", n);
     }
     const { data } = await query.maybeSingle();
     setResultadoBusca(data || null);
@@ -93,7 +94,7 @@ export default function OrcamentosPage() {
                   className="w-full flex items-center justify-between p-3.5 rounded-lg border border-line hover:bg-canvas text-left"
                 >
                   <div>
-                    <p className="text-sm font-semibold">Pedido #{resultadoBusca.id} — {resultadoBusca.clientes?.nome || "—"}</p>
+                    <p className="text-sm font-semibold">Pedido #{resultadoBusca.numero_unidade} — {resultadoBusca.clientes?.nome || "—"}</p>
                     <p className="text-xs text-muted mt-0.5">
                       Vendedor: {resultadoBusca.perfis?.nome || "—"} · {fmtBRL(resultadoBusca.valor_total)}
                     </p>
@@ -143,7 +144,7 @@ export default function OrcamentosPage() {
                     className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
                     onClick={() => router.push(`/orcamentos/${o.id}`)}
                   >
-                    <td className="px-4 py-2.5 font-mono text-muted">#{o.id}</td>
+                    <td className="px-4 py-2.5 font-mono text-muted">#{o.numero_unidade}</td>
                     {!ehCliente && (
                       <td className="px-4 py-2.5 font-medium">
                         {o.clientes?.nome || "—"}

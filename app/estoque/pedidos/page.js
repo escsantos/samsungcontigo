@@ -232,7 +232,7 @@ export default function RelatorioPedidosPage() {
                   return (
                     <tr key={o.id} className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer align-top" onClick={() => router.push(`/estoque/${o.id}`)}>
                       <td className="px-3 py-2.5">
-                        <p className="font-mono text-muted text-xs">#{o.id}</p>
+                        <p className="font-mono text-muted text-xs">#{o.numero_unidade}</p>
                         <p className="text-muted text-xs">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</p>
                       </td>
                       <td className="px-3 py-2.5">

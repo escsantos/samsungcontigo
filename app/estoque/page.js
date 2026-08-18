@@ -148,9 +148,9 @@ export default function EstoquePage() {
                       className="w-full text-left flex items-center justify-between text-xs px-2.5 py-2 rounded-lg hover:bg-canvas"
                     >
                       <span>
-                        Pedido #{o.id} — {o.clientes?.nome || "—"}{" "}
+                        Pedido #{o.numero_unidade} — {o.clientes?.nome || "—"}{" "}
                         {o.pedido_pai_id ? (
-                          <span className="text-muted block">peça pendente do pedido #{o.pedido_pai_id}</span>
+                          <span className="text-muted block">peça pendente de outro pedido</span>
                         ) : (
                           <span className="text-muted block">liberado parcialmente, aguardando o restante</span>
                         )}
@@ -247,7 +247,7 @@ export default function EstoquePage() {
                     className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
                     onClick={() => router.push(`/estoque/${o.id}`)}
                   >
-                    <td className="px-4 py-2.5 font-mono text-muted">#{o.id}</td>
+                    <td className="px-4 py-2.5 font-mono text-muted">#{o.numero_unidade}</td>
                     <td className="px-4 py-2.5 font-medium">
                       {o.clientes?.nome || "—"}
                       {(o.parcial || o.pedido_pai_id) && (

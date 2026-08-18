@@ -66,6 +66,13 @@ export default function CarrinhoPage() {
       return;
     }
 
+    const { data: numeroReservado, error: errNumero } = await supabase.rpc("proximo_numero_pedido", { p_unidade_id: unidadeAtiva.id });
+    if (errNumero) {
+      setEnviando(false);
+      setErro("Falha ao gerar o número do pedido: " + errNumero.message);
+      return;
+    }
+
     const { data: orcamento, error: errOrc } = await supabase
       .from("orcamentos")
       .insert({
@@ -76,7 +83,8 @@ export default function CarrinhoPage() {
         valor_total: totalGeral,
         margem: margemEfetiva,
         imposto_total: impostoTotal,
-        unidade_id: unidadeAtiva.id
+        unidade_id: unidadeAtiva.id,
+        numero_unidade: numeroReservado
       })
       .select()
       .single();

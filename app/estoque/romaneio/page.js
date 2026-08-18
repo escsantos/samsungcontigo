@@ -38,7 +38,12 @@ function RomaneioConteudo() {
       for (const o of orcs || []) {
         const { data: its } = await supabase.from("orcamento_itens").select("*").eq("orcamento_id", o.id).order("id");
         const { data: pags } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", o.id).order("registrado_em");
-        listaComItens.push({ ...o, itens: its || [], pagamentos: pags || [] });
+        let numeroPai = null;
+        if (o.pedido_pai_id) {
+          const { data: pai } = await supabase.from("orcamentos").select("numero_unidade").eq("id", o.pedido_pai_id).maybeSingle();
+          numeroPai = pai?.numero_unidade ?? null;
+        }
+        listaComItens.push({ ...o, itens: its || [], pagamentos: pags || [], numeroPedidoPai: numeroPai });
       }
 
       setPedidos(listaComItens);
@@ -80,7 +85,7 @@ function RomaneioConteudo() {
       {pedidos.map((p) => (
         <div key={p.id} style={{ marginBottom: 20, breakInside: "avoid" }}>
           <p style={{ fontSize: 13, fontWeight: 700, background: "#F4F6F9", padding: "6px 10px", borderRadius: 4 }}>
-            Pedido #{p.id} — {new Date(p.criado_em).toLocaleDateString("pt-BR")}
+            Pedido #{p.numero_unidade} — {new Date(p.criado_em).toLocaleDateString("pt-BR")}
           </p>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 6 }}>
             <thead>
@@ -112,7 +117,7 @@ function RomaneioConteudo() {
           {p.pedido_pai_id && Number(p.valor_herdado_pai) > 0 && (
             <div style={{ marginTop: 6, background: "#EFEBFA", borderRadius: 4, padding: "6px 10px" }}>
               <p style={{ fontSize: 11, margin: 0 }}>
-                <b>{fmtBRL(p.valor_herdado_pai)}</b> deste valor já foi pago no pedido original #{p.pedido_pai_id} (peça pendente separada por liberação parcial).
+                <b>{fmtBRL(p.valor_herdado_pai)}</b> deste valor já foi pago no pedido original #{p.numeroPedidoPai ?? p.pedido_pai_id} (peça pendente separada por liberação parcial).
               </p>
             </div>
           )}

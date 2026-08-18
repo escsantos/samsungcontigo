@@ -338,7 +338,7 @@ export default function DetalheOrcamentoPage() {
     if (!atingiu30Porcento && seguirSemPagamento) {
       await supabase.from("notificacoes").insert({
         tipo: "pedido_sem_pagamento",
-        mensagem: `Pedido #${id} (${orcamento.clientes?.nome || ""}) foi aprovado com pagamento abaixo de 30% (recebido ${fmtBRL(totalPagoAgora)} de ${fmtBRL(orcamento.valor_total)}).`
+        mensagem: `Pedido #${orcamento.numero_unidade} (${orcamento.clientes?.nome || ""}) foi aprovado com pagamento abaixo de 30% (recebido ${fmtBRL(totalPagoAgora)} de ${fmtBRL(orcamento.valor_total)}).`
       });
     }
 
@@ -403,7 +403,7 @@ export default function DetalheOrcamentoPage() {
   const mostraCusto = perfil?.cargo !== "Cliente";
 
   return (
-    <AppShell titulo={`Orçamento #${orcamento.id}`}>
+    <AppShell titulo={`Orçamento #${orcamento.numero_unidade}`}>
       <button onClick={() => router.push("/orcamentos")} className="flex items-center gap-1.5 text-sm text-muted hover:text-ink mb-4">
         <ArrowLeft size={15} />
         Voltar para Orçamentos

@@ -181,7 +181,7 @@ export default function PagamentoFabricantePage() {
                       <tbody>
                         {g.itens.map((i) => (
                           <tr key={i.id} className="border-b border-line last:border-0">
-                            <td className="px-4 py-2 font-mono text-muted">#{i.orcamentos?.id}</td>
+                            <td className="px-4 py-2 font-mono text-muted">#{i.orcamentos?.numero_unidade}</td>
                             <td className="px-4 py-2">{i.orcamentos?.clientes?.nome || "—"}</td>
                             <td className="px-4 py-2 font-mono" style={{ color: "var(--accent)" }}>{i.codigo}</td>
                             <td className="px-4 py-2 text-center">{i.qtd}</td>
