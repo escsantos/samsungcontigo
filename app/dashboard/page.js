@@ -13,6 +13,7 @@ import AppShell from "../../components/AppShell";
 import { PERIODOS, calcularIntervalo } from "../../lib/periodo";
 import { corCategoria } from "../../lib/categorias";
 import { CORES_STATUS, ICONES_STATUS, ORDEM_STATUS } from "../../lib/estoque";
+import { getUnidadeAtiva } from "../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "R$ 0,00";
@@ -52,11 +53,14 @@ export default function DashboardPage() {
         const { data } = await supabase.from("perfis").select("id, nome").eq("cargo", "Vendedor").order("nome");
         setVendedores(data || []);
       }
-      const { data: pend } = await supabase
+      const unidadeAtiva = getUnidadeAtiva();
+      let queryPend = supabase
         .from("orcamentos")
         .select("id, status, pedido_pai_id, parcial, clientes(nome)")
         .or("parcial.eq.true,pedido_pai_id.not.is.null")
         .eq("entregue", false);
+      if (unidadeAtiva) queryPend = queryPend.eq("unidade_id", unidadeAtiva.id);
+      const { data: pend } = await queryPend;
       setPendencias(pend || []);
     })();
   }, []);
@@ -71,11 +75,13 @@ export default function DashboardPage() {
   async function carregarDados() {
     setCarregando(true);
     const vendedorAlvo = perfil.cargo === "Vendedor" ? perfil.id : vendedorFiltro || null;
+    const unidadeAtiva = getUnidadeAtiva();
 
     let queryOrc = supabase
       .from("orcamentos")
       .select("*, clientes(id, nome), perfis!orcamentos_vendedor_id_fkey(id, nome)")
       .order("criado_em", { ascending: true });
+    if (unidadeAtiva) queryOrc = queryOrc.eq("unidade_id", unidadeAtiva.id);
     if (intervalo) queryOrc = queryOrc.gte("criado_em", intervalo.de.toISOString()).lte("criado_em", intervalo.ate.toISOString());
     if (vendedorAlvo) queryOrc = queryOrc.eq("vendedor_id", vendedorAlvo);
     const { data: orcs } = await queryOrc;
@@ -91,8 +97,9 @@ export default function DashboardPage() {
 
     let queryLib = supabase
       .from("orcamento_itens")
-      .select("*, orcamentos!inner(vendedor_id, criado_em)")
+      .select("*, orcamentos!inner(vendedor_id, criado_em, unidade_id)")
       .eq("liberado", true);
+    if (unidadeAtiva) queryLib = queryLib.eq("orcamentos.unidade_id", unidadeAtiva.id);
     if (intervalo) queryLib = queryLib.gte("liberado_em", intervalo.de.toISOString()).lte("liberado_em", intervalo.ate.toISOString());
     if (vendedorAlvo) queryLib = queryLib.eq("orcamentos.vendedor_id", vendedorAlvo);
     const { data: lib } = await queryLib;

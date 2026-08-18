@@ -7,6 +7,7 @@ import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS } from "../../../lib/estoque";
 import { PERIODOS, calcularIntervalo } from "../../../lib/periodo";
+import { getUnidadeAtiva } from "../../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -52,16 +53,22 @@ export default function RelatorioPedidosPage() {
 
   async function carregar() {
     setCarregando(true);
-    const { data } = await supabase
+    const unidadeAtiva = getUnidadeAtiva();
+    let query = supabase
       .from("orcamentos")
       .select("*, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome)")
       .order("criado_em", { ascending: false });
+    if (unidadeAtiva) query = query.eq("unidade_id", unidadeAtiva.id);
+    const { data } = await query;
     setLista(data || []);
 
     // valor pago de verdade: soma direto da tabela de pagamentos + o que foi herdado
     // do pedido pai (liberação parcial) — nunca confia no campo valor_pago sozinho,
     // que só é atualizado no momento exato do Faturamento Efetuado.
-    const { data: pagamentos } = await supabase.from("pagamentos_orcamento").select("orcamento_id, valor");
+    const idsPedidos = (data || []).map((o) => o.id);
+    const { data: pagamentos } = idsPedidos.length
+      ? await supabase.from("pagamentos_orcamento").select("orcamento_id, valor").in("orcamento_id", idsPedidos)
+      : { data: [] };
     const somaPorPedido = {};
     (pagamentos || []).forEach((p) => {
       somaPorPedido[p.orcamento_id] = (somaPorPedido[p.orcamento_id] || 0) + Number(p.valor || 0);

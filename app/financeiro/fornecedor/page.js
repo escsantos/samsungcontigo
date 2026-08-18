@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { ShieldAlert, Check, ArrowLeft, ChevronDown } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
+import { getUnidadeAtiva } from "../../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -49,12 +50,14 @@ export default function PagamentoFabricantePage() {
 
   async function carregar() {
     setCarregando(true);
+    const unidadeAtiva = getUnidadeAtiva();
     const { data } = await supabase
       .from("orcamento_itens")
-      .select("*, orcamentos!inner(id, entregue, entregue_em, clientes(nome))")
+      .select("*, orcamentos!inner(id, entregue, entregue_em, unidade_id, clientes(nome))")
       .eq("liberado", true)
       .eq("custo_pago_fabricante", false)
       .eq("orcamentos.entregue", true)
+      .eq("orcamentos.unidade_id", unidadeAtiva?.id || 0)
       .order("id");
     setItens(data || []);
     setCarregando(false);

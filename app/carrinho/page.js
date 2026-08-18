@@ -8,6 +8,7 @@ import Modal from "../../components/Modal";
 import { useCarrinho } from "../../contexts/CarrinhoContext";
 import { calcularPreco } from "../../lib/precos";
 import { corCategoria, iconeCategoria } from "../../lib/categorias";
+import { getUnidadeAtiva } from "../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -58,6 +59,12 @@ export default function CarrinhoPage() {
 
     const { data: cliente } = await supabase.from("clientes").select("vendedor_id").eq("id", carrinho.clienteId).single();
     const { data: { user } } = await supabase.auth.getUser();
+    const unidadeAtiva = getUnidadeAtiva();
+    if (!unidadeAtiva) {
+      setEnviando(false);
+      setErro("Não identifiquei a unidade ativa. Recarregue a página e tente de novo.");
+      return;
+    }
 
     const { data: orcamento, error: errOrc } = await supabase
       .from("orcamentos")
@@ -68,7 +75,8 @@ export default function CarrinhoPage() {
         status: "Pendente de Análise",
         valor_total: totalGeral,
         margem: margemEfetiva,
-        imposto_total: impostoTotal
+        imposto_total: impostoTotal,
+        unidade_id: unidadeAtiva.id
       })
       .select()
       .single();

@@ -6,6 +6,7 @@ import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS } from "../../lib/estoque";
 import { semanaAtualStr, mesAtualStr, calcularSemanaISO, calcularMesEscolhido } from "../../lib/periodoEscolhido";
+import { getUnidadeAtiva } from "../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -33,12 +34,15 @@ export default function EstoquePage() {
   useEffect(() => {
     (async () => {
       setPerfil(await getPerfilAtual());
-      const { data } = await supabase
+      const unidadeAtiva = getUnidadeAtiva();
+      let query = supabase
         .from("orcamentos")
         .select("*, clientes(nome)")
         .neq("status", "Pendente de Análise")
         .eq("entregue", false)
         .order("criado_em", { ascending: false });
+      if (unidadeAtiva) query = query.eq("unidade_id", unidadeAtiva.id);
+      const { data } = await query;
       setTodosPedidos(data || []);
       setCarregando(false);
     })();

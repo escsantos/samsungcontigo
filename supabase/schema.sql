@@ -723,3 +723,207 @@ language sql stable as $$
   left join pecas_precos p on p.codigo = c.codigo and p.unidade_id = p_unidade_id;
 $$;
 -- 17. Multi-unidade — Fase 3 (ver fase3_catalogo_precos.sql, já incluído acima)
+-- ================================================================
+-- MULTI-UNIDADE — FASE 4: Isolar dados operacionais por unidade
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- 1. orcamentos ganha unidade_id (tudo que já existe hoje vira ESC Santos)
+alter table orcamentos add column if not exists unidade_id bigint references unidades(id);
+update orcamentos set unidade_id = (select id from unidades where asc_cod = '3197760') where unidade_id is null;
+alter table orcamentos alter column unidade_id set not null;
+
+-- 2. Ver orçamentos: cliente sempre vê os seus (compartilhado entre unidades);
+--    equipe só vê se tiver vínculo com a unidade DAQUELE pedido específico
+drop policy if exists "ver orcamentos" on orcamentos;
+create policy "ver orcamentos"
+  on orcamentos for select
+  using (
+    cliente_id = meu_cliente_id()
+    or (
+      exists (select 1 from perfis_unidades pu where pu.unidade_id = orcamentos.unidade_id and pu.perfil_id = auth.uid())
+      and (vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())
+    )
+  );
+
+drop policy if exists "financeiro le orcamentos" on orcamentos;
+create policy "financeiro le orcamentos"
+  on orcamentos for select
+  using (eh_financeiro() and exists (select 1 from perfis_unidades pu where pu.unidade_id = orcamentos.unidade_id and pu.perfil_id = auth.uid()));
+
+-- 3. Criar orçamento: precisa ter vínculo com a unidade que está sendo gravada
+drop policy if exists "criar orcamentos" on orcamentos;
+create policy "criar orcamentos"
+  on orcamentos for insert
+  with check (
+    criado_por = auth.uid()
+    and exists (select 1 from perfis_unidades pu where pu.unidade_id = orcamentos.unidade_id and pu.perfil_id = auth.uid())
+    and (cliente_id = meu_cliente_id() or pode_gerenciar_clientes() or pode_gerenciar_estoque())
+  );
+
+-- 4. Revisar/editar orçamento (Aprovar/Rejeitar/Ajustar/avançar status): mesma regra de vínculo
+drop policy if exists "revisar orcamentos" on orcamentos;
+create policy "revisar orcamentos"
+  on orcamentos for update
+  using (
+    exists (select 1 from perfis_unidades pu where pu.unidade_id = orcamentos.unidade_id and pu.perfil_id = auth.uid())
+    and (vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())
+  );
+
+drop policy if exists "financeiro confirma recebimento" on orcamentos;
+create policy "financeiro confirma recebimento"
+  on orcamentos for update
+  using (eh_financeiro() and exists (select 1 from perfis_unidades pu where pu.unidade_id = orcamentos.unidade_id and pu.perfil_id = auth.uid()))
+  with check (eh_financeiro() and exists (select 1 from perfis_unidades pu where pu.unidade_id = orcamentos.unidade_id and pu.perfil_id = auth.uid()));
+
+-- 5. Itens do orçamento: herdam a regra do pedido
+drop policy if exists "ver itens de orcamento" on orcamento_itens;
+create policy "ver itens de orcamento"
+  on orcamento_itens for select
+  using (
+    exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and (
+        o.cliente_id = meu_cliente_id()
+        or (
+          exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+          and (o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())
+        )
+      )
+    )
+  );
+
+drop policy if exists "financeiro le itens" on orcamento_itens;
+create policy "financeiro le itens"
+  on orcamento_itens for select
+  using (
+    eh_financeiro() and exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+    )
+  );
+
+drop policy if exists "financeiro confirma pagamento fabricante" on orcamento_itens;
+create policy "financeiro confirma pagamento fabricante"
+  on orcamento_itens for update
+  using (
+    eh_financeiro() and exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+    )
+  )
+  with check (
+    eh_financeiro() and exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+    )
+  );
+
+drop policy if exists "criar itens de orcamento" on orcamento_itens;
+create policy "criar itens de orcamento"
+  on orcamento_itens for insert
+  with check (
+    exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+      and (o.criado_por = auth.uid() or o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())
+    )
+  );
+
+-- 6. Pagamentos: mesma regra de vínculo por unidade
+drop policy if exists "ver pagamentos" on pagamentos_orcamento;
+create policy "ver pagamentos"
+  on pagamentos_orcamento for select
+  using (
+    exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and (
+        o.cliente_id = meu_cliente_id()
+        or (
+          exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+          and (o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())
+        )
+      )
+    )
+  );
+
+drop policy if exists "financeiro le pagamentos" on pagamentos_orcamento;
+create policy "financeiro le pagamentos"
+  on pagamentos_orcamento for select
+  using (
+    eh_financeiro() and exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+    )
+  );
+
+drop policy if exists "criar pagamentos" on pagamentos_orcamento;
+create policy "criar pagamentos"
+  on pagamentos_orcamento for insert
+  with check (
+    exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+      and (pode_gerenciar_clientes() or pode_gerenciar_estoque())
+    )
+  );
+
+drop policy if exists "editar pagamentos" on pagamentos_orcamento;
+create policy "editar pagamentos"
+  on pagamentos_orcamento for update
+  using (
+    exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+      and (pode_gerenciar_clientes() or pode_gerenciar_estoque())
+    )
+  );
+
+drop policy if exists "excluir pagamentos" on pagamentos_orcamento;
+create policy "excluir pagamentos"
+  on pagamentos_orcamento for delete
+  using (
+    exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+      and (pode_gerenciar_clientes() or pode_gerenciar_estoque())
+    )
+  );
+
+-- 7. Função de busca pontual da tela Pagamentos — agora também confere a unidade
+drop function if exists buscar_orcamento_pagamento(bigint);
+create or replace function buscar_orcamento_pagamento(pid bigint)
+returns setof orcamentos
+language sql security definer set search_path = public stable as $$
+  select o.* from orcamentos o
+  where o.id = pid
+  and (pode_gerenciar_clientes() or pode_gerenciar_estoque())
+  and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid());
+$$;
+
+drop function if exists buscar_itens_pagamento(bigint);
+create or replace function buscar_itens_pagamento(pid bigint)
+returns setof orcamento_itens
+language sql security definer set search_path = public stable as $$
+  select oi.* from orcamento_itens oi
+  where oi.orcamento_id = pid
+  and exists (
+    select 1 from orcamentos o where o.id = pid
+    and (pode_gerenciar_clientes() or pode_gerenciar_estoque())
+    and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+  );
+$$;
+
+drop function if exists buscar_pagamentos_pagamento(bigint);
+create or replace function buscar_pagamentos_pagamento(pid bigint)
+returns setof pagamentos_orcamento
+language sql security definer set search_path = public stable as $$
+  select po.* from pagamentos_orcamento po
+  where po.orcamento_id = pid
+  and exists (
+    select 1 from orcamentos o where o.id = pid
+    and (pode_gerenciar_clientes() or pode_gerenciar_estoque())
+    and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+  )
+  order by po.registrado_em;
+$$;

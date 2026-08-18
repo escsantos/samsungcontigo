@@ -4,6 +4,7 @@ import { Search, ShieldAlert, Receipt, Plus, Trash2, Pencil, Save, ExternalLink,
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../lib/estoque";
+import { getUnidadeAtiva } from "../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -19,6 +20,7 @@ export default function PagamentosPage() {
   const [buscando, setBuscando] = useState(false);
   const [orcamento, setOrcamento] = useState(null);
   const [naoEncontrado, setNaoEncontrado] = useState(false);
+  const [outraUnidade, setOutraUnidade] = useState(false);
   const [pagamentos, setPagamentos] = useState([]);
   const [erro, setErro] = useState("");
 
@@ -42,11 +44,19 @@ export default function PagamentosPage() {
     setBuscando(true);
     setErro("");
     setNaoEncontrado(false);
+    setOutraUnidade(false);
     const { data: orcs } = await supabase.rpc("buscar_orcamento_pagamento", { pid: n });
     const orc = orcs?.[0];
     if (!orc) {
       setOrcamento(null);
       setNaoEncontrado(true);
+      setBuscando(false);
+      return;
+    }
+    const unidadeAtiva = getUnidadeAtiva();
+    if (unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
+      setOrcamento(null);
+      setOutraUnidade(true);
       setBuscando(false);
       return;
     }
@@ -197,6 +207,7 @@ export default function PagamentosPage() {
           </button>
         </div>
         {naoEncontrado && <p className="text-sm text-danger mt-3">Nenhum pedido encontrado com o número #{numeroBusca}.</p>}
+        {outraUnidade && <p className="text-sm text-danger mt-3">O pedido #{numeroBusca} pertence a outra unidade. Troque de unidade pra acessá-lo.</p>}
       </form>
 
       {orcamento && (

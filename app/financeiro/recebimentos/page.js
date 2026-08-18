@@ -4,6 +4,7 @@ import { ShieldAlert, Check, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
+import { getUnidadeAtiva } from "../../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -28,12 +29,29 @@ export default function RecebimentosPage() {
 
   async function carregar() {
     setCarregando(true);
-    const { data } = await supabase
+    const unidadeAtiva = getUnidadeAtiva();
+    let query = supabase
       .from("orcamentos")
       .select("*, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome)")
-      .gt("valor_pago", 0)
-      .order("data_pagamento", { ascending: false });
-    setLista(data || []);
+      .order("criado_em", { ascending: false });
+    if (unidadeAtiva) query = query.eq("unidade_id", unidadeAtiva.id);
+    const { data: orcs } = await query;
+
+    // valor pago de verdade: soma direto da tabela de pagamentos + herdado do pedido pai
+    const idsPedidos = (orcs || []).map((o) => o.id);
+    const { data: pagamentos } = idsPedidos.length
+      ? await supabase.from("pagamentos_orcamento").select("orcamento_id, valor").in("orcamento_id", idsPedidos)
+      : { data: [] };
+    const pagoPorPedido = {};
+    (pagamentos || []).forEach((p) => {
+      pagoPorPedido[p.orcamento_id] = (pagoPorPedido[p.orcamento_id] || 0) + Number(p.valor || 0);
+    });
+
+    const comValorReal = (orcs || [])
+      .map((o) => ({ ...o, valor_pago: (pagoPorPedido[o.id] || 0) + Number(o.valor_herdado_pai || 0) }))
+      .filter((o) => o.valor_pago > 0.004);
+
+    setLista(comValorReal);
     setCarregando(false);
   }
 

@@ -31,6 +31,7 @@ export default function DetalheOrcamentoPage() {
   const [motivoRejeicao, setMotivoRejeicao] = useState("");
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState("");
+  const [foraDaUnidade, setForaDaUnidade] = useState(false);
 
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [termoBusca, setTermoBusca] = useState("");
@@ -55,8 +56,15 @@ export default function DetalheOrcamentoPage() {
   }, [id]);
 
   async function carregar() {
-    setPerfil(await getPerfilAtual());
+    const p = await getPerfilAtual();
+    setPerfil(p);
     const { data: orc } = await supabase.from("orcamentos").select("*, clientes(nome, celular, email)").eq("id", id).single();
+    const unidadeAtiva = getUnidadeAtiva();
+    if (orc && p?.cargo !== "Cliente" && unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
+      setOrcamento(null);
+      setForaDaUnidade(true);
+      return;
+    }
     setOrcamento(orc);
     setDesconto(String(orc?.desconto || 0));
     const { data: its } = await supabase.from("orcamento_itens").select("*").eq("orcamento_id", id).order("id");
@@ -378,7 +386,15 @@ export default function DetalheOrcamentoPage() {
   }
 
   if (!orcamento) {
-    return <AppShell titulo="Orçamento"><p className="text-sm text-muted">Orçamento não encontrado.</p></AppShell>;
+    return (
+      <AppShell titulo="Orçamento">
+        <p className="text-sm text-muted">
+          {foraDaUnidade
+            ? "Esse pedido pertence a outra unidade. Troque de unidade pra acessá-lo."
+            : "Orçamento não encontrado."}
+        </p>
+      </AppShell>
+    );
   }
 
   const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo);

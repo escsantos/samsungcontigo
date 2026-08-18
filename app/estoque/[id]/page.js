@@ -29,6 +29,7 @@ export default function EstoquePedidoPage() {
   const [itens, setItens] = useState([]);
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState("");
+  const [foraDaUnidade, setForaDaUnidade] = useState(false);
 
   // pedido de compra (único pro pedido inteiro)
   const [numeroPedidoCompra, setNumeroPedidoCompra] = useState("");
@@ -69,6 +70,12 @@ export default function EstoquePedidoPage() {
   async function carregar() {
     setPerfil(await getPerfilAtual());
     const { data: orc } = await supabase.from("orcamentos").select("*, clientes(id, nome, celular, email)").eq("id", id).single();
+    const unidadeAtiva = getUnidadeAtiva();
+    if (orc && unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
+      setOrcamento(null);
+      setForaDaUnidade(true);
+      return;
+    }
     setOrcamento(orc);
     const { data: its } = await supabase.from("orcamento_itens").select("*").eq("orcamento_id", id).order("id");
     setItens(its || []);
@@ -102,7 +109,15 @@ export default function EstoquePedidoPage() {
   }
 
   if (!orcamento) {
-    return <AppShell titulo="Pedido"><p className="text-sm text-muted">Pedido não encontrado.</p></AppShell>;
+    return (
+      <AppShell titulo="Pedido">
+        <p className="text-sm text-muted">
+          {foraDaUnidade
+            ? "Esse pedido pertence a outra unidade. Troque de unidade pra acessá-lo."
+            : "Pedido não encontrado."}
+        </p>
+      </AppShell>
+    );
   }
 
   const cor = CORES_STATUS[orcamento.status] || { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
@@ -218,7 +233,8 @@ export default function EstoquePedidoPage() {
         imposto_total: orcamento.imposto_total,
         numero_pedido_compra: orcamento.numero_pedido_compra,
         pedido_pai_id: id,
-        valor_herdado_pai: herdadoParaFilho
+        valor_herdado_pai: herdadoParaFilho,
+        unidade_id: orcamento.unidade_id
       })
       .select()
       .single();
@@ -376,6 +392,7 @@ export default function EstoquePedidoPage() {
       .from("orcamentos")
       .select("id, valor_total, criado_em")
       .eq("cliente_id", orcamento.cliente_id)
+      .eq("unidade_id", orcamento.unidade_id)
       .eq("status", "Liberado para Retirada/Entrega")
       .eq("entregue", false);
     setPedidosIrmaos(data || []);

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ShieldAlert, Check, RefreshCw } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { sugerirLoginCliente } from "../../../lib/usuarios";
+import { getUnidadeAtiva } from "../../../lib/unidade";
 import AppShell from "../../../components/AppShell";
 import ClienteForm from "../../../components/ClienteForm";
 import Modal from "../../../components/Modal";
@@ -93,6 +94,7 @@ export default function NovoClientePage() {
     // cria o acesso ao sistema, se marcado
     if (criarAcesso && podeGerenciarUsuarios && loginEditado) {
       const partes = loginEditado.split(".");
+      const unidadeAtiva = getUnidadeAtiva();
       try {
         const res = await chamarApi("/api/usuarios", {
           method: "POST",
@@ -101,7 +103,8 @@ export default function NovoClientePage() {
             sobrenome: partes[1] || partes[0] || loginEditado,
             cargo: "Cliente",
             clienteId: novoCliente.id,
-            nomeCompleto: dados.nome
+            nomeCompleto: dados.nome,
+            unidadeIds: unidadeAtiva ? [unidadeAtiva.id] : []
           })
         });
         setSalvando(false);

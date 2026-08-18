@@ -4,6 +4,7 @@ import { ShieldAlert, Download, Printer } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
+import { getUnidadeAtiva } from "../../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -48,11 +49,14 @@ export default function RelatorioCustoPage() {
   useEffect(() => {
     (async () => {
       setPerfil(await getPerfilAtual());
+      const unidadeAtiva = getUnidadeAtiva();
+      if (!unidadeAtiva) { setCarregando(false); return; }
 
       const { data: liberados } = await supabase
         .from("orcamento_itens")
-        .select("*, orcamentos(id, margem, imposto_total, criado_em, valor_total, desconto, valor_herdado_pai, clientes(nome))")
+        .select("*, orcamentos!inner(id, margem, imposto_total, criado_em, valor_total, desconto, valor_herdado_pai, clientes(nome))")
         .eq("liberado", true)
+        .eq("orcamentos.unidade_id", unidadeAtiva.id)
         .order("liberado_em", { ascending: false });
       setLinhas(liberados || []);
 

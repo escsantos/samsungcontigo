@@ -5,6 +5,7 @@ import { Search, ChevronRight } from "lucide-react";
 import { getPerfilAtual, supabase } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { CORES_STATUS, ICONES_STATUS } from "../../lib/estoque";
+import { getUnidadeAtiva } from "../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -24,11 +25,18 @@ export default function OrcamentosPage() {
 
   useEffect(() => {
     (async () => {
-      setPerfil(await getPerfilAtual());
-      const { data } = await supabase
+      const p = await getPerfilAtual();
+      setPerfil(p);
+      const unidadeAtiva = getUnidadeAtiva();
+      let query = supabase
         .from("orcamentos")
         .select("*, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome)")
         .order("criado_em", { ascending: false });
+      // cliente vê tudo que é dele, independente de unidade; equipe só vê a unidade ativa
+      if (p?.cargo !== "Cliente" && unidadeAtiva) {
+        query = query.eq("unidade_id", unidadeAtiva.id);
+      }
+      const { data } = await query;
       setLista(data || []);
       setCarregando(false);
     })();
@@ -39,11 +47,15 @@ export default function OrcamentosPage() {
     const n = parseInt(numeroBusca, 10);
     if (!n) return;
     setBuscando(true);
-    const { data } = await supabase
+    const unidadeAtiva = getUnidadeAtiva();
+    let query = supabase
       .from("orcamentos")
       .select("*, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome)")
-      .eq("id", n)
-      .maybeSingle();
+      .eq("id", n);
+    if (perfil?.cargo !== "Cliente" && unidadeAtiva) {
+      query = query.eq("unidade_id", unidadeAtiva.id);
+    }
+    const { data } = await query.maybeSingle();
     setResultadoBusca(data || null);
     setBuscando(false);
   }

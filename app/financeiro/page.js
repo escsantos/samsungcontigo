@@ -8,6 +8,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { PERIODOS, calcularIntervalo } from "../../lib/periodo";
+import { getUnidadeAtiva } from "../../lib/unidade";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "R$ 0,00";
@@ -63,18 +64,24 @@ export default function FinanceiroDashboardPage() {
 
   async function carregar() {
     setCarregando(true);
+    const unidadeAtiva = getUnidadeAtiva();
 
-    // busca todos os pedidos com algum pagamento registrado (via tabela real de pagamentos,
+    let queryOrc = supabase
+      .from("orcamentos")
+      .select("id, valor_total, desconto, valor_herdado_pai, recebimento_confirmado, recebimento_confirmado_em");
+    if (unidadeAtiva) queryOrc = queryOrc.eq("unidade_id", unidadeAtiva.id);
+    const { data: orcs } = await queryOrc;
+
+    // busca pagamentos só dos pedidos dessa unidade (via tabela real de pagamentos,
     // nunca confiando só no campo valor_pago, que só é atualizado no Faturamento Efetuado)
-    const { data: todosPagamentos } = await supabase.from("pagamentos_orcamento").select("orcamento_id, valor");
+    const idsPedidos = (orcs || []).map((o) => o.id);
+    const { data: todosPagamentos } = idsPedidos.length
+      ? await supabase.from("pagamentos_orcamento").select("orcamento_id, valor").in("orcamento_id", idsPedidos)
+      : { data: [] };
     const pagoPorPedido = {};
     (todosPagamentos || []).forEach((p) => {
       pagoPorPedido[p.orcamento_id] = (pagoPorPedido[p.orcamento_id] || 0) + Number(p.valor || 0);
     });
-
-    const { data: orcs } = await supabase
-      .from("orcamentos")
-      .select("id, valor_total, desconto, valor_herdado_pai, recebimento_confirmado, recebimento_confirmado_em");
 
     const comValorReal = (orcs || [])
       .map((o) => ({ ...o, valorRealPago: (pagoPorPedido[o.id] || 0) + Number(o.valor_herdado_pai || 0) }))
@@ -85,8 +92,9 @@ export default function FinanceiroDashboardPage() {
 
     const { data: itens } = await supabase
       .from("orcamento_itens")
-      .select("id, custo_real, qtd, custo_pago_fabricante, custo_pago_fabricante_em")
-      .eq("liberado", true);
+      .select("id, custo_real, qtd, custo_pago_fabricante, custo_pago_fabricante_em, orcamentos!inner(unidade_id)")
+      .eq("liberado", true)
+      .eq("orcamentos.unidade_id", unidadeAtiva?.id || 0);
     setItensPagosFabricante((itens || []).filter((i) => i.custo_pago_fabricante));
     setPendentesFabricante((itens || []).filter((i) => !i.custo_pago_fabricante).length);
 
