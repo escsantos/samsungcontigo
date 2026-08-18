@@ -975,3 +975,51 @@ language sql security definer set search_path = public stable as $$
   and (pode_gerenciar_clientes() or pode_gerenciar_estoque())
   and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid());
 $$;
+-- ================================================================
+-- CORREÇÃO — Clientes visíveis conforme a unidade do vendedor vinculado
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+drop policy if exists "gestores de clientes leem" on clientes;
+create policy "gestores de clientes leem"
+  on clientes for select
+  using (
+    pode_gerenciar_clientes()
+    and (
+      vendedor_id is null
+      or vendedor_id = auth.uid()
+      or exists (
+        select 1 from perfis_unidades pu1
+        join perfis_unidades pu2 on pu1.unidade_id = pu2.unidade_id
+        where pu1.perfil_id = clientes.vendedor_id and pu2.perfil_id = auth.uid()
+      )
+    )
+  );
+
+drop policy if exists "gestores de clientes gerenciam" on clientes;
+create policy "gestores de clientes gerenciam"
+  on clientes for all
+  using (
+    pode_gerenciar_clientes()
+    and (
+      vendedor_id is null
+      or vendedor_id = auth.uid()
+      or exists (
+        select 1 from perfis_unidades pu1
+        join perfis_unidades pu2 on pu1.unidade_id = pu2.unidade_id
+        where pu1.perfil_id = clientes.vendedor_id and pu2.perfil_id = auth.uid()
+      )
+    )
+  )
+  with check (
+    pode_gerenciar_clientes()
+    and (
+      vendedor_id is null
+      or vendedor_id = auth.uid()
+      or exists (
+        select 1 from perfis_unidades pu1
+        join perfis_unidades pu2 on pu1.unidade_id = pu2.unidade_id
+        where pu1.perfil_id = clientes.vendedor_id and pu2.perfil_id = auth.uid()
+      )
+    )
+  );

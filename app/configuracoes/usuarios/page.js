@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, KeyRound, Lock, Unlock, Trash2, ShieldAlert, Pencil, Building2 } from "lucide-react";
+import { UserPlus, KeyRound, Lock, Unlock, Trash2, ShieldAlert, Pencil, Building2, Search } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { CARGOS } from "../../../lib/usuarios";
 import AppShell from "../../../components/AppShell";
@@ -43,6 +43,12 @@ export default function UsuariosPage() {
   const [processandoAcao, setProcessandoAcao] = useState(false);
   const [credenciais, setCredenciais] = useState(null);
 
+  const [buscaNome, setBuscaNome] = useState("");
+  const [filtroCargo, setFiltroCargo] = useState("");
+  const [filtroUnidade, setFiltroUnidade] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("");
+  const [vinculosPorUsuario, setVinculosPorUsuario] = useState({}); // perfil_id -> [{id, nome}]
+
   useEffect(() => {
     (async () => {
       setPerfil(await getPerfilAtual());
@@ -56,6 +62,15 @@ export default function UsuariosPage() {
     setCarregandoLista(true);
     const { data, error } = await supabase.from("perfis").select("*").order("nome");
     if (!error) setLista(data || []);
+
+    const { data: vinculos } = await supabase.from("perfis_unidades").select("perfil_id, unidades(id, nome)");
+    const mapa = {};
+    (vinculos || []).forEach((v) => {
+      if (!v.unidades) return;
+      mapa[v.perfil_id] = [...(mapa[v.perfil_id] || []), v.unidades];
+    });
+    setVinculosPorUsuario(mapa);
+
     setCarregandoLista(false);
   }
 
@@ -113,6 +128,20 @@ export default function UsuariosPage() {
     setProcessandoAcao(false);
   }
 
+  const listaFiltrada = useMemo(() => {
+    return lista.filter((u) => {
+      if (buscaNome.trim() && !u.nome.toLowerCase().includes(buscaNome.trim().toLowerCase())) return false;
+      if (filtroCargo && u.cargo !== filtroCargo) return false;
+      if (filtroStatus === "ativo" && u.bloqueado) return false;
+      if (filtroStatus === "bloqueado" && !u.bloqueado) return false;
+      if (filtroUnidade) {
+        const vinculos = vinculosPorUsuario[u.id] || [];
+        if (!vinculos.some((v) => String(v.id) === filtroUnidade)) return false;
+      }
+      return true;
+    });
+  }, [lista, buscaNome, filtroCargo, filtroStatus, filtroUnidade, vinculosPorUsuario]);
+
   if (perfil === undefined) {
     return <AppShell titulo="Usuários"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
@@ -132,11 +161,45 @@ export default function UsuariosPage() {
   return (
     <AppShell titulo="Usuários">
       <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-muted">{lista.length} usuário(s) cadastrado(s)</p>
+        <p className="text-sm text-muted">{listaFiltrada.length} de {lista.length} usuário(s)</p>
         <button className="btn-primary" onClick={() => setModalNovo(true)}>
           <UserPlus size={16} />
           Novo usuário
         </button>
+      </div>
+
+      <div className="card p-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div>
+            <label className="field-label">Buscar por nome</label>
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <input className="field-input pl-9" placeholder="Nome..." value={buscaNome} onChange={(e) => setBuscaNome(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="field-label">Cargo</label>
+            <select className="field-input" value={filtroCargo} onChange={(e) => setFiltroCargo(e.target.value)}>
+              <option value="">Todos</option>
+              {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="field-label">Unidade</label>
+            <select className="field-input" value={filtroUnidade} onChange={(e) => setFiltroUnidade(e.target.value)}>
+              <option value="">Todas</option>
+              {unidadesDisponiveis.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="field-label">Status</label>
+            <select className="field-input" value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+              <option value="">Todos</option>
+              <option value="ativo">Ativo</option>
+              <option value="bloqueado">Bloqueado</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {erro && <div className="mb-4 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
@@ -144,6 +207,8 @@ export default function UsuariosPage() {
       <div className="card overflow-hidden">
         {carregandoLista ? (
           <p className="text-sm text-muted p-6">Carregando...</p>
+        ) : listaFiltrada.length === 0 ? (
+          <p className="text-sm text-muted p-6 text-center">Nenhum usuário encontrado com esses filtros.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -151,12 +216,13 @@ export default function UsuariosPage() {
                 <th className="text-left px-4 py-2.5">Nome</th>
                 <th className="text-left px-4 py-2.5">Login</th>
                 <th className="text-left px-4 py-2.5">Cargo</th>
+                <th className="text-left px-4 py-2.5">Unidade(s)</th>
                 <th className="text-left px-4 py-2.5">Status</th>
                 <th className="text-right px-4 py-2.5">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {lista.map((u) => (
+              {listaFiltrada.map((u) => (
                 <tr
                   key={u.id}
                   className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
@@ -177,6 +243,20 @@ export default function UsuariosPage() {
                     >
                       {CARGOS.map((c) => <option key={c} value={c}>{c}</option>)}
                     </select>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {(vinculosPorUsuario[u.id] || []).length === 0 ? (
+                      <span className="text-xs text-muted">—</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {(vinculosPorUsuario[u.id] || []).map((v) => (
+                          <span key={v.id} className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded inline-flex items-center gap-1" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
+                            <Building2 size={9} />
+                            {v.nome}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-2.5">
                     <span

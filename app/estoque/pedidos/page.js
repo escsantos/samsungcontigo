@@ -214,14 +214,18 @@ export default function RelatorioPedidosPage() {
         ) : filtrados.length === 0 ? (
           <p className="text-sm text-muted p-6 text-center">Nenhum pedido encontrado com esses filtros.</p>
         ) : (
-          <div className="overflow-auto max-h-[calc(100vh-460px)]">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
-                  <th className="sticky top-0 bg-canvas text-left px-3 py-2.5" style={{ width: "12%" }}>Pedido</th>
-                  <th className="sticky top-0 bg-canvas text-left px-3 py-2.5" style={{ width: "38%" }}>Cliente</th>
-                  <th className="sticky top-0 bg-canvas text-right px-3 py-2.5" style={{ width: "28%" }}>Valores</th>
-                  <th className="sticky top-0 bg-canvas text-left px-3 py-2.5" style={{ width: "22%" }}>Status</th>
+                  <th className="text-left px-3 py-2.5 whitespace-nowrap" style={{ width: "8%" }}>Pedido</th>
+                  <th className="text-left px-3 py-2.5 whitespace-nowrap" style={{ width: "22%" }}>Cliente</th>
+                  <th className="text-left px-3 py-2.5 whitespace-nowrap" style={{ width: "14%" }}>Vendedor</th>
+                  <th className="text-left px-3 py-2.5 whitespace-nowrap" style={{ width: "9%" }}>Data</th>
+                  <th className="text-right px-3 py-2.5 whitespace-nowrap" style={{ width: "10%" }}>Desconto</th>
+                  <th className="text-right px-3 py-2.5 whitespace-nowrap" style={{ width: "11%" }}>Total</th>
+                  <th className="text-right px-3 py-2.5 whitespace-nowrap" style={{ width: "11%" }}>Pago</th>
+                  <th className="text-left px-3 py-2.5 whitespace-nowrap" style={{ width: "15%" }}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,35 +234,31 @@ export default function RelatorioPedidosPage() {
                   const IconeStatus = ICONES_STATUS[o.status];
                   const pago = pagosPorPedido[o.id] || 0;
                   return (
-                    <tr key={o.id} className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer align-top" onClick={() => router.push(`/estoque/${o.id}`)}>
-                      <td className="px-3 py-2.5">
-                        <p className="font-mono text-muted text-xs">#{o.numero_unidade}</p>
-                        <p className="text-muted text-xs">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</p>
+                    <tr key={o.id} className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer" onClick={() => router.push(`/estoque/${o.id}`)}>
+                      <td className="px-3 py-2.5 font-mono text-muted whitespace-nowrap">#{o.numero_unidade}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap overflow-hidden text-ellipsis">
+                        <span className="font-medium">{o.clientes?.nome || "—"}</span>
+                        {(o.parcial || o.pedido_pai_id) && (
+                          <span className="ml-1.5 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(232,163,61,0.14)", color: "#C2801F" }}>
+                            PARCIAL
+                          </span>
+                        )}
+                        {o.sem_pagamento && (
+                          <span className="ml-1.5 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(214,51,108,0.14)", color: "#D6336C" }}>
+                            SEM PAGTO
+                          </span>
+                        )}
                       </td>
-                      <td className="px-3 py-2.5">
-                        <p className="font-medium truncate">{o.clientes?.nome || "—"}</p>
-                        <p className="text-muted text-xs truncate">{o.perfis?.nome || "—"}</p>
-                        <div className="flex gap-1 mt-1 flex-wrap">
-                          {(o.parcial || o.pedido_pai_id) && (
-                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(232,163,61,0.14)", color: "#C2801F" }}>
-                              PARCIAL
-                            </span>
-                          )}
-                          {o.sem_pagamento && (
-                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(214,51,108,0.14)", color: "#D6336C" }}>
-                              SEM PAGAMENTO
-                            </span>
-                          )}
-                        </div>
+                      <td className="px-3 py-2.5 text-muted whitespace-nowrap overflow-hidden text-ellipsis">{o.perfis?.nome || "—"}</td>
+                      <td className="px-3 py-2.5 text-muted whitespace-nowrap">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</td>
+                      <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap" style={{ color: Number(o.desconto) > 0 ? "#D6336C" : undefined }}>
+                        {Number(o.desconto) > 0 ? `-${fmtBRL(o.desconto)}` : "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-right font-mono text-xs">
-                        {Number(o.desconto) > 0 && <p style={{ color: "#D6336C" }}>-{fmtBRL(o.desconto)} desc.</p>}
-                        <p className="font-semibold text-sm text-ink">{fmtBRL(o.valor_total)}</p>
-                        <p className="text-muted" style={{ color: pago >= Number(o.valor_total) - 0.004 && pago > 0 ? "#2C7C6E" : undefined }}>
-                          pago {fmtBRL(pago)}
-                        </p>
+                      <td className="px-3 py-2.5 text-right font-mono font-semibold whitespace-nowrap">{fmtBRL(o.valor_total)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap" style={{ color: pago >= Number(o.valor_total) - 0.004 && pago > 0 ? "#2C7C6E" : undefined }}>
+                        {fmtBRL(pago)}
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1.5" style={{ background: cor.bg, color: cor.fg }}>
                           {IconeStatus && <IconeStatus size={11} />}
                           {o.entregue ? "Entregue" : o.status}

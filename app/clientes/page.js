@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { UserPlus, Search, ShieldAlert, Building2, User } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
+import { getUnidadeAtiva } from "../../lib/unidade";
 
 function normKey(s) {
   return String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
@@ -19,10 +20,21 @@ export default function ClientesPage() {
   useEffect(() => {
     (async () => {
       setPerfil(await getPerfilAtual());
-      const { data } = await supabase
+      const unidadeAtiva = getUnidadeAtiva();
+      let query = supabase
         .from("clientes")
         .select("*, perfis!clientes_vendedor_id_fkey(nome)")
         .order("nome");
+      if (unidadeAtiva) {
+        const { data: vinculos } = await supabase.from("perfis_unidades").select("perfil_id").eq("unidade_id", unidadeAtiva.id);
+        const idsDaUnidade = (vinculos || []).map((v) => v.perfil_id);
+        if (idsDaUnidade.length > 0) {
+          query = query.or(`vendedor_id.is.null,vendedor_id.in.(${idsDaUnidade.join(",")})`);
+        } else {
+          query = query.is("vendedor_id", null);
+        }
+      }
+      const { data } = await query;
       setLista(data || []);
       setCarregando(false);
     })();
