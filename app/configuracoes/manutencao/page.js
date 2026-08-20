@@ -125,9 +125,11 @@ export default function ManutencaoPage() {
     setConfirmando(true);
   }
 
+  const nomeConfere = !!contagemAlvo?.unidade?.nome && nomeDigitado.trim().toLowerCase() === contagemAlvo.unidade.nome.trim().toLowerCase();
+
   async function confirmarExclusao() {
     if (!contagemAlvo?.unidade) return;
-    if (nomeDigitado.trim() !== contagemAlvo.unidade.nome) {
+    if (!nomeConfere) {
       setErro("O nome digitado não confere com o nome da unidade.");
       return;
     }
@@ -327,7 +329,7 @@ export default function ManutencaoPage() {
             <button
               className="btn-primary"
               style={{ background: "var(--danger)" }}
-              disabled={excluindo || nomeDigitado.trim() !== contagemAlvo?.unidade?.nome}
+              disabled={excluindo || nomeConfere !== true}
               onClick={confirmarExclusao}
             >
               {excluindo ? "Excluindo..." : "Excluir permanentemente"}
@@ -358,12 +360,21 @@ export default function ManutencaoPage() {
             <p className="text-xs text-muted mb-3">
               Um backup em Excel será baixado automaticamente antes da exclusão. Pra confirmar, digite o nome exato da unidade: <b>{contagemAlvo.unidade?.nome}</b>
             </p>
-            <input
-              className="field-input"
-              value={nomeDigitado}
-              onChange={(e) => setNomeDigitado(e.target.value)}
-              placeholder={contagemAlvo.unidade?.nome}
-            />
+            <div className="relative">
+              <input
+                className="field-input"
+                style={{ borderColor: nomeDigitado ? (nomeConfere ? "#2C7C6E" : "var(--danger)") : undefined }}
+                value={nomeDigitado}
+                onChange={(e) => setNomeDigitado(e.target.value)}
+                placeholder={contagemAlvo.unidade?.nome}
+                autoComplete="off"
+              />
+              {nomeDigitado && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium" style={{ color: nomeConfere ? "#2C7C6E" : "var(--danger)" }}>
+                  {nomeConfere ? "✓ confere" : "não confere"}
+                </span>
+              )}
+            </div>
             {erro && <p className="text-xs text-danger mt-2">{erro}</p>}
           </>
         )}
