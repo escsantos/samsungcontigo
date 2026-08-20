@@ -1199,3 +1199,17 @@ language sql stable as $$
   ) p_fallback on p_local.valor_unitario is null
   left join unidades u_fallback on u_fallback.id = p_fallback.unidade_id;
 $$;
+-- ================================================================
+-- MANUTENÇÃO — permissão pra limpar catálogo/preços/lotes de peças
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+drop policy if exists "admin exclui precos" on pecas_precos;
+create policy "admin exclui precos"
+  on pecas_precos for delete
+  using (is_administrador());
+
+drop policy if exists "admin exclui processamentos" on pecas_processamentos;
+create policy "admin exclui processamentos"
+  on pecas_processamentos for delete
+  using (is_administrador());

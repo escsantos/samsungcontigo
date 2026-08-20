@@ -31,6 +31,10 @@ export default function ManutencaoPage() {
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
 
+  const [confirmandoPecas, setConfirmandoPecas] = useState(false);
+  const [fraseDigitada, setFraseDigitada] = useState("");
+  const [excluindoPecas, setExcluindoPecas] = useState(false);
+
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
@@ -48,7 +52,16 @@ export default function ManutencaoPage() {
 
     const { count: totalCatalogo } = await supabase.from("pecas_catalogo").select("*", { count: "exact", head: true });
     const { count: totalUsuarios } = await supabase.from("perfis").select("*", { count: "exact", head: true });
-    setCompartilhado({ catalogo: totalCatalogo || 0, usuarios: totalUsuarios || 0 });
+    const { count: totalPrecos } = await supabase.from("pecas_precos").select("*", { count: "exact", head: true });
+    const { count: totalLotes } = await supabase.from("lotes_pecas").select("*", { count: "exact", head: true });
+    const { count: totalProcessamentos } = await supabase.from("pecas_processamentos").select("*", { count: "exact", head: true });
+    setCompartilhado({
+      catalogo: totalCatalogo || 0,
+      usuarios: totalUsuarios || 0,
+      precos: totalPrecos || 0,
+      lotes: totalLotes || 0,
+      processamentos: totalProcessamentos || 0
+    });
 
     const porUnidade = {};
     for (const u of unis) {
@@ -171,6 +184,61 @@ export default function ManutencaoPage() {
     setExcluindo(false);
   }
 
+  const FRASE_CONFIRMACAO = "LIMPAR PEÇAS";
+  const fraseConfere = fraseDigitada.trim().toUpperCase() === FRASE_CONFIRMACAO;
+
+  async function confirmarLimpezaPecas() {
+    if (!fraseConfere) {
+      setErro("A frase digitada não confere.");
+      return;
+    }
+    setExcluindoPecas(true);
+    setErro("");
+    try {
+      const wb = XLSX.utils.book_new();
+      const { data: catalogo } = await supabase.from("pecas_catalogo").select("*");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(catalogo || []), "Catalogo Pecas");
+      const { data: precos } = await supabase.from("pecas_precos").select("*");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(precos || []), "Precos");
+      const { data: lotes } = await supabase.from("lotes_pecas").select("*");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lotes || []), "Lotes Delivery");
+      XLSX.writeFile(wb, `backup-antes-de-limpar-pecas-${new Date().toISOString().slice(0, 10)}.xlsx`);
+
+      const { error: errPrecos } = await supabase.from("pecas_precos").delete().gte("id", 0);
+      if (errPrecos) throw new Error("Falha ao excluir preços: " + errPrecos.message);
+
+      const { error: errLotes } = await supabase.from("lotes_pecas").delete().gte("id", 0);
+      if (errLotes) throw new Error("Falha ao excluir lotes: " + errLotes.message);
+
+      const { error: errProc } = await supabase.from("pecas_processamentos").delete().gte("id", 0);
+      if (errProc) throw new Error("Falha ao excluir histórico de processamentos: " + errProc.message);
+
+      const { error: errCatalogo } = await supabase.from("pecas_catalogo").delete().gte("id", 0);
+      if (errCatalogo) throw new Error("Falha ao excluir catálogo: " + errCatalogo.message);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from("manutencao_logs").insert({
+        acao: "limpeza_pecas_gspn",
+        unidade_id: null,
+        executado_por: user.id,
+        detalhes: {
+          catalogo_excluido: (catalogo || []).length,
+          precos_excluidos: (precos || []).length,
+          lotes_excluidos: (lotes || []).length
+        }
+      });
+
+      setConfirmandoPecas(false);
+      setFraseDigitada("");
+      setSucesso(`Catálogo de peças zerado — ${(catalogo || []).length} peça(s), ${(precos || []).length} preço(s) e ${(lotes || []).length} lote(s) excluídos. Backup baixado automaticamente. Já pode subir as bases novas.`);
+      await carregarContagens(unidades);
+      await carregarLogs();
+    } catch (e) {
+      setErro("Falha ao limpar: " + e.message);
+    }
+    setExcluindoPecas(false);
+  }
+
   if (perfil === undefined) {
     return <AppShell titulo="Manutenção"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
@@ -211,10 +279,22 @@ export default function ManutencaoPage() {
           <p className="text-sm text-muted">Contando registros...</p>
         ) : (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
               <div className="bg-canvas rounded-lg p-3.5">
                 <div className="flex items-center gap-1.5 text-muted mb-1"><Package size={12} /><span className="text-[10.5px] uppercase font-mono">Catálogo (compartilhado)</span></div>
                 <p className="font-mono font-bold text-lg">{compartilhado?.catalogo?.toLocaleString("pt-BR")}</p>
+              </div>
+              <div className="bg-canvas rounded-lg p-3.5">
+                <div className="flex items-center gap-1.5 text-muted mb-1"><Package size={12} /><span className="text-[10.5px] uppercase font-mono">Preços (todas unidades)</span></div>
+                <p className="font-mono font-bold text-lg">{compartilhado?.precos?.toLocaleString("pt-BR")}</p>
+              </div>
+              <div className="bg-canvas rounded-lg p-3.5">
+                <div className="flex items-center gap-1.5 text-muted mb-1"><Package size={12} /><span className="text-[10.5px] uppercase font-mono">Lotes (todas unidades)</span></div>
+                <p className="font-mono font-bold text-lg">{compartilhado?.lotes?.toLocaleString("pt-BR")}</p>
+              </div>
+              <div className="bg-canvas rounded-lg p-3.5">
+                <div className="flex items-center gap-1.5 text-muted mb-1"><ClipboardList size={12} /><span className="text-[10.5px] uppercase font-mono">Processamentos</span></div>
+                <p className="font-mono font-bold text-lg">{compartilhado?.processamentos?.toLocaleString("pt-BR")}</p>
               </div>
               <div className="bg-canvas rounded-lg p-3.5">
                 <div className="flex items-center gap-1.5 text-muted mb-1"><Users size={12} /><span className="text-[10.5px] uppercase font-mono">Usuários (grupo)</span></div>
@@ -297,6 +377,30 @@ export default function ManutencaoPage() {
         </div>
       </div>
 
+      <div className="card p-6 mb-4">
+        <p className="font-display font-semibold text-[15px] mb-1 flex items-center gap-2">
+          <Trash2 size={17} style={{ color: "var(--danger)" }} />
+          Limpar Catálogo e Preços de Peças
+        </p>
+        <p className="text-sm text-muted mb-1">
+          Apaga permanentemente <b>todo</b> o catálogo de peças, preços (de todas as unidades), lotes por Delivery
+          e histórico de processamentos — o banco de peças/GSPN volta a ficar vazio, pronto pra subir bases novas do zero.
+        </p>
+        <p className="text-xs text-muted mb-4">
+          Isso <b>não afeta</b> orçamentos, clientes ou usuários — só o catálogo de peças e os preços. Um backup é baixado
+          automaticamente antes de excluir. <b>Ação irreversível e afeta todas as unidades.</b>
+        </p>
+        <button
+          className="btn-secondary text-xs py-2"
+          style={{ color: "var(--danger)" }}
+          disabled={!compartilhado?.catalogo && !compartilhado?.precos}
+          onClick={() => { setFraseDigitada(""); setErro(""); setConfirmandoPecas(true); }}
+        >
+          <Trash2 size={13} />
+          Limpar catálogo e preços de peças
+        </button>
+      </div>
+
       <div className="card p-6">
         <p className="font-display font-semibold text-[15px] mb-4 flex items-center gap-2">
           <ClipboardList size={17} style={{ color: "var(--accent)" }} />
@@ -309,8 +413,17 @@ export default function ManutencaoPage() {
             {logs.map((l) => (
               <div key={l.id} className="flex items-center justify-between text-sm border-b border-line last:border-0 pb-2 last:pb-0">
                 <span>
-                  <b>{l.perfis?.nome || "—"}</b> limpou os orçamentos de <b>{l.unidades?.nome || "—"}</b>
-                  {l.detalhes?.orcamentos_excluidos !== undefined && ` (${l.detalhes.orcamentos_excluidos} pedido(s))`}
+                  {l.acao === "limpeza_pecas_gspn" ? (
+                    <>
+                      <b>{l.perfis?.nome || "—"}</b> zerou o catálogo de peças
+                      {l.detalhes?.catalogo_excluido !== undefined && ` (${l.detalhes.catalogo_excluido} peça(s), ${l.detalhes.precos_excluidos} preço(s), ${l.detalhes.lotes_excluidos} lote(s))`}
+                    </>
+                  ) : (
+                    <>
+                      <b>{l.perfis?.nome || "—"}</b> limpou os orçamentos de <b>{l.unidades?.nome || "—"}</b>
+                      {l.detalhes?.orcamentos_excluidos !== undefined && ` (${l.detalhes.orcamentos_excluidos} pedido(s))`}
+                    </>
+                  )}
                 </span>
                 <span className="text-xs text-muted whitespace-nowrap ml-3">{fmtDataHora(l.executado_em)}</span>
               </div>
@@ -378,6 +491,63 @@ export default function ManutencaoPage() {
             {erro && <p className="text-xs text-danger mt-2">{erro}</p>}
           </>
         )}
+      </Modal>
+
+      <Modal
+        open={confirmandoPecas}
+        onClose={() => setConfirmandoPecas(false)}
+        title="Zerar catálogo de peças?"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setConfirmandoPecas(false)}>Cancelar</button>
+            <button
+              className="btn-primary"
+              style={{ background: "var(--danger)" }}
+              disabled={excluindoPecas || !fraseConfere}
+              onClick={confirmarLimpezaPecas}
+            >
+              {excluindoPecas ? "Excluindo..." : "Excluir permanentemente"}
+            </button>
+          </>
+        }
+      >
+        <div className="rounded-lg px-3 py-2.5 text-sm mb-4 flex items-start gap-2" style={{ background: "var(--danger-soft)", color: "var(--danger)" }}>
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>Isso vai apagar <b>todo</b> o catálogo de peças e preços, de <b>todas as unidades</b>. Não pode ser desfeito.</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2 mb-4 text-center">
+          <div className="bg-canvas rounded-lg p-2.5">
+            <p className="font-mono font-bold">{compartilhado?.catalogo ?? 0}</p>
+            <p className="text-[10.5px] text-muted">peças no catálogo</p>
+          </div>
+          <div className="bg-canvas rounded-lg p-2.5">
+            <p className="font-mono font-bold">{compartilhado?.precos ?? 0}</p>
+            <p className="text-[10.5px] text-muted">preços</p>
+          </div>
+          <div className="bg-canvas rounded-lg p-2.5">
+            <p className="font-mono font-bold">{compartilhado?.lotes ?? 0}</p>
+            <p className="text-[10.5px] text-muted">lotes</p>
+          </div>
+        </div>
+        <p className="text-xs text-muted mb-3">
+          Um backup em Excel será baixado automaticamente antes da exclusão. Pra confirmar, digite: <b>{FRASE_CONFIRMACAO}</b>
+        </p>
+        <div className="relative">
+          <input
+            className="field-input"
+            style={{ borderColor: fraseDigitada ? (fraseConfere ? "#2C7C6E" : "var(--danger)") : undefined }}
+            value={fraseDigitada}
+            onChange={(e) => setFraseDigitada(e.target.value)}
+            placeholder={FRASE_CONFIRMACAO}
+            autoComplete="off"
+          />
+          {fraseDigitada && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium" style={{ color: fraseConfere ? "#2C7C6E" : "var(--danger)" }}>
+              {fraseConfere ? "✓ confere" : "não confere"}
+            </span>
+          )}
+        </div>
+        {erro && <p className="text-xs text-danger mt-2">{erro}</p>}
       </Modal>
     </AppShell>
   );
