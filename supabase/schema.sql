@@ -1097,3 +1097,105 @@ language sql stable as $$
   ) p_fallback on p_local.valor_unitario is null
   left join unidades u_fallback on u_fallback.id = p_fallback.unidade_id;
 $$;
+-- ================================================================
+-- CORREÇÃO — Atribuição de preço/lote pela coluna T (unidade real da compra)
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- 1. pecas_precos: guarda sempre o código bruto da coluna T (asc_cod_origem).
+--    unidade_id fica opcional — só é preenchido quando o código bate com uma
+--    unidade já cadastrada no sistema.
+alter table pecas_precos add column if not exists asc_cod_origem text;
+update pecas_precos set asc_cod_origem = (select u.asc_cod from unidades u where u.id = pecas_precos.unidade_id) where asc_cod_origem is null;
+alter table pecas_precos alter column unidade_id drop not null;
+alter table pecas_precos drop constraint if exists pecas_precos_unidade_id_codigo_key;
+alter table pecas_precos add constraint pecas_precos_asccod_codigo_key unique (asc_cod_origem, codigo);
+
+-- 2. lotes_pecas: mesmo tratamento
+alter table lotes_pecas add column if not exists asc_cod_origem text;
+update lotes_pecas set asc_cod_origem = (select u.asc_cod from unidades u where u.id = lotes_pecas.unidade_id) where asc_cod_origem is null;
+alter table lotes_pecas alter column unidade_id drop not null;
+alter table lotes_pecas drop constraint if exists lotes_pecas_unidade_codigo_entrega_key;
+alter table lotes_pecas add constraint lotes_pecas_asccod_codigo_entrega_key unique (asc_cod_origem, codigo, no_entrega);
+
+-- 3. RLS — permite ver/gravar registros de unidade ainda não cadastrada (informativo)
+drop policy if exists "ve precos da propria unidade" on pecas_precos;
+create policy "ve precos da propria unidade"
+  on pecas_precos for select
+  using (
+    unidade_id is null
+    or exists (select 1 from perfis_unidades pu where pu.unidade_id = pecas_precos.unidade_id and pu.perfil_id = auth.uid())
+  );
+
+drop policy if exists "admin grava precos da propria unidade" on pecas_precos;
+create policy "admin grava precos da propria unidade"
+  on pecas_precos for insert
+  with check (is_administrador());
+
+drop policy if exists "admin atualiza precos da propria unidade" on pecas_precos;
+create policy "admin atualiza precos da propria unidade"
+  on pecas_precos for update
+  using (is_administrador())
+  with check (is_administrador());
+
+drop policy if exists "estoque le lotes" on lotes_pecas;
+create policy "estoque le lotes"
+  on lotes_pecas for select
+  using (
+    pode_gerenciar_estoque()
+    and (
+      unidade_id is null
+      or exists (select 1 from perfis_unidades pu where pu.unidade_id = lotes_pecas.unidade_id and pu.perfil_id = auth.uid())
+    )
+  );
+
+drop policy if exists "administrador gerencia lotes" on lotes_pecas;
+create policy "administrador gerencia lotes"
+  on lotes_pecas for all
+  using (is_administrador())
+  with check (is_administrador());
+
+-- 4. buscar_pecas: casa "preço local" pelo ASC COD da unidade ativa (não mais unidade_id
+--    de sessão), com fallback pra outra unidade quando não achar, trazendo o código bruto
+--    também pra exibir mesmo quando a unidade de origem ainda não está cadastrada.
+drop function if exists buscar_pecas(bigint);
+create or replace function buscar_pecas(p_unidade_id bigint)
+returns table (
+  id bigint,
+  modelo text,
+  categoria text,
+  codigo text,
+  descricao_resumida text,
+  descricao_peca text,
+  valor_unitario numeric,
+  data_referencia text,
+  unidade_origem_id bigint,
+  unidade_origem_nome text,
+  asc_cod_origem text
+)
+language sql stable as $$
+  with unidade_atual as (select asc_cod from unidades where id = p_unidade_id)
+  select
+    c.id, c.modelo, c.categoria, c.codigo, c.descricao_resumida, c.descricao_peca,
+    coalesce(p_local.valor_unitario, p_fallback.valor_unitario) as valor_unitario,
+    coalesce(p_local.data_referencia, p_fallback.data_referencia) as data_referencia,
+    coalesce(p_local.unidade_id, p_fallback.unidade_id) as unidade_origem_id,
+    coalesce(u_local.nome, u_fallback.nome) as unidade_origem_nome,
+    coalesce(p_local.asc_cod_origem, p_fallback.asc_cod_origem) as asc_cod_origem
+  from pecas_catalogo c
+  left join pecas_precos p_local
+    on p_local.codigo = c.codigo
+    and p_local.asc_cod_origem = (select asc_cod from unidade_atual)
+    and p_local.valor_unitario is not null
+  left join unidades u_local on u_local.id = p_local.unidade_id
+  left join lateral (
+    select pp.unidade_id, pp.valor_unitario, pp.data_referencia, pp.asc_cod_origem
+    from pecas_precos pp
+    where pp.codigo = c.codigo
+      and pp.asc_cod_origem is distinct from (select asc_cod from unidade_atual)
+      and pp.valor_unitario is not null
+    order by pp.atualizado_em desc
+    limit 1
+  ) p_fallback on p_local.valor_unitario is null
+  left join unidades u_fallback on u_fallback.id = p_fallback.unidade_id;
+$$;

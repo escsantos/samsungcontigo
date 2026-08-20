@@ -9,7 +9,7 @@ function fmtBRL(v) {
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function DetalhePecaModal({ peca, qtd, mostraCusto, unidadeAtivaId, onClose }) {
+export default function DetalhePecaModal({ peca, qtd, mostraCusto, unidadeAtivaId, unidadeAtivaAscCod, onClose }) {
   const [copiado, setCopiado] = useState(false);
   const [modoCliente, setModoCliente] = useState(false);
 
@@ -25,7 +25,8 @@ export default function DetalhePecaModal({ peca, qtd, mostraCusto, unidadeAtivaI
   const tsReferencia = peca.data_referencia ? parseBRDate(peca.data_referencia) : null;
   const diasDesdeAtualizacao = tsReferencia ? Math.floor((Date.now() - tsReferencia) / 86400000) : null;
   const dataDesatualizada = diasDesdeAtualizacao !== null && diasDesdeAtualizacao > 30;
-  const veioDeOutraUnidade = peca.unidade_origem_id && unidadeAtivaId && Number(peca.unidade_origem_id) !== Number(unidadeAtivaId);
+  const veioDeOutraUnidade = !!peca.asc_cod_origem && !!unidadeAtivaAscCod && peca.asc_cod_origem !== unidadeAtivaAscCod;
+  const unidadeNaoCadastrada = veioDeOutraUnidade && !peca.unidade_origem_nome;
 
   function linhasTexto() {
     const linhas = [
@@ -110,13 +111,15 @@ export default function DetalhePecaModal({ peca, qtd, mostraCusto, unidadeAtivaI
             Valor atualizado em: <span className="font-mono">{peca.data_referencia}</span>
             {diasDesdeAtualizacao !== null && <span> ({diasDesdeAtualizacao} dia{diasDesdeAtualizacao === 1 ? "" : "s"} atrás)</span>}
           </p>
-          {peca.unidade_origem_nome && (
+          {peca.asc_cod_origem && (
             <p className="flex items-center gap-1 mt-0.5">
               <Building2 size={11} />
-              {veioDeOutraUnidade ? (
-                <>Base usada: <b>{peca.unidade_origem_nome}</b> (essa unidade ainda não tem preço próprio pra essa peça)</>
+              {unidadeNaoCadastrada ? (
+                <>Base usada: unidade <b>ainda não cadastrada</b> (código {peca.asc_cod_origem})</>
+              ) : veioDeOutraUnidade ? (
+                <>Base usada: <b>{peca.unidade_origem_nome}</b> (código {peca.asc_cod_origem}) — essa unidade ainda não tem preço próprio pra essa peça</>
               ) : (
-                <>Base atualizada pela unidade <b>{peca.unidade_origem_nome}</b></>
+                <>Base atualizada pela própria unidade (<b>{peca.unidade_origem_nome}</b>, código {peca.asc_cod_origem})</>
               )}
             </p>
           )}

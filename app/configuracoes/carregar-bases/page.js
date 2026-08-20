@@ -34,24 +34,6 @@ function lerPlanilha(file) {
   });
 }
 
-// confere se a planilha bate com a unidade ativa, olhando a coluna do ASC COD
-// nas primeiras linhas com dado. Não bloqueia se a coluna não existir/estiver vazia
-// (arquivo fora do padrão) — só bloqueia quando encontra um código DIFERENTE.
-function conferirUnidade(rows, colIndex, unidadeAtiva, nomeArquivo) {
-  for (let r = 1; r < Math.min(rows.length, 30); r++) {
-    const row = rows[r];
-    if (!row || row.length === 0) continue;
-    const cod = extrairAscCod(row[colIndex]);
-    if (!cod) continue;
-    if (cod !== unidadeAtiva.asc_cod) {
-      throw new Error(
-        `${nomeArquivo} parece ser da unidade com ASC COD. ${cod}, mas você está na unidade ${unidadeAtiva.nome} (ASC COD. ${unidadeAtiva.asc_cod}). Confira se subiu o arquivo certo antes de processar.`
-      );
-    }
-    return; // achou e bateu, não precisa checar mais linhas
-  }
-}
-
 export default function CarregarBasesPage() {
   const [perfil, setPerfil] = useState(undefined);
   const [unidadeAtiva, setUnidadeAtivaState] = useState(null);
@@ -83,10 +65,17 @@ export default function CarregarBasesPage() {
     try {
       if (!unidadeAtiva) throw new Error("Não identifiquei a unidade ativa. Recarregue a página e tente de novo.");
 
-      let precoMap = new Map();
+      // mapa ascCod -> unidade cadastrada (pra resolver a coluna T de cada linha)
+      const { data: todasUnidades } = await supabase.from("unidades").select("id, nome, asc_cod");
+      const unidadePorAscCod = new Map((todasUnidades || []).map((u) => [u.asc_cod, u]));
+
+      // precoMap agora é chaveado por código + código-da-unidade (coluna T da própria linha)
+      let precoMap = new Map(); // chave: codigo||ascCod -> { valor, ts, dataNF, ascCod }
       let lotes = [];
       let duplicadosRemovidos = 0;
       let semEntrega = 0;
+      let linhasDeOutraUnidade = 0;
+      let linhasDeUnidadeNaoCadastrada = 0;
 
       // ---------- Base Peças (opcional) ----------
       if (arquivoPecas) {
@@ -94,8 +83,6 @@ export default function CarregarBasesPage() {
         await sleep(0);
         const pecasRows = await lerPlanilha(arquivoPecas);
         const pHeaders = pecasRows[0].map(normKey);
-
-        conferirUnidade(pecasRows, COL_ASC_COD_PECAS, unidadeAtiva, "Base Peças");
 
         const idxDataNF = findExact(pHeaders, "data nf");
         const idxPecasEnv = findExact(pHeaders, "pecas enviadas");
@@ -124,6 +111,9 @@ export default function CarregarBasesPage() {
           if (!row || row.length === 0) continue;
           const code = String(row[idxPecasEnv] || "").trim();
           if (!code) continue;
+          // código da unidade real que comprou ESSA linha, lido da própria linha (coluna T).
+          // se a linha não tiver, assume a unidade ativa como melhor esforço.
+          const ascCodLinha = extrairAscCod(row[COL_ASC_COD_PECAS]) || unidadeAtiva.asc_cod;
           const key = [
             idxBilling >= 0 ? row[idxBilling] : "",
             idxDocConta >= 0 ? row[idxDocConta] : "",
@@ -137,6 +127,7 @@ export default function CarregarBasesPage() {
           if (!existente || (completo && !existente._completo)) {
             dedupMap.set(key, {
               codigo: code.toUpperCase(),
+              ascCod: ascCodLinha,
               qtd: parseValorFlexivel(row[idxQtd]) || 0,
               valor: parseValorFlexivel(row[idxValor]) || 0,
               dataNF: idxDataNF >= 0 ? row[idxDataNF] : "",
@@ -148,14 +139,19 @@ export default function CarregarBasesPage() {
         const pecasDedup = Array.from(dedupMap.values());
         duplicadosRemovidos = (pecasRows.length - 1) - pecasDedup.length;
 
-        setProgresso({ pct: 25, texto: "Calculando valor unitário mais recente por código..." });
+        setProgresso({ pct: 25, texto: "Calculando valor unitário mais recente por código e por unidade..." });
         await sleep(0);
         for (const p of pecasDedup) {
           if (!p.qtd || !p.valor) continue;
+          if (p.ascCod !== unidadeAtiva.asc_cod) {
+            if (unidadePorAscCod.has(p.ascCod)) linhasDeOutraUnidade++;
+            else linhasDeUnidadeNaoCadastrada++;
+          }
+          const chave = p.codigo + "||" + p.ascCod;
           const ts = parseBRDate(p.dataNF);
-          const atual = precoMap.get(p.codigo);
+          const atual = precoMap.get(chave);
           if (!atual || (ts !== null && (atual.ts === null || ts > atual.ts))) {
-            precoMap.set(p.codigo, { valor: p.valor / p.qtd, ts, dataNF: p.dataNF });
+            precoMap.set(chave, { valor: p.valor / p.qtd, ts, dataNF: p.dataNF, codigo: p.codigo, ascCod: p.ascCod });
           }
         }
 
@@ -165,9 +161,11 @@ export default function CarregarBasesPage() {
         for (const p of pecasDedup) {
           if (!p.qtd || !p.valor) continue;
           if (!p.entrega) { semEntrega++; continue; }
-          const chave = `${p.codigo}||${p.entrega}`;
+          const unidadeResolvida = unidadePorAscCod.get(p.ascCod);
+          const chave = `${p.codigo}||${p.ascCod}||${p.entrega}`;
           lotesMap.set(chave, {
-            unidade_id: unidadeAtiva.id,
+            unidade_id: unidadeResolvida ? unidadeResolvida.id : null,
+            asc_cod_origem: p.ascCod,
             codigo: p.codigo,
             no_entrega: p.entrega,
             valor_unitario: Math.round((p.valor / p.qtd) * 100) / 100,
@@ -178,7 +176,7 @@ export default function CarregarBasesPage() {
         lotes = Array.from(lotesMap.values());
       }
 
-      // ---------- catálogo compartilhado + preços da unidade ativa (sempre precisa) ----------
+      // ---------- catálogo compartilhado (sempre precisa) ----------
       setProgresso({ pct: 40, texto: "Lendo catálogo e preços já cadastrados..." });
       await sleep(0);
       const existentesMap = new Map(); // modelo||codigo -> {...catálogo}
@@ -210,20 +208,20 @@ export default function CarregarBasesPage() {
         }
       }
 
-      const precosExistentes = new Map(); // codigo -> { valor_unitario, ts, data_referencia }
+      // preços já cadastrados de QUALQUER unidade (agora comparamos por código + código-da-unidade)
+      const precosExistentes = new Map(); // codigo||ascCod -> { valor_unitario, ts, data_referencia }
       {
         const PAGINA = 1000;
         let inicio = 0;
         while (true) {
           const { data, error } = await supabase
             .from("pecas_precos")
-            .select("codigo, valor_unitario, data_referencia")
-            .eq("unidade_id", unidadeAtiva.id)
+            .select("codigo, valor_unitario, data_referencia, asc_cod_origem")
             .range(inicio, inicio + PAGINA - 1);
           if (error) throw new Error("Falha ao ler preços existentes: " + error.message);
           if (!data || data.length === 0) break;
           for (const p of data) {
-            precosExistentes.set(p.codigo.toUpperCase(), {
+            precosExistentes.set(p.codigo.toUpperCase() + "||" + p.asc_cod_origem, {
               valor_unitario: p.valor_unitario,
               ts: parseBRDate(p.data_referencia),
               data_referencia: p.data_referencia
@@ -239,8 +237,8 @@ export default function CarregarBasesPage() {
       let modelosSet = new Set();
       let naoClassificados = 0, semCusto = 0, precosAtualizados = 0, precosMantidos = 0, novasPecas = 0;
 
-      function decidirPreco(codigo, precoNovo) {
-        const existente = precosExistentes.get(codigo);
+      function decidirPreco(chave, precoNovo) {
+        const existente = precosExistentes.get(chave);
         if (!precoNovo) return existente ? { valor: existente.valor_unitario, data: existente.data_referencia, mudou: false } : { valor: null, data: null, mudou: false };
         const existeSemData = !existente || existente.valor_unitario === null || existente.valor_unitario === undefined;
         const novoEhMaisRecente = precoNovo.ts !== null && (!existente?.ts || precoNovo.ts > existente.ts);
@@ -253,13 +251,11 @@ export default function CarregarBasesPage() {
       }
 
       if (arquivoGspn) {
-        // ---------- modo completo: classifica pelo GSPN (catálogo compartilhado), cruza preço da unidade ----------
+        // ---------- modo completo: classifica pelo GSPN (catálogo compartilhado) ----------
         setProgresso({ pct: 50, texto: "Lendo Base GSPN..." });
         await sleep(0);
         const gspnRows = await lerPlanilha(arquivoGspn);
         const gHeaders = gspnRows[0].map(normKey);
-
-        conferirUnidade(gspnRows, COL_ASC_COD_GSPN, unidadeAtiva, "Base GSPN");
 
         const idxModelo = findExact(gHeaders, "modelo");
         const idxBH = findExact(gHeaders, "service product description");
@@ -312,11 +308,20 @@ export default function CarregarBasesPage() {
               descricao_peca: descPeca ? String(descPeca).trim() : ""
             });
 
-            if (!uniquePrecos.has(codigoUpper)) {
-              const precoNovo = precoMap.get(codigoUpper);
-              const decisao = decidirPreco(codigoUpper, precoNovo);
+            // cruza o preço só da unidade ativa (o que "sobrar" de outras unidades já foi
+            // gravado direto no bloco abaixo, sem depender do GSPN)
+            const chaveLocal = codigoUpper + "||" + unidadeAtiva.asc_cod;
+            if (!uniquePrecos.has(chaveLocal)) {
+              const precoNovo = precoMap.get(chaveLocal);
+              const decisao = decidirPreco(chaveLocal, precoNovo);
               if (decisao.valor === null || decisao.valor === undefined) semCusto++;
-              uniquePrecos.set(codigoUpper, { unidade_id: unidadeAtiva.id, codigo: codigoUpper, valor_unitario: decisao.valor, data_referencia: decisao.data });
+              uniquePrecos.set(chaveLocal, {
+                unidade_id: unidadeAtiva.id,
+                asc_cod_origem: unidadeAtiva.asc_cod,
+                codigo: codigoUpper,
+                valor_unitario: decisao.valor,
+                data_referencia: decisao.data
+              });
             }
           }
         }
@@ -326,12 +331,41 @@ export default function CarregarBasesPage() {
         // ---------- modo só-preço: atualiza custo das peças já cadastradas, sem GSPN ----------
         setProgresso({ pct: 65, texto: "Atualizando preços das peças já cadastradas..." });
         await sleep(0);
-        for (const [codigo, precoInfo] of precoMap.entries()) {
-          const candidatos = existentesPorCodigo.get(codigo) || [];
+        for (const [chave, precoInfo] of precoMap.entries()) {
+          const candidatos = existentesPorCodigo.get(precoInfo.codigo) || [];
           if (candidatos.length === 0) continue; // sem GSPN não sabemos o modelo, não cadastra peça nova
-          const decisao = decidirPreco(codigo, precoInfo);
+          const decisao = decidirPreco(chave, precoInfo);
           if (decisao.mudou) {
-            registrosPrecos.push({ unidade_id: unidadeAtiva.id, codigo, valor_unitario: decisao.valor, data_referencia: decisao.data });
+            const unidadeResolvida = unidadePorAscCod.get(precoInfo.ascCod);
+            registrosPrecos.push({
+              unidade_id: unidadeResolvida ? unidadeResolvida.id : null,
+              asc_cod_origem: precoInfo.ascCod,
+              codigo: precoInfo.codigo,
+              valor_unitario: decisao.valor,
+              data_referencia: decisao.data
+            });
+          }
+        }
+      }
+
+      // também grava direto (sem passar pelo cruzamento com GSPN) qualquer preço de OUTRA
+      // unidade encontrado na Base Peças — não precisamos do catálogo pra saber que aquele
+      // código já existe, só registrar o preço daquela unidade de origem.
+      if (arquivoPecas) {
+        for (const [chave, precoInfo] of precoMap.entries()) {
+          if (precoInfo.ascCod === unidadeAtiva.asc_cod) continue; // já tratado acima
+          const jaEsta = registrosPrecos.some((r) => r.codigo === precoInfo.codigo && r.asc_cod_origem === precoInfo.ascCod);
+          if (jaEsta) continue;
+          const decisao = decidirPreco(chave, precoInfo);
+          if (decisao.mudou) {
+            const unidadeResolvida = unidadePorAscCod.get(precoInfo.ascCod);
+            registrosPrecos.push({
+              unidade_id: unidadeResolvida ? unidadeResolvida.id : null,
+              asc_cod_origem: precoInfo.ascCod,
+              codigo: precoInfo.codigo,
+              valor_unitario: decisao.valor,
+              data_referencia: decisao.data
+            });
           }
         }
       }
@@ -349,12 +383,12 @@ export default function CarregarBasesPage() {
       }
 
       if (registrosPrecos.length > 0) {
-        setProgresso({ pct: 85, texto: `Gravando preços da unidade ${unidadeAtiva.nome}...` });
+        setProgresso({ pct: 85, texto: "Gravando preços..." });
         await sleep(0);
         const LOTE = 500;
         for (let i = 0; i < registrosPrecos.length; i += LOTE) {
           const lote = registrosPrecos.slice(i, i + LOTE);
-          const { error: upError } = await supabase.from("pecas_precos").upsert(lote, { onConflict: "unidade_id,codigo" });
+          const { error: upError } = await supabase.from("pecas_precos").upsert(lote, { onConflict: "asc_cod_origem,codigo" });
           if (upError) throw new Error("Falha ao gravar preços: " + upError.message);
           setProgresso({
             pct: 85 + Math.round((i / registrosPrecos.length) * 8),
@@ -382,7 +416,7 @@ export default function CarregarBasesPage() {
         const LOTE = 500;
         for (let i = 0; i < lotes.length; i += LOTE) {
           const bloco = lotes.slice(i, i + LOTE);
-          const { error: upLotesError } = await supabase.from("lotes_pecas").upsert(bloco, { onConflict: "unidade_id,codigo,no_entrega" });
+          const { error: upLotesError } = await supabase.from("lotes_pecas").upsert(bloco, { onConflict: "asc_cod_origem,codigo,no_entrega" });
           if (upLotesError) throw new Error("Falha ao gravar lotes: " + upLotesError.message);
         }
       }
@@ -401,7 +435,9 @@ export default function CarregarBasesPage() {
         semEntrega,
         novasPecas,
         precosAtualizados,
-        precosMantidos
+        precosMantidos,
+        linhasDeOutraUnidade,
+        linhasDeUnidadeNaoCadastrada
       });
       setConcluido(true);
     } catch (e) {
@@ -435,15 +471,17 @@ export default function CarregarBasesPage() {
           <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
             <Building2 size={15} />
             <p className="text-sm">
-              Subindo pra unidade <b>{unidadeAtiva.nome}</b> (ASC COD. {unidadeAtiva.asc_cod}). O catálogo de peças é compartilhado entre unidades — só o preço fica separado.
+              Você está em <b>{unidadeAtiva.nome}</b> (ASC COD. {unidadeAtiva.asc_cod}). Cada linha da Base Peças é atribuída
+              à unidade real que comprou aquela peça (coluna T), não necessariamente a que você está — isso permite colaboração
+              entre unidades. O catálogo (modelo/categoria/descrição) é sempre compartilhado.
             </p>
           </div>
         )}
         <p className="font-display font-semibold text-[15px] mb-1">Carregar bases de dados</p>
         <p className="text-sm text-muted mb-5">
           Suba as duas bases juntas pra um processamento completo, ou só uma de cada vez: só Base Peças atualiza
-          os custos das peças já cadastradas (na unidade ativa); só Base GSPN atualiza a classificação/modelo
-          (compartilhado, vale pra todas as unidades).
+          os custos das peças (por unidade, conforme a coluna T de cada linha); só Base GSPN atualiza a
+          classificação/modelo (compartilhado, vale pra todas as unidades).
         </p>
 
         <div className="grid grid-cols-2 gap-4 mb-5">
@@ -464,7 +502,7 @@ export default function CarregarBasesPage() {
         {(arquivoPecas || arquivoGspn) && !(arquivoPecas && arquivoGspn) && (
           <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
             {arquivoPecas
-              ? "Só Base Peças selecionada: vai atualizar o custo das peças já cadastradas nesta unidade (não cadastra peça nova)."
+              ? "Só Base Peças selecionada: vai atualizar o custo das peças já cadastradas, cada linha na unidade indicada pela coluna T (não cadastra peça nova)."
               : "Só Base GSPN selecionada: vai atualizar modelo/categoria/descrição no catálogo compartilhado (mantém os preços já cadastrados de todas as unidades)."}
           </p>
         )}
@@ -507,7 +545,8 @@ export default function CarregarBasesPage() {
         }
       >
         <p className="text-sm text-muted">
-          Isso vai atualizar (ou cadastrar) peças com base no(s) arquivo(s) selecionado(s), pra unidade <b>{unidadeAtiva?.nome}</b>.
+          Isso vai atualizar (ou cadastrar) peças com base no(s) arquivo(s) selecionado(s). Cada linha da Base Peças
+          é atribuída à unidade indicada na própria planilha (coluna T), não necessariamente <b>{unidadeAtiva?.nome}</b>.
           {" "}Essa mudança fica visível pra todo mundo que usa o sistema imediatamente.
         </p>
       </Modal>
@@ -534,6 +573,8 @@ export default function CarregarBasesPage() {
             {resultado.modo !== "so-precos" && <Stat n={resultado.semCusto} label="sem custo encontrado" />}
             {resultado.totalLotes > 0 && <Stat n={resultado.totalLotes} label="lotes por Delivery gravados" />}
             {resultado.semEntrega > 0 && <Stat n={resultado.semEntrega} label="compras sem nº de Delivery" />}
+            {resultado.linhasDeOutraUnidade > 0 && <Stat n={resultado.linhasDeOutraUnidade} label="linhas de outra unidade (colaboração)" />}
+            {resultado.linhasDeUnidadeNaoCadastrada > 0 && <Stat n={resultado.linhasDeUnidadeNaoCadastrada} label="linhas de unidade ainda não cadastrada" />}
           </div>
         )}
       </Modal>

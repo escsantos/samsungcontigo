@@ -166,14 +166,14 @@ export default function EstoquePedidoPage() {
       .select("*")
       .eq("codigo", item.codigo)
       .eq("no_entrega", valor)
-      .eq("unidade_id", unidadeAtiva?.id)
+      .eq("asc_cod_origem", unidadeAtiva?.asc_cod)
       .maybeSingle();
 
     if (!lote) {
       setBuscandoItem((b) => ({ ...b, [item.id]: false }));
       setErroItem((e) => ({
         ...e,
-        [item.id]: `Delivery "${valor}" não encontrada pro código ${item.codigo}. Peça pro Administrador atualizar a Base Peças.`
+        [item.id]: `Delivery "${valor}" não encontrada pro código ${item.codigo} nesta unidade (${unidadeAtiva?.nome}). Peça pro Administrador atualizar a Base Peças, ou confira se a Delivery é de outra unidade.`
       }));
       return;
     }

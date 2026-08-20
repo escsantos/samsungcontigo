@@ -446,6 +446,7 @@ export default function ConsultaPecasPage() {
         qtd={pecaSelecionada?.qtd ?? 1}
         mostraCusto={mostraCusto}
         unidadeAtivaId={unidadeAtiva?.id}
+        unidadeAtivaAscCod={unidadeAtiva?.asc_cod}
         onClose={() => setPecaSelecionada(null)}
       />
 
