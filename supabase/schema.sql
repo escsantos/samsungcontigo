@@ -1058,3 +1058,42 @@ create policy "admin exclui orcamentos"
     is_administrador()
     and exists (select 1 from perfis_unidades pu where pu.unidade_id = orcamentos.unidade_id and pu.perfil_id = auth.uid())
   );
+-- ================================================================
+-- CORREÇÃO — Origem do preço na Consulta de Peças (fallback entre unidades)
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+drop function if exists buscar_pecas(bigint);
+create or replace function buscar_pecas(p_unidade_id bigint)
+returns table (
+  id bigint,
+  modelo text,
+  categoria text,
+  codigo text,
+  descricao_resumida text,
+  descricao_peca text,
+  valor_unitario numeric,
+  data_referencia text,
+  unidade_origem_id bigint,
+  unidade_origem_nome text
+)
+language sql stable as $$
+  select
+    c.id, c.modelo, c.categoria, c.codigo, c.descricao_resumida, c.descricao_peca,
+    coalesce(p_local.valor_unitario, p_fallback.valor_unitario) as valor_unitario,
+    coalesce(p_local.data_referencia, p_fallback.data_referencia) as data_referencia,
+    coalesce(p_local.unidade_id, p_fallback.unidade_id) as unidade_origem_id,
+    coalesce(u_local.nome, u_fallback.nome) as unidade_origem_nome
+  from pecas_catalogo c
+  left join pecas_precos p_local
+    on p_local.codigo = c.codigo and p_local.unidade_id = p_unidade_id and p_local.valor_unitario is not null
+  left join unidades u_local on u_local.id = p_local.unidade_id
+  left join lateral (
+    select pp.unidade_id, pp.valor_unitario, pp.data_referencia
+    from pecas_precos pp
+    where pp.codigo = c.codigo and pp.unidade_id <> p_unidade_id and pp.valor_unitario is not null
+    order by pp.atualizado_em desc
+    limit 1
+  ) p_fallback on p_local.valor_unitario is null
+  left join unidades u_fallback on u_fallback.id = p_fallback.unidade_id;
+$$;

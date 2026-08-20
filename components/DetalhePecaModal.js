@@ -1,14 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Copy, Check, Send } from "lucide-react";
+import { Copy, Check, Send, AlertTriangle, Building2, Info } from "lucide-react";
 import Modal from "./Modal";
+import { parseBRDate } from "../lib/classificacao";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function DetalhePecaModal({ peca, qtd, mostraCusto, onClose }) {
+export default function DetalhePecaModal({ peca, qtd, mostraCusto, unidadeAtivaId, onClose }) {
   const [copiado, setCopiado] = useState(false);
   const [modoCliente, setModoCliente] = useState(false);
 
@@ -20,6 +21,11 @@ export default function DetalhePecaModal({ peca, qtd, mostraCusto, onClose }) {
   if (!peca) return null;
 
   const mostrarCustoAgora = mostraCusto && !modoCliente;
+
+  const tsReferencia = peca.data_referencia ? parseBRDate(peca.data_referencia) : null;
+  const diasDesdeAtualizacao = tsReferencia ? Math.floor((Date.now() - tsReferencia) / 86400000) : null;
+  const dataDesatualizada = diasDesdeAtualizacao !== null && diasDesdeAtualizacao > 30;
+  const veioDeOutraUnidade = peca.unidade_origem_id && unidadeAtivaId && Number(peca.unidade_origem_id) !== Number(unidadeAtivaId);
 
   function linhasTexto() {
     const linhas = [
@@ -99,9 +105,38 @@ export default function DetalhePecaModal({ peca, qtd, mostraCusto, onClose }) {
       </div>
 
       {mostrarCustoAgora && peca.data_referencia && (
-        <p className="text-[11px] text-muted mt-2 text-left">
-          Valor atualizado em: <span className="font-mono">{peca.data_referencia}</span>
-        </p>
+        <div className="mt-2 text-[11px] text-muted text-left">
+          <p>
+            Valor atualizado em: <span className="font-mono">{peca.data_referencia}</span>
+            {diasDesdeAtualizacao !== null && <span> ({diasDesdeAtualizacao} dia{diasDesdeAtualizacao === 1 ? "" : "s"} atrás)</span>}
+          </p>
+          {peca.unidade_origem_nome && (
+            <p className="flex items-center gap-1 mt-0.5">
+              <Building2 size={11} />
+              {veioDeOutraUnidade ? (
+                <>Base usada: <b>{peca.unidade_origem_nome}</b> (essa unidade ainda não tem preço próprio pra essa peça)</>
+              ) : (
+                <>Base atualizada pela unidade <b>{peca.unidade_origem_nome}</b></>
+              )}
+            </p>
+          )}
+        </div>
+      )}
+
+      {mostrarCustoAgora && dataDesatualizada && (
+        <div className="mt-3 rounded-lg px-3 py-2.5 text-xs flex items-start gap-2" style={{ background: "rgba(232,163,61,0.14)", color: "#C2801F" }}>
+          <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+          <span>
+            Esse valor tem mais de 30 dias. Antes de fechar com o cliente, consulte o <b>GSPN</b> pra confirmar o preço atual dessa peça.
+          </span>
+        </div>
+      )}
+
+      {!mostraCusto && (
+        <div className="mt-3 rounded-lg px-3 py-2.5 text-xs flex items-start gap-2" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
+          <Info size={15} className="shrink-0 mt-0.5" />
+          <span>O valor exibido é uma base de referência e pode ter sofrido alteração. Consulte seu vendedor pra confirmar o valor final.</span>
+        </div>
       )}
     </Modal>
   );
