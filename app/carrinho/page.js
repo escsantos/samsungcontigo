@@ -29,7 +29,8 @@ export default function CarrinhoPage() {
     (async () => {
       const p = await getPerfilAtual();
       setPerfil(p);
-      const { data: impostos } = await supabase.from("impostos").select("percentual, ativo");
+      const unidadeAtiva = getUnidadeAtiva();
+      const { data: impostos } = await supabase.from("impostos").select("percentual, ativo").eq("unidade_id", unidadeAtiva?.id);
       const soma = (impostos || []).filter((i) => i.ativo).reduce((s, i) => s + Number(i.percentual), 0);
       setImpostoTotal(soma);
     })();

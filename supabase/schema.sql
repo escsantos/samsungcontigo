@@ -1213,3 +1213,22 @@ drop policy if exists "admin exclui processamentos" on pecas_processamentos;
 create policy "admin exclui processamentos"
   on pecas_processamentos for delete
   using (is_administrador());
+-- ================================================================
+-- IMPOSTOS POR UNIDADE
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+alter table impostos add column if not exists unidade_id bigint references unidades(id);
+update impostos set unidade_id = (select id from unidades where asc_cod = '3197760') where unidade_id is null;
+alter table impostos alter column unidade_id set not null;
+
+drop policy if exists "usuarios logados leem impostos" on impostos;
+create policy "ve impostos da propria unidade"
+  on impostos for select
+  using (exists (select 1 from perfis_unidades pu where pu.unidade_id = impostos.unidade_id and pu.perfil_id = auth.uid()));
+
+drop policy if exists "administrador gerencia impostos" on impostos;
+create policy "admin gerencia impostos da propria unidade"
+  on impostos for all
+  using (is_administrador() and exists (select 1 from perfis_unidades pu where pu.unidade_id = impostos.unidade_id and pu.perfil_id = auth.uid()))
+  with check (is_administrador() and exists (select 1 from perfis_unidades pu where pu.unidade_id = impostos.unidade_id and pu.perfil_id = auth.uid()));

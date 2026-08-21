@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Plus, Trash2, Save, ShieldAlert, Percent } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Trash2, Save, ShieldAlert, Percent, Building2, Pencil, X } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
@@ -8,30 +8,50 @@ import Modal from "../../../components/Modal";
 export default function ImpostosPage() {
   const [perfil, setPerfil] = useState(undefined);
   const [lista, setLista] = useState([]);
+  const [unidades, setUnidades] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [editando, setEditando] = useState({});
   const [modalNovo, setModalNovo] = useState(false);
+  const [unidadeNova, setUnidadeNova] = useState("");
   const [nomeNovo, setNomeNovo] = useState("");
   const [percentualNovo, setPercentualNovo] = useState("");
   const [confirmarExcluir, setConfirmarExcluir] = useState(null);
   const [erro, setErro] = useState("");
 
+  const [filtroUnidade, setFiltroUnidade] = useState("");
+
   useEffect(() => {
     (async () => {
       setPerfil(await getPerfilAtual());
+      const { data: unis } = await supabase.from("unidades").select("id, nome").eq("ativo", true).order("nome");
+      setUnidades(unis || []);
+      if (unis && unis.length > 0) setUnidadeNova(unis[0].id);
       await recarregar();
     })();
   }, []);
 
   async function recarregar() {
     setCarregando(true);
-    const { data } = await supabase.from("impostos").select("*").order("criado_em");
+    const { data } = await supabase.from("impostos").select("*, unidades(id, nome)").order("criado_em");
     setLista(data || []);
     setCarregando(false);
   }
 
+  const listaFiltrada = useMemo(() => {
+    if (!filtroUnidade) return lista;
+    return lista.filter((i) => String(i.unidade_id) === filtroUnidade);
+  }, [lista, filtroUnidade]);
+
   function iniciarEdicao(imposto) {
     setEditando((e) => ({ ...e, [imposto.id]: { nome: imposto.nome, percentual: String(imposto.percentual) } }));
+  }
+
+  function cancelarEdicao(id) {
+    setEditando((e) => {
+      const novo = { ...e };
+      delete novo[id];
+      return novo;
+    });
   }
 
   async function salvarEdicao(id) {
@@ -44,11 +64,7 @@ export default function ImpostosPage() {
     }
     setErro("");
     await supabase.from("impostos").update({ nome: dados.nome.trim(), percentual }).eq("id", id);
-    setEditando((e) => {
-      const novo = { ...e };
-      delete novo[id];
-      return novo;
-    });
+    cancelarEdicao(id);
     await recarregar();
   }
 
@@ -66,12 +82,16 @@ export default function ImpostosPage() {
 
   async function criar() {
     const percentual = parseFloat(percentualNovo);
+    if (!unidadeNova) {
+      setErro("Selecione a unidade.");
+      return;
+    }
     if (!nomeNovo.trim() || isNaN(percentual) || percentual < 0 || percentual > 100) {
       setErro("Preencha um nome e um percentual válido (0 a 100).");
       return;
     }
     setErro("");
-    await supabase.from("impostos").insert({ nome: nomeNovo.trim(), percentual, ativo: true });
+    await supabase.from("impostos").insert({ unidade_id: unidadeNova, nome: nomeNovo.trim(), percentual, ativo: true });
     setModalNovo(false);
     setNomeNovo("");
     setPercentualNovo("");
@@ -94,19 +114,35 @@ export default function ImpostosPage() {
     );
   }
 
-  const totalAtivo = lista.filter((i) => i.ativo).reduce((s, i) => s + Number(i.percentual), 0);
+  // total ativo por unidade — útil pra conferir o que cada uma está aplicando no cálculo de venda
+  const totaisPorUnidade = unidades.map((u) => ({
+    unidade: u,
+    total: lista.filter((i) => i.unidade_id === u.id && i.ativo).reduce((s, i) => s + Number(i.percentual), 0)
+  }));
 
   return (
     <AppShell titulo="Impostos">
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex items-center gap-2 text-sm text-muted">
-          <Percent size={15} style={{ color: "var(--accent)" }} />
-          Total ativo aplicado no cálculo de venda: <span className="font-mono font-semibold text-ink">{totalAtivo.toFixed(2)}%</span>
+      <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          {totaisPorUnidade.map(({ unidade, total }) => (
+            <div key={unidade.id} className="flex items-center gap-1.5 text-sm text-muted">
+              <Building2 size={13} style={{ color: "var(--accent)" }} />
+              {unidade.nome}: <span className="font-mono font-semibold text-ink">{total.toFixed(2)}%</span>
+            </div>
+          ))}
         </div>
-        <button className="btn-primary" onClick={() => setModalNovo(true)}>
+        <button className="btn-primary" onClick={() => { setUnidadeNova(unidades[0]?.id || ""); setModalNovo(true); }}>
           <Plus size={16} />
           Novo imposto
         </button>
+      </div>
+
+      <div className="card p-4 mb-4">
+        <label className="field-label">Filtrar por unidade</label>
+        <select className="field-input sm:w-64" value={filtroUnidade} onChange={(e) => setFiltroUnidade(e.target.value)}>
+          <option value="">Todas as unidades</option>
+          {unidades.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+        </select>
       </div>
 
       {erro && <div className="mb-4 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
@@ -114,23 +150,30 @@ export default function ImpostosPage() {
       <div className="card overflow-hidden">
         {carregando ? (
           <p className="text-sm text-muted p-6">Carregando...</p>
-        ) : lista.length === 0 ? (
+        ) : listaFiltrada.length === 0 ? (
           <p className="text-sm text-muted p-6 text-center">Nenhum imposto cadastrado.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-canvas border-b border-line text-[10.5px] uppercase tracking-wide text-muted font-mono">
+                <th className="text-left px-4 py-2.5">Unidade</th>
                 <th className="text-left px-4 py-2.5">Nome</th>
                 <th className="text-left px-4 py-2.5">Percentual</th>
-                <th className="text-left px-4 py-2.5">Ativo</th>
+                <th className="text-left px-4 py-2.5">Status</th>
                 <th className="text-right px-4 py-2.5">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {lista.map((i) => {
+              {listaFiltrada.map((i) => {
                 const emEdicao = editando[i.id];
                 return (
                   <tr key={i.id} className="border-b border-line last:border-0">
+                    <td className="px-4 py-2.5">
+                      <span className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded inline-flex items-center gap-1" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
+                        <Building2 size={10} />
+                        {i.unidades?.nome || "—"}
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5">
                       {emEdicao ? (
                         <input
@@ -173,21 +216,29 @@ export default function ImpostosPage() {
                     <td className="px-4 py-2.5">
                       <div className="flex justify-end gap-1.5">
                         {emEdicao ? (
-                          <button
-                            title="Salvar"
-                            onClick={() => salvarEdicao(i.id)}
-                            className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas"
-                          >
-                            <Save size={15} />
-                          </button>
+                          <>
+                            <button
+                              title="Salvar"
+                              onClick={() => salvarEdicao(i.id)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas"
+                            >
+                              <Save size={15} />
+                            </button>
+                            <button
+                              title="Cancelar"
+                              onClick={() => cancelarEdicao(i.id)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas"
+                            >
+                              <X size={15} />
+                            </button>
+                          </>
                         ) : (
                           <button
                             title="Editar"
                             onClick={() => iniciarEdicao(i)}
-                            className="text-xs font-medium px-2.5 py-1.5 rounded-lg hover:bg-canvas"
-                            style={{ color: "var(--accent)" }}
+                            className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas"
                           >
-                            Editar
+                            <Pencil size={15} />
                           </button>
                         )}
                         <button
@@ -220,11 +271,23 @@ export default function ImpostosPage() {
       >
         <div className="space-y-3">
           <div>
-            <label className="field-label">Nome</label>
-            <input className="field-input" value={nomeNovo} onChange={(e) => setNomeNovo(e.target.value)} placeholder="ICMS Peças" />
+            <label className="field-label flex items-center gap-1.5">
+              <Building2 size={13} />
+              Unidade
+            </label>
+            <select className="field-input" value={unidadeNova} onChange={(e) => setUnidadeNova(e.target.value)}>
+              {unidades.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+            </select>
           </div>
           <div>
-            <label className="field-label">Percentual (%)</label>
+            <label className="field-label">Nome do imposto</label>
+            <input className="field-input" value={nomeNovo} onChange={(e) => setNomeNovo(e.target.value)} placeholder="ICMS" />
+          </div>
+          <div>
+            <label className="field-label flex items-center gap-1.5">
+              <Percent size={13} />
+              Percentual (%)
+            </label>
             <input type="number" step="0.01" className="field-input" value={percentualNovo} onChange={(e) => setPercentualNovo(e.target.value)} placeholder="8.45" />
           </div>
         </div>
@@ -237,12 +300,13 @@ export default function ImpostosPage() {
         footer={
           <>
             <button className="btn-secondary" onClick={() => setConfirmarExcluir(null)}>Cancelar</button>
-            <button className="btn-primary" onClick={excluir}>Excluir</button>
+            <button className="btn-primary" style={{ background: "var(--danger)" }} onClick={excluir}>Excluir</button>
           </>
         }
       >
         <p className="text-sm text-muted">
-          Isso vai remover "<b>{confirmarExcluir?.nome}</b>" ({confirmarExcluir ? Number(confirmarExcluir.percentual).toFixed(2) : ""}%) permanentemente.
+          Isso vai remover "<b>{confirmarExcluir?.nome}</b>" ({confirmarExcluir ? Number(confirmarExcluir.percentual).toFixed(2) : ""}%) de{" "}
+          <b>{confirmarExcluir?.unidades?.nome}</b> permanentemente.
         </p>
       </Modal>
     </AppShell>
