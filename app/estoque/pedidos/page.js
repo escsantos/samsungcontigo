@@ -5,7 +5,7 @@ import { ShieldAlert, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
-import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS } from "../../../lib/estoque";
+import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS, rotuloPagamentoPendente } from "../../../lib/estoque";
 import { PERIODOS, calcularIntervalo } from "../../../lib/periodo";
 import { getUnidadeAtiva } from "../../../lib/unidade";
 
@@ -243,11 +243,14 @@ export default function RelatorioPedidosPage() {
                             PARCIAL
                           </span>
                         )}
-                        {o.sem_pagamento && (
-                          <span className="ml-1.5 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(214,51,108,0.14)", color: "#D6336C" }}>
-                            SEM PAGTO
-                          </span>
-                        )}
+                        {o.sem_pagamento && (() => {
+                          const r = rotuloPagamentoPendente(pago);
+                          return (
+                            <span className="ml-1.5 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: r.bg, color: r.fg }}>
+                              {r.texto === "SEM PAGAMENTO" ? "SEM PAGTO" : "PARCIAL PAGTO"}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-3 py-2.5 text-muted whitespace-nowrap overflow-hidden text-ellipsis">{o.perfis?.nome || "—"}</td>
                       <td className="px-3 py-2.5 text-muted whitespace-nowrap">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</td>

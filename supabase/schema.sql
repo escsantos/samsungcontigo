@@ -1232,3 +1232,104 @@ create policy "admin gerencia impostos da propria unidade"
   on impostos for all
   using (is_administrador() and exists (select 1 from perfis_unidades pu where pu.unidade_id = impostos.unidade_id and pu.perfil_id = auth.uid()))
   with check (is_administrador() and exists (select 1 from perfis_unidades pu where pu.unidade_id = impostos.unidade_id and pu.perfil_id = auth.uid()));
+-- ================================================================
+-- ITEM 4 — trava no banco: nenhum pagamento pode ultrapassar o valor do pedido
+-- ================================================================
+create or replace function validar_limite_pagamento()
+returns trigger
+language plpgsql as $$
+declare
+  valor_pedido numeric;
+  herdado numeric;
+  total_outros numeric;
+begin
+  select valor_total, coalesce(valor_herdado_pai, 0) into valor_pedido, herdado
+  from orcamentos where id = new.orcamento_id;
+
+  select coalesce(sum(valor), 0) into total_outros
+  from pagamentos_orcamento
+  where orcamento_id = new.orcamento_id and id <> coalesce(new.id, -1);
+
+  if new.valor > 0 and (total_outros + herdado + new.valor) > (valor_pedido + 0.01) then
+    raise exception 'O total de pagamentos (R$ %) não pode ultrapassar o valor do pedido (R$ %).',
+      round(total_outros + herdado + new.valor, 2), valor_pedido;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_validar_limite_pagamento on pagamentos_orcamento;
+create trigger trg_validar_limite_pagamento
+before insert or update on pagamentos_orcamento
+for each row execute function validar_limite_pagamento();
+
+-- ================================================================
+-- ITEM 5 — Cancelamento / desistência de pedido, com estorno pro Financeiro
+-- ================================================================
+
+alter table orcamentos add column if not exists motivo_cancelamento text;
+alter table orcamentos add column if not exists cancelado_por uuid references perfis(id);
+alter table orcamentos add column if not exists cancelado_em timestamptz;
+
+create table if not exists estornos (
+  id bigint generated always as identity primary key,
+  orcamento_id bigint not null references orcamentos(id),
+  unidade_id bigint references unidades(id),
+  valor numeric(12,2) not null,
+  motivo text,
+  status text not null default 'Pendente' check (status in ('Pendente', 'Concluído')),
+  solicitado_por uuid references perfis(id),
+  solicitado_em timestamptz default now(),
+  processado_por uuid references perfis(id),
+  processado_em timestamptz,
+  observacao text
+);
+
+alter table estornos enable row level security;
+
+create policy "ve estornos da propria unidade"
+  on estornos for select
+  using (
+    eh_financeiro()
+    or pode_gerenciar_clientes()
+    or pode_gerenciar_estoque()
+  );
+
+create policy "cria estorno ao cancelar pedido"
+  on estornos for insert
+  with check (
+    solicitado_por = auth.uid()
+    and exists (
+      select 1 from orcamentos o
+      where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+      and (o.vendedor_id = auth.uid() or pode_ver_todos_orcamentos() or pode_gerenciar_estoque())
+    )
+  );
+
+-- Financeiro conclui o estorno através dessa função — atualiza o pedido de estorno e
+-- lança um pagamento negativo (baixa) no pedido, refletindo automaticamente em todos
+-- os relatórios que já somam pagamentos_orcamento.
+create or replace function concluir_estorno(p_estorno_id bigint, p_observacao text default null)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_estorno record;
+begin
+  if not eh_financeiro() then
+    raise exception 'Sem permissão pra concluir estornos.';
+  end if;
+
+  select * into v_estorno from estornos where id = p_estorno_id and status = 'Pendente';
+  if not found then
+    raise exception 'Estorno não encontrado ou já processado.';
+  end if;
+
+  update estornos
+  set status = 'Concluído', processado_por = auth.uid(), processado_em = now(), observacao = p_observacao
+  where id = p_estorno_id;
+
+  insert into pagamentos_orcamento (orcamento_id, forma_pagamento, valor, data_pagamento, registrado_por)
+  values (v_estorno.orcamento_id, 'Estorno (baixa financeira)', -v_estorno.valor, current_date, auth.uid());
+end;
+$$;

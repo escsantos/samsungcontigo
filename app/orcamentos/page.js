@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Search, ChevronRight } from "lucide-react";
 import { getPerfilAtual, supabase } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
-import { CORES_STATUS, ICONES_STATUS } from "../../lib/estoque";
+import { CORES_STATUS, ICONES_STATUS, rotuloPagamentoPendente } from "../../lib/estoque";
 import { getUnidadeAtiva } from "../../lib/unidade";
 
 function fmtBRL(v) {
@@ -18,6 +18,7 @@ export default function OrcamentosPage() {
   const router = useRouter();
   const [perfil, setPerfil] = useState(undefined);
   const [lista, setLista] = useState([]);
+  const [pagosPorPedido, setPagosPorPedido] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [numeroBusca, setNumeroBusca] = useState("");
   const [resultadoBusca, setResultadoBusca] = useState(undefined); // undefined = não buscou ainda
@@ -38,6 +39,15 @@ export default function OrcamentosPage() {
       }
       const { data } = await query;
       setLista(data || []);
+
+      const idsPedidos = (data || []).filter((o) => o.sem_pagamento).map((o) => o.id);
+      if (idsPedidos.length > 0) {
+        const { data: pagamentos } = await supabase.from("pagamentos_orcamento").select("orcamento_id, valor").in("orcamento_id", idsPedidos);
+        const soma = {};
+        (pagamentos || []).forEach((pg) => { soma[pg.orcamento_id] = (soma[pg.orcamento_id] || 0) + Number(pg.valor || 0); });
+        (data || []).forEach((o) => { soma[o.id] = (soma[o.id] || 0) + Number(o.valor_herdado_pai || 0); });
+        setPagosPorPedido(soma);
+      }
       setCarregando(false);
     })();
   }, []);
@@ -148,11 +158,14 @@ export default function OrcamentosPage() {
                     {!ehCliente && (
                       <td className="px-4 py-2.5 font-medium">
                         {o.clientes?.nome || "—"}
-                        {o.sem_pagamento && (
-                          <span className="ml-2 text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(214,51,108,0.14)", color: "#D6336C" }}>
-                            SEM PAGAMENTO
-                          </span>
-                        )}
+                        {o.sem_pagamento && (() => {
+                          const r = rotuloPagamentoPendente(pagosPorPedido[o.id] || 0);
+                          return (
+                            <span className="ml-2 text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: r.bg, color: r.fg }}>
+                              {r.texto}
+                            </span>
+                          );
+                        })()}
                       </td>
                     )}
                     <td className="px-4 py-2.5 text-muted">{o.perfis?.nome || "—"}</td>

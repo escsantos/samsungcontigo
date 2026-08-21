@@ -3,15 +3,16 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, ShieldAlert, Search, Check, AlertTriangle, Package,
-  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight, Pencil, Save
+  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight, Pencil, Save, XCircle
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { getUnidadeAtiva } from "../../../lib/unidade";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import LinhaDoTempo from "../../../components/LinhaDoTempo";
+import CancelarPedidoModal from "../../../components/CancelarPedidoModal";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
-import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../../lib/estoque";
+import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, rotuloPagamentoPendente } from "../../../lib/estoque";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -30,6 +31,7 @@ export default function EstoquePedidoPage() {
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState("");
   const [foraDaUnidade, setForaDaUnidade] = useState(false);
+  const [cancelandoPedido, setCancelandoPedido] = useState(false);
 
   // pedido de compra (único pro pedido inteiro)
   const [numeroPedidoCompra, setNumeroPedidoCompra] = useState("");
@@ -129,6 +131,7 @@ export default function EstoquePedidoPage() {
   const totalPagoGeral = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
   const faltandoGeral = Number(orcamento.valor_total || 0) - totalPagoGeral;
   const aindaSemPagamento = orcamento.sem_pagamento && faltandoGeral > 0.004;
+  const rotuloSemPagamento = rotuloPagamentoPendente(totalPagoGeral);
   const IconeAtual = ICONES_STATUS[orcamento.status];
   const podeInformarDelivery = ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status);
   const todosLiberados = itens.length > 0 && itens.every((i) => i.liberado);
@@ -293,6 +296,29 @@ export default function EstoquePedidoPage() {
     setProcessando(false);
     setConfirmarAvanco(null);
     if (error) { setErro("Falha ao avançar etapa: " + error.message); return; }
+    carregar();
+  }
+
+  async function confirmarFaturamentoJaPago() {
+    setProcessandoPagamento(true);
+    setErro("");
+    const totalPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from("orcamentos")
+      .update({
+        valor_pago: totalPago,
+        pagamento_validado_por: user.id,
+        pagamento_validado_em: new Date().toISOString(),
+        status: "Faturamento Efetuado",
+        sem_pagamento: false
+      })
+      .eq("id", id);
+    setProcessandoPagamento(false);
+    if (error) {
+      setErro("Falha ao confirmar faturamento: " + error.message);
+      return;
+    }
     carregar();
   }
 
@@ -472,13 +498,29 @@ export default function EstoquePedidoPage() {
             ✓ Entregue em {new Date(orcamento.entregue_em).toLocaleDateString("pt-BR")}
           </p>
         )}
+        {orcamento.status === "Cancelado" && (
+          <div className="mt-3 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">
+            Pedido cancelado{orcamento.cancelado_em ? ` em ${new Date(orcamento.cancelado_em).toLocaleString("pt-BR")}` : ""}.
+            {orcamento.motivo_cancelamento && <> Motivo: {orcamento.motivo_cancelamento}</>}
+          </div>
+        )}
+        {!orcamento.entregue && orcamento.status !== "Cancelado" && (
+          <button
+            onClick={() => setCancelandoPedido(true)}
+            className="text-sm mt-3 hover:underline flex items-center gap-1.5"
+            style={{ color: "var(--danger)" }}
+          >
+            <XCircle size={14} />
+            Cancelar pedido / registrar desistência
+          </button>
+        )}
         {aindaSemPagamento && (
           <div
             className="mt-3 rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-2"
-            style={{ background: "rgba(214,51,108,0.12)", color: "#D6336C" }}
+            style={{ background: rotuloSemPagamento.bg, color: rotuloSemPagamento.fg }}
           >
             <AlertTriangle size={14} />
-            SEM PAGAMENTO — faltam {fmtBRL(faltandoGeral)}. Precisa quitar antes de liberar a entrega.
+            {rotuloSemPagamento.texto} — faltam {fmtBRL(faltandoGeral)}. Precisa quitar antes de liberar a entrega.
           </div>
         )}
         {orcamento.pedido_pai_id && (
@@ -644,9 +686,18 @@ export default function EstoquePedidoPage() {
                   )}
                 </p>
               </div>
-              <button className="btn-primary" onClick={() => setPagamentoModalAberto(true)}>
-                <Plus size={15} />
-                Inserir Pagamento
+              <button className="btn-primary" onClick={faltando <= 0.004 ? confirmarFaturamentoJaPago : () => setPagamentoModalAberto(true)} disabled={processandoPagamento}>
+                {faltando <= 0.004 ? (
+                  <>
+                    <Check size={15} />
+                    {processandoPagamento ? "Confirmando..." : "Confirmar Faturamento (já pago)"}
+                  </>
+                ) : (
+                  <>
+                    <Plus size={15} />
+                    Inserir Pagamento
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -943,6 +994,14 @@ export default function EstoquePedidoPage() {
           ))}
         </div>
       </Modal>
+
+      <CancelarPedidoModal
+        open={cancelandoPedido}
+        onClose={() => setCancelandoPedido(false)}
+        orcamento={orcamento}
+        totalPago={totalPagoGeral}
+        onCancelado={carregar}
+      />
     </AppShell>
   );
 }

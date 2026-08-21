@@ -1,14 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2, Receipt, Paperclip, ExternalLink, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2, Receipt, Paperclip, ExternalLink, AlertTriangle, XCircle } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
+import CancelarPedidoModal from "../../../components/CancelarPedidoModal";
 import LinhaDoTempo from "../../../components/LinhaDoTempo";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { getUnidadeAtiva } from "../../../lib/unidade";
-import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../../lib/estoque";
+import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, rotuloPagamentoPendente } from "../../../lib/estoque";
 import { calcularPreco } from "../../../lib/precos";
 
 function fmtBRL(v) {
@@ -32,6 +33,7 @@ export default function DetalheOrcamentoPage() {
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState("");
   const [foraDaUnidade, setForaDaUnidade] = useState(false);
+  const [cancelandoPedido, setCancelandoPedido] = useState(false);
 
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [termoBusca, setTermoBusca] = useState("");
@@ -236,6 +238,7 @@ export default function DetalheOrcamentoPage() {
   }
 
   const totalPagoAgora = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
+  const rotuloSemPagamento = rotuloPagamentoPendente(totalPagoAgora);
   const faltandoAgora = Number(orcamento?.valor_total || 0) - totalPagoAgora;
   const pagamentoCompleto = faltandoAgora <= 0.004;
   const percentualPagoAgora = Number(orcamento?.valor_total || 0) > 0 ? (totalPagoAgora / Number(orcamento.valor_total)) * 100 : 0;
@@ -423,16 +426,32 @@ export default function DetalheOrcamentoPage() {
         {orcamento.sem_pagamento && (
           <div
             className="mt-4 rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-2"
-            style={{ background: "rgba(214,51,108,0.12)", color: "#D6336C" }}
+            style={{ background: rotuloSemPagamento.bg, color: rotuloSemPagamento.fg }}
           >
             <AlertTriangle size={14} />
-            SEM PAGAMENTO — este pedido segue o fluxo antes do pagamento estar completo
+            {rotuloSemPagamento.texto} — este pedido segue o fluxo antes do pagamento estar completo
           </div>
         )}
         {orcamento.status === "Rejeitado" && orcamento.motivo_rejeicao && (
           <div className="mt-4 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">
             Motivo: {orcamento.motivo_rejeicao}
           </div>
+        )}
+        {orcamento.status === "Cancelado" && (
+          <div className="mt-4 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">
+            Pedido cancelado{orcamento.cancelado_em ? ` em ${new Date(orcamento.cancelado_em).toLocaleString("pt-BR")}` : ""}.
+            {orcamento.motivo_cancelamento && <> Motivo: {orcamento.motivo_cancelamento}</>}
+          </div>
+        )}
+        {!["Pendente de Análise", "Rejeitado", "Cancelado"].includes(orcamento.status) && !orcamento.entregue && ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo) && (
+          <button
+            onClick={() => setCancelandoPedido(true)}
+            className="text-sm mt-4 hover:underline flex items-center gap-1.5"
+            style={{ color: "var(--danger)" }}
+          >
+            <XCircle size={14} />
+            Cancelar pedido / registrar desistência
+          </button>
         )}
         {orcamento.status !== "Pendente de Análise" && orcamento.status !== "Rejeitado" && ["Administrador", "Diretor", "Gerente", "Estoque"].includes(perfil?.cargo) && (
           <button
@@ -901,6 +920,14 @@ export default function DetalheOrcamentoPage() {
           )}
         </div>
       </Modal>
+
+      <CancelarPedidoModal
+        open={cancelandoPedido}
+        onClose={() => setCancelandoPedido(false)}
+        orcamento={orcamento}
+        totalPago={totalPagoAgora}
+        onCancelado={carregar}
+      />
     </AppShell>
   );
 }

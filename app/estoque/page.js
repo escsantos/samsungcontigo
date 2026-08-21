@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { ShieldAlert, ChevronRight, FileBarChart } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
-import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS } from "../../lib/estoque";
+import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS, rotuloPagamentoPendente } from "../../lib/estoque";
 import { semanaAtualStr, mesAtualStr, calcularSemanaISO, calcularMesEscolhido } from "../../lib/periodoEscolhido";
 import { getUnidadeAtiva } from "../../lib/unidade";
 
@@ -22,6 +22,7 @@ export default function EstoquePage() {
   const router = useRouter();
   const [perfil, setPerfil] = useState(undefined);
   const [todosPedidos, setTodosPedidos] = useState([]);
+  const [pagosPorPedido, setPagosPorPedido] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [filtro, setFiltro] = useState(null);
   const [pendenciasAbertas, setPendenciasAbertas] = useState(false);
@@ -44,6 +45,15 @@ export default function EstoquePage() {
       if (unidadeAtiva) query = query.eq("unidade_id", unidadeAtiva.id);
       const { data } = await query;
       setTodosPedidos(data || []);
+
+      const idsPedidos = (data || []).filter((o) => o.sem_pagamento).map((o) => o.id);
+      if (idsPedidos.length > 0) {
+        const { data: pagamentos } = await supabase.from("pagamentos_orcamento").select("orcamento_id, valor").in("orcamento_id", idsPedidos);
+        const soma = {};
+        (pagamentos || []).forEach((pg) => { soma[pg.orcamento_id] = (soma[pg.orcamento_id] || 0) + Number(pg.valor || 0); });
+        (data || []).forEach((o) => { soma[o.id] = (soma[o.id] || 0) + Number(o.valor_herdado_pai || 0); });
+        setPagosPorPedido(soma);
+      }
       setCarregando(false);
     })();
   }, []);
@@ -255,11 +265,14 @@ export default function EstoquePage() {
                           PARCIAL
                         </span>
                       )}
-                      {o.sem_pagamento && (
-                        <span className="ml-2 text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(214,51,108,0.14)", color: "#D6336C" }}>
-                          SEM PAGAMENTO
-                        </span>
-                      )}
+                      {o.sem_pagamento && (() => {
+                        const r = rotuloPagamentoPendente(pagosPorPedido[o.id] || 0);
+                        return (
+                          <span className="ml-2 text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: r.bg, color: r.fg }}>
+                            {r.texto}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-2.5 text-muted">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</td>
                     <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmtBRL(o.valor_total)}</td>

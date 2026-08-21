@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Search, ShieldAlert, Receipt, Plus, Trash2, Pencil, Save, ExternalLink, Paperclip } from "lucide-react";
+import { Search, ShieldAlert, Receipt, Plus, Trash2, Pencil, Save, ExternalLink, Paperclip, Check, RefreshCw } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../lib/estoque";
@@ -32,6 +32,7 @@ export default function PagamentosPage() {
 
   const [editandoPagamento, setEditandoPagamento] = useState(null);
   const [edicaoPagamento, setEdicaoPagamento] = useState({});
+  const [pagamentoConfirmado, setPagamentoConfirmado] = useState(null);
 
   useEffect(() => {
     getPerfilAtual().then(setPerfil);
@@ -44,6 +45,7 @@ export default function PagamentosPage() {
     const unidadeAtiva = getUnidadeAtiva();
     if (!unidadeAtiva) return;
     setBuscando(true);
+    setPagamentoConfirmado(null);
     setErro("");
     setNaoEncontrado(false);
     setOutraUnidade(false);
@@ -131,7 +133,16 @@ export default function PagamentosPage() {
 
     setArquivoAnexo(null);
     setProcessando(false);
+    setPagamentoConfirmado({ forma: formaPagamento, valor, data: dataPagamento });
     recarregarPedido();
+  }
+
+  function novoLancamento() {
+    setPagamentoConfirmado(null);
+    setFormaPagamento(FORMAS_PAGAMENTO[0]);
+    setValorPagamento("");
+    setDataPagamento(hoje());
+    setArquivoAnexo(null);
   }
 
   async function excluirPagamento(pagamentoId) {
@@ -309,34 +320,56 @@ export default function PagamentosPage() {
             )}
 
             <p className="text-xs font-semibold mb-2">{pagamentos.length > 0 ? "Adicionar mais uma forma de pagamento" : "Registrar pagamento"}</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div>
-                <label className="field-label">Forma de pagamento</label>
-                <select className="field-input" value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
-                  {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
-                </select>
+            {pagamentoConfirmado ? (
+              <div className="rounded-lg px-4 py-3.5 flex items-center justify-between gap-3" style={{ background: "rgba(63,167,150,0.12)", color: "#2C7C6E" }}>
+                <div className="flex items-center gap-2 text-sm">
+                  <Check size={16} className="shrink-0" />
+                  <span>
+                    Pagamento confirmado: <b>{pagamentoConfirmado.forma}</b> — {fmtBRL(pagamentoConfirmado.valor)} em {new Date(pagamentoConfirmado.data + "T00:00:00").toLocaleDateString("pt-BR")}
+                  </span>
+                </div>
+                <button className="btn-secondary text-xs py-1.5 px-3 shrink-0" onClick={novoLancamento}>
+                  <RefreshCw size={13} />
+                  Novo lançamento
+                </button>
               </div>
-              <div>
-                <label className="field-label">Valor</label>
-                <input type="number" step="0.01" max={faltando > 0 ? faltando.toFixed(2) : undefined} className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
+            ) : faltando <= 0.004 ? (
+              <div className="rounded-lg px-4 py-3.5 text-sm flex items-center gap-2" style={{ background: "rgba(63,167,150,0.12)", color: "#2C7C6E" }}>
+                <Check size={16} className="shrink-0" />
+                Pedido totalmente pago — não é preciso registrar mais nada.
               </div>
-              <div>
-                <label className="field-label">Data</label>
-                <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
-              </div>
-              <div>
-                <label className="field-label">Anexo (opcional)</label>
-                <label className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm text-muted hover:border-brand-400 truncate">
-                  <Paperclip size={14} className="shrink-0" />
-                  <span className="truncate">{arquivoAnexo ? arquivoAnexo.name : "Escolher"}</span>
-                  <input type="file" className="hidden" onChange={(e) => setArquivoAnexo(e.target.files[0] || null)} />
-                </label>
-              </div>
-            </div>
-            <button className="btn-primary mt-4" disabled={processando || !valorPagamento || !dataPagamento} onClick={adicionarPagamento}>
-              <Plus size={15} />
-              {processando ? "Salvando..." : "Adicionar pagamento"}
-            </button>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div>
+                    <label className="field-label">Forma de pagamento</label>
+                    <select className="field-input" value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)}>
+                      {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label">Valor</label>
+                    <input type="number" step="0.01" max={faltando > 0 ? faltando.toFixed(2) : undefined} className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="field-label">Data</label>
+                    <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="field-label">Anexo (opcional)</label>
+                    <label className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm text-muted hover:border-brand-400 truncate">
+                      <Paperclip size={14} className="shrink-0" />
+                      <span className="truncate">{arquivoAnexo ? arquivoAnexo.name : "Escolher"}</span>
+                      <input type="file" className="hidden" onChange={(e) => setArquivoAnexo(e.target.files[0] || null)} />
+                    </label>
+                  </div>
+                </div>
+                <button className="btn-primary mt-4" disabled={processando || !valorPagamento || !dataPagamento} onClick={adicionarPagamento}>
+                  <Plus size={15} />
+                  {processando ? "Salvando..." : "Confirmar lançamento"}
+                </button>
+              </>
+            )}
           </div>
 
           {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
