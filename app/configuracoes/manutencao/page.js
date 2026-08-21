@@ -161,8 +161,16 @@ export default function ManutencaoPage() {
       }
       XLSX.writeFile(wb, `backup-antes-de-excluir-${contagemAlvo.unidade.nome}-${new Date().toISOString().slice(0, 10)}.xlsx`);
 
-      const { error: errDelete } = await supabase.from("orcamentos").delete().eq("unidade_id", contagemAlvo.unidade.id);
-      if (errDelete) throw new Error(errDelete.message);
+      // apaga em lotes pequenos, pra nunca estourar o tempo limite do banco em unidades com muitos pedidos
+      let restantes = idsOrc.length;
+      while (restantes > 0) {
+        const { data: bloco } = await supabase.from("orcamentos").select("id").eq("unidade_id", contagemAlvo.unidade.id).limit(500);
+        if (!bloco || bloco.length === 0) break;
+        const { error: errDelete } = await supabase.from("orcamentos").delete().in("id", bloco.map((o) => o.id));
+        if (errDelete) throw new Error(errDelete.message);
+        restantes -= bloco.length;
+        setErro("");
+      }
 
       await supabase.from("unidades").update({ proximo_numero_pedido: 1 }).eq("id", contagemAlvo.unidade.id);
 
@@ -186,6 +194,24 @@ export default function ManutencaoPage() {
 
   const FRASE_CONFIRMACAO = "LIMPAR PEÇAS";
   const fraseConfere = fraseDigitada.trim().toUpperCase() === FRASE_CONFIRMACAO;
+  const [progressoExclusao, setProgressoExclusao] = useState("");
+
+  // apaga uma tabela inteira em lotes pequenos, pra nunca estourar o tempo limite do banco
+  async function excluirEmLotes(tabela, tamanhoLote, aoProgredir) {
+    let total = 0;
+    while (true) {
+      const { data, error: errSelect } = await supabase.from(tabela).select("id").limit(tamanhoLote);
+      if (errSelect) throw new Error(`Falha ao ler ${tabela}: ` + errSelect.message);
+      if (!data || data.length === 0) break;
+      const ids = data.map((r) => r.id);
+      const { error: errDelete } = await supabase.from(tabela).delete().in("id", ids);
+      if (errDelete) throw new Error(`Falha ao excluir ${tabela}: ` + errDelete.message);
+      total += data.length;
+      if (aoProgredir) aoProgredir(total);
+      if (data.length < tamanhoLote) break;
+    }
+    return total;
+  }
 
   async function confirmarLimpezaPecas() {
     if (!fraseConfere) {
@@ -194,6 +220,7 @@ export default function ManutencaoPage() {
     }
     setExcluindoPecas(true);
     setErro("");
+    setProgressoExclusao("Gerando backup...");
     try {
       const wb = XLSX.utils.book_new();
       const { data: catalogo } = await supabase.from("pecas_catalogo").select("*");
@@ -204,17 +231,10 @@ export default function ManutencaoPage() {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lotes || []), "Lotes Delivery");
       XLSX.writeFile(wb, `backup-antes-de-limpar-pecas-${new Date().toISOString().slice(0, 10)}.xlsx`);
 
-      const { error: errPrecos } = await supabase.from("pecas_precos").delete().gte("id", 0);
-      if (errPrecos) throw new Error("Falha ao excluir preços: " + errPrecos.message);
-
-      const { error: errLotes } = await supabase.from("lotes_pecas").delete().gte("id", 0);
-      if (errLotes) throw new Error("Falha ao excluir lotes: " + errLotes.message);
-
-      const { error: errProc } = await supabase.from("pecas_processamentos").delete().gte("id", 0);
-      if (errProc) throw new Error("Falha ao excluir histórico de processamentos: " + errProc.message);
-
-      const { error: errCatalogo } = await supabase.from("pecas_catalogo").delete().gte("id", 0);
-      if (errCatalogo) throw new Error("Falha ao excluir catálogo: " + errCatalogo.message);
+      const precosExcluidos = await excluirEmLotes("pecas_precos", 1000, (n) => setProgressoExclusao(`Excluindo preços... ${n.toLocaleString("pt-BR")}`));
+      const lotesExcluidos = await excluirEmLotes("lotes_pecas", 1000, (n) => setProgressoExclusao(`Excluindo lotes por Delivery... ${n.toLocaleString("pt-BR")}`));
+      await excluirEmLotes("pecas_processamentos", 1000, (n) => setProgressoExclusao(`Excluindo histórico de processamentos... ${n.toLocaleString("pt-BR")}`));
+      const catalogoExcluido = await excluirEmLotes("pecas_catalogo", 1000, (n) => setProgressoExclusao(`Excluindo catálogo... ${n.toLocaleString("pt-BR")}`));
 
       const { data: { user } } = await supabase.auth.getUser();
       await supabase.from("manutencao_logs").insert({
@@ -222,21 +242,23 @@ export default function ManutencaoPage() {
         unidade_id: null,
         executado_por: user.id,
         detalhes: {
-          catalogo_excluido: (catalogo || []).length,
-          precos_excluidos: (precos || []).length,
-          lotes_excluidos: (lotes || []).length
+          catalogo_excluido: catalogoExcluido,
+          precos_excluidos: precosExcluidos,
+          lotes_excluidos: lotesExcluidos
         }
       });
 
       setConfirmandoPecas(false);
       setFraseDigitada("");
-      setSucesso(`Catálogo de peças zerado — ${(catalogo || []).length} peça(s), ${(precos || []).length} preço(s) e ${(lotes || []).length} lote(s) excluídos. Backup baixado automaticamente. Já pode subir as bases novas.`);
+      setProgressoExclusao("");
+      setSucesso(`Catálogo de peças zerado — ${catalogoExcluido} peça(s), ${precosExcluidos} preço(s) e ${lotesExcluidos} lote(s) excluídos. Backup baixado automaticamente. Já pode subir as bases novas.`);
       await carregarContagens(unidades);
       await carregarLogs();
     } catch (e) {
       setErro("Falha ao limpar: " + e.message);
     }
     setExcluindoPecas(false);
+    setProgressoExclusao("");
   }
 
   if (perfil === undefined) {
@@ -495,11 +517,11 @@ export default function ManutencaoPage() {
 
       <Modal
         open={confirmandoPecas}
-        onClose={() => setConfirmandoPecas(false)}
+        onClose={() => !excluindoPecas && setConfirmandoPecas(false)}
         title="Zerar catálogo de peças?"
         footer={
           <>
-            <button className="btn-secondary" onClick={() => setConfirmandoPecas(false)}>Cancelar</button>
+            <button className="btn-secondary" disabled={excluindoPecas} onClick={() => setConfirmandoPecas(false)}>Cancelar</button>
             <button
               className="btn-primary"
               style={{ background: "var(--danger)" }}
@@ -529,24 +551,35 @@ export default function ManutencaoPage() {
             <p className="text-[10.5px] text-muted">lotes</p>
           </div>
         </div>
-        <p className="text-xs text-muted mb-3">
-          Um backup em Excel será baixado automaticamente antes da exclusão. Pra confirmar, digite: <b>{FRASE_CONFIRMACAO}</b>
-        </p>
-        <div className="relative">
-          <input
-            className="field-input"
-            style={{ borderColor: fraseDigitada ? (fraseConfere ? "#2C7C6E" : "var(--danger)") : undefined }}
-            value={fraseDigitada}
-            onChange={(e) => setFraseDigitada(e.target.value)}
-            placeholder={FRASE_CONFIRMACAO}
-            autoComplete="off"
-          />
-          {fraseDigitada && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium" style={{ color: fraseConfere ? "#2C7C6E" : "var(--danger)" }}>
-              {fraseConfere ? "✓ confere" : "não confere"}
-            </span>
-          )}
-        </div>
+
+        {excluindoPecas ? (
+          <div className="text-center py-2">
+            <RefreshCw size={18} className="animate-spin mx-auto mb-2" style={{ color: "var(--accent)" }} />
+            <p className="text-sm font-mono">{progressoExclusao}</p>
+            <p className="text-[11px] text-muted mt-1">Isso pode levar um tempo com muitos registros — não feche essa tela.</p>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-muted mb-3">
+              Um backup em Excel será baixado automaticamente antes da exclusão. Pra confirmar, digite: <b>{FRASE_CONFIRMACAO}</b>
+            </p>
+            <div className="relative">
+              <input
+                className="field-input"
+                style={{ borderColor: fraseDigitada ? (fraseConfere ? "#2C7C6E" : "var(--danger)") : undefined }}
+                value={fraseDigitada}
+                onChange={(e) => setFraseDigitada(e.target.value)}
+                placeholder={FRASE_CONFIRMACAO}
+                autoComplete="off"
+              />
+              {fraseDigitada && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium" style={{ color: fraseConfere ? "#2C7C6E" : "var(--danger)" }}>
+                  {fraseConfere ? "✓ confere" : "não confere"}
+                </span>
+              )}
+            </div>
+          </>
+        )}
         {erro && <p className="text-xs text-danger mt-2">{erro}</p>}
       </Modal>
     </AppShell>

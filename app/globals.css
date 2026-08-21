@@ -13,6 +13,9 @@
   --accent: #4A90D9;
   --accent-dark: #2E6DA8;
   --accent-soft: rgba(74,144,217,0.12);
+  --danger: #E1614F;
+  --danger-soft: rgba(225,97,79,0.12);
+  --success: #3FA796;
 }
 
 html.dark {
