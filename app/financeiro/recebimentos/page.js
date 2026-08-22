@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import { getUnidadeAtiva } from "../../../lib/unidade";
+import { registrarAuditoria } from "../../../lib/auditoria";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -62,6 +63,13 @@ export default function RecebimentosPage() {
       .from("orcamentos")
       .update({ recebimento_confirmado: true, recebimento_confirmado_por: user.id, recebimento_confirmado_em: new Date().toISOString() })
       .eq("id", orcamentoId);
+    const pedido = lista.find((o) => o.id === orcamentoId);
+    await registrarAuditoria({
+      tipoEvento: "status",
+      entidade: "financeiro",
+      entidadeId: orcamentoId,
+      descricao: `Recebimento confirmado no pedido #${pedido?.numero_unidade ?? orcamentoId}: ${fmtBRL(pedido?.valor_pago)}.`
+    });
     setProcessando(null);
     carregar();
   }
@@ -69,6 +77,13 @@ export default function RecebimentosPage() {
   async function desfazer(orcamentoId) {
     setProcessando(orcamentoId);
     await supabase.from("orcamentos").update({ recebimento_confirmado: false }).eq("id", orcamentoId);
+    const pedido = lista.find((o) => o.id === orcamentoId);
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "financeiro",
+      entidadeId: orcamentoId,
+      descricao: `Confirmação de recebimento desfeita no pedido #${pedido?.numero_unidade ?? orcamentoId}.`
+    });
     setProcessando(null);
     carregar();
   }

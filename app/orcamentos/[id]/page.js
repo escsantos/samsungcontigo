@@ -9,6 +9,7 @@ import CancelarPedidoModal from "../../../components/CancelarPedidoModal";
 import LinhaDoTempo from "../../../components/LinhaDoTempo";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { getUnidadeAtiva } from "../../../lib/unidade";
+import { registrarAuditoria } from "../../../lib/auditoria";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, rotuloPagamentoPendente } from "../../../lib/estoque";
 import { calcularPreco } from "../../../lib/precos";
 
@@ -233,6 +234,12 @@ export default function DetalheOrcamentoPage() {
       setErro("Falha ao salvar ajustes: " + error.message);
       return;
     }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Orçamento #${orcamento.numero_unidade} ajustado (novo total ${fmtBRL(novoTotal - novoDesconto)}).`
+    });
     setAjustando(false);
     carregar();
   }
@@ -289,6 +296,13 @@ export default function DetalheOrcamentoPage() {
       await supabase.from("orcamentos").update({ sem_pagamento: false }).eq("id", id);
     }
 
+    await registrarAuditoria({
+      tipoEvento: "pagamento",
+      entidade: "pagamentos_orcamento",
+      entidadeId: id,
+      descricao: `Pagamento registrado no orçamento #${orcamento.numero_unidade}: ${formaPagamento} — ${fmtBRL(valor)}.`
+    });
+
     setArquivoAnexo(null);
     setProcessandoPagamento(false);
     setPagamentoModalAberto(false);
@@ -298,6 +312,12 @@ export default function DetalheOrcamentoPage() {
   async function excluirPagamentoRevisao(pagamentoId) {
     setProcessando(true);
     await supabase.from("pagamentos_orcamento").delete().eq("id", pagamentoId);
+    await registrarAuditoria({
+      tipoEvento: "exclusao",
+      entidade: "pagamentos_orcamento",
+      entidadeId: pagamentoId,
+      descricao: `Pagamento excluído do orçamento #${orcamento.numero_unidade}.`
+    });
     setProcessando(false);
     carregar();
   }
@@ -318,6 +338,12 @@ export default function DetalheOrcamentoPage() {
       .from("pagamentos_orcamento")
       .update({ forma_pagamento: edicaoPagamento.forma_pagamento, valor, data_pagamento: edicaoPagamento.data_pagamento })
       .eq("id", pagamentoId);
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "pagamentos_orcamento",
+      entidadeId: pagamentoId,
+      descricao: `Pagamento editado no orçamento #${orcamento.numero_unidade}: ${edicaoPagamento.forma_pagamento} — ${fmtBRL(valor)}.`
+    });
     setProcessando(false);
     setEditandoPagamento(null);
     carregar();
@@ -359,6 +385,12 @@ export default function DetalheOrcamentoPage() {
       setErro("Falha ao aprovar: " + error.message);
       return;
     }
+    await registrarAuditoria({
+      tipoEvento: "status",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Orçamento #${orcamento.numero_unidade} aprovado (${orcamento.status} → Aguardando Separação/Compra).`
+    });
     carregar();
   }
 
@@ -381,6 +413,12 @@ export default function DetalheOrcamentoPage() {
       setErro("Falha ao rejeitar: " + error.message);
       return;
     }
+    await registrarAuditoria({
+      tipoEvento: "status",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Orçamento #${orcamento.numero_unidade} rejeitado.${motivoRejeicao.trim() ? " Motivo: " + motivoRejeicao.trim() : ""}`
+    });
     carregar();
   }
 

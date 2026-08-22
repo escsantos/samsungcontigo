@@ -5,6 +5,7 @@ import { ArrowLeft, ShieldAlert, Check, RefreshCw } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { sugerirLoginCliente } from "../../../lib/usuarios";
 import { getUnidadeAtiva } from "../../../lib/unidade";
+import { registrarAuditoria } from "../../../lib/auditoria";
 import AppShell from "../../../components/AppShell";
 import ClienteForm from "../../../components/ClienteForm";
 import Modal from "../../../components/Modal";
@@ -90,6 +91,13 @@ export default function NovoClientePage() {
       else setErro("Não consegui salvar: " + error.message);
       return;
     }
+
+    await registrarAuditoria({
+      tipoEvento: "criacao",
+      entidade: "clientes",
+      entidadeId: novoCliente.id,
+      descricao: `Cliente criado: ${novoCliente.nome}.`
+    });
 
     // cria o acesso ao sistema, se marcado
     if (criarAcesso && podeGerenciarUsuarios && loginEditado) {

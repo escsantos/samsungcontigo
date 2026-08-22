@@ -11,6 +11,7 @@ import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import LinhaDoTempo from "../../../components/LinhaDoTempo";
 import CancelarPedidoModal from "../../../components/CancelarPedidoModal";
+import { registrarAuditoria } from "../../../lib/auditoria";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, rotuloPagamentoPendente } from "../../../lib/estoque";
 
@@ -154,6 +155,12 @@ export default function EstoquePedidoPage() {
       .eq("id", id);
     setProcessando(false);
     if (error) { setErro("Falha ao registrar: " + error.message); return; }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Nº do pedido de compra registrado no pedido #${orcamento.numero_unidade}: ${numeroPedidoCompra.trim()}.`
+    });
     carregar();
   }
 
@@ -279,6 +286,12 @@ export default function EstoquePedidoPage() {
       setErro("Falha ao atualizar o pedido: " + errAtualiza.message);
       return;
     }
+    await registrarAuditoria({
+      tipoEvento: "criacao",
+      entidade: "orcamentos",
+      entidadeId: novoPedido.id,
+      descricao: `Liberação parcial do pedido #${orcamento.numero_unidade}: peças pendentes viraram o pedido #${numeroReservado} (${fmtBRL(valorPendente)}).`
+    });
     setConfirmarParcial(false);
     carregar();
   }
@@ -286,6 +299,7 @@ export default function EstoquePedidoPage() {
   async function confirmarAvancoStatus() {
     if (!confirmarAvanco) return;
     setProcessando(true);
+    const statusAnterior = orcamento.status;
     const { error } = await supabase.from("orcamentos").update({ status: confirmarAvanco.para }).eq("id", id);
     if (!error && orcamento.pedido_pai_id) {
       await supabase.from("notificacoes").insert({
@@ -296,6 +310,12 @@ export default function EstoquePedidoPage() {
     setProcessando(false);
     setConfirmarAvanco(null);
     if (error) { setErro("Falha ao avançar etapa: " + error.message); return; }
+    await registrarAuditoria({
+      tipoEvento: "status",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Pedido #${orcamento.numero_unidade} avançou de status: ${statusAnterior} → ${confirmarAvanco.para}.`
+    });
     carregar();
   }
 
@@ -319,6 +339,12 @@ export default function EstoquePedidoPage() {
       setErro("Falha ao confirmar faturamento: " + error.message);
       return;
     }
+    await registrarAuditoria({
+      tipoEvento: "status",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Faturamento confirmado (já estava pago) no pedido #${orcamento.numero_unidade}: ${fmtBRL(totalPago)}.`
+    });
     carregar();
   }
 
@@ -385,12 +411,24 @@ export default function EstoquePedidoPage() {
     setArquivoAnexo(null);
     setValorPagamento("");
     setProcessandoPagamento(false);
+    await registrarAuditoria({
+      tipoEvento: "pagamento",
+      entidade: "pagamentos_orcamento",
+      entidadeId: id,
+      descricao: `Pagamento registrado no pedido #${orcamento.numero_unidade}: ${formaPagamento} — ${fmtBRL(valor)}.`
+    });
     carregar();
   }
 
   async function excluirPagamento(pagamentoId) {
     setProcessando(true);
     await supabase.from("pagamentos_orcamento").delete().eq("id", pagamentoId);
+    await registrarAuditoria({
+      tipoEvento: "exclusao",
+      entidade: "pagamentos_orcamento",
+      entidadeId: pagamentoId,
+      descricao: `Pagamento excluído do pedido #${orcamento.numero_unidade}.`
+    });
     setProcessando(false);
     carregar();
   }
@@ -408,6 +446,12 @@ export default function EstoquePedidoPage() {
       .from("pagamentos_orcamento")
       .update({ forma_pagamento: edicaoPagamento.forma_pagamento, valor, data_pagamento: edicaoPagamento.data_pagamento })
       .eq("id", pagamentoId);
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "pagamentos_orcamento",
+      entidadeId: pagamentoId,
+      descricao: `Pagamento editado no pedido #${orcamento.numero_unidade}: ${edicaoPagamento.forma_pagamento} — ${fmtBRL(valor)}.`
+    });
     setProcessando(false);
     setEditandoPagamento(null);
     carregar();
@@ -423,6 +467,12 @@ export default function EstoquePedidoPage() {
       .eq("id", id);
     setProcessando(false);
     if (error) { setErro("Falha ao confirmar separação: " + error.message); return; }
+    await registrarAuditoria({
+      tipoEvento: "status",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Separação confirmada no pedido #${orcamento.numero_unidade} — liberado para retirada/entrega.`
+    });
     carregar();
   }
 
@@ -457,6 +507,14 @@ export default function EstoquePedidoPage() {
       .in("id", selecionados);
     setProcessando(false);
     if (error) { setErro("Falha ao confirmar entrega: " + error.message); return; }
+    for (const pid of selecionados) {
+      await registrarAuditoria({
+        tipoEvento: "status",
+        entidade: "orcamentos",
+        entidadeId: pid,
+        descricao: `Entrega confirmada no pedido #${pid === Number(id) ? orcamento.numero_unidade : pid} (romanéio).`
+      });
+    }
     setRomaneioAberto(false);
     carregar();
   }

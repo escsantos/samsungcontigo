@@ -3,6 +3,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { supabase, loginParaEmail } from "../../lib/supabaseClient";
+import { registrarAuditoria } from "../../lib/auditoria";
 import BotaoTema from "../../components/BotaoTema";
 
 export default function LoginPage() {
@@ -46,13 +47,30 @@ function LoginForm() {
     }
 
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: perfil } = await supabase.from("perfis").select("bloqueado").eq("id", user.id).single();
+    const { data: perfil } = await supabase.from("perfis").select("bloqueado, nome").eq("id", user.id).single();
     if (perfil?.bloqueado) {
+      await registrarAuditoria({
+        tipoEvento: "login",
+        entidade: "perfis",
+        entidadeId: user.id,
+        descricao: `Tentativa de login bloqueada — usuário "${login}" está com acesso bloqueado.`,
+        usuarioId: user.id,
+        unidadeId: null
+      });
       await supabase.auth.signOut();
       setCarregando(false);
       setErro("Seu acesso foi bloqueado. Fale com o Administrador do sistema.");
       return;
     }
+
+    await registrarAuditoria({
+      tipoEvento: "login",
+      entidade: "perfis",
+      entidadeId: user.id,
+      descricao: `Login realizado: ${perfil?.nome || login}.`,
+      usuarioId: user.id,
+      unidadeId: null
+    });
 
     router.push("/inicio");
   }

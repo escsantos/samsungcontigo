@@ -6,6 +6,7 @@ import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import ClienteForm from "../../../components/ClienteForm";
 import Modal from "../../../components/Modal";
+import { registrarAuditoria } from "../../../lib/auditoria";
 
 export default function EditarClientePage() {
   const { id } = useParams();
@@ -46,10 +47,22 @@ export default function EditarClientePage() {
       else setErro("Não consegui salvar: " + error.message);
       return;
     }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "clientes",
+      entidadeId: id,
+      descricao: `Cliente editado: ${dados.nome}.`
+    });
     setSucesso(true);
   }
 
   async function excluir() {
+    await registrarAuditoria({
+      tipoEvento: "exclusao",
+      entidade: "clientes",
+      entidadeId: id,
+      descricao: `Cliente excluído: ${cliente?.nome || ""}.`
+    });
     await supabase.from("clientes").delete().eq("id", id);
     router.push("/clientes");
   }

@@ -5,6 +5,7 @@ import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../lib/estoque";
 import { getUnidadeAtiva } from "../../lib/unidade";
+import { registrarAuditoria } from "../../lib/auditoria";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -133,6 +134,12 @@ export default function PagamentosPage() {
 
     setArquivoAnexo(null);
     setProcessando(false);
+    await registrarAuditoria({
+      tipoEvento: "pagamento",
+      entidade: "pagamentos_orcamento",
+      entidadeId: orcamento.id,
+      descricao: `Pagamento registrado no pedido #${orcamento.numero_unidade}: ${formaPagamento} — ${fmtBRL(valor)}.`
+    });
     setPagamentoConfirmado({ forma: formaPagamento, valor, data: dataPagamento });
     recarregarPedido();
   }
@@ -148,6 +155,12 @@ export default function PagamentosPage() {
   async function excluirPagamento(pagamentoId) {
     setProcessando(true);
     await supabase.from("pagamentos_orcamento").delete().eq("id", pagamentoId);
+    await registrarAuditoria({
+      tipoEvento: "exclusao",
+      entidade: "pagamentos_orcamento",
+      entidadeId: pagamentoId,
+      descricao: `Pagamento excluído do pedido #${orcamento.numero_unidade}.`
+    });
     setProcessando(false);
     recarregarPedido();
   }
@@ -165,6 +178,12 @@ export default function PagamentosPage() {
       .from("pagamentos_orcamento")
       .update({ forma_pagamento: edicaoPagamento.forma_pagamento, valor, data_pagamento: edicaoPagamento.data_pagamento })
       .eq("id", pagamentoId);
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "pagamentos_orcamento",
+      entidadeId: pagamentoId,
+      descricao: `Pagamento editado no pedido #${orcamento.numero_unidade}: ${edicaoPagamento.forma_pagamento} — ${fmtBRL(valor)}.`
+    });
     setProcessando(false);
     setEditandoPagamento(null);
     recarregarPedido();

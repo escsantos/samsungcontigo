@@ -9,6 +9,7 @@ import { useCarrinho } from "../../contexts/CarrinhoContext";
 import { calcularPreco } from "../../lib/precos";
 import { corCategoria, iconeCategoria } from "../../lib/categorias";
 import { getUnidadeAtiva } from "../../lib/unidade";
+import { registrarAuditoria } from "../../lib/auditoria";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -116,6 +117,13 @@ export default function CarrinhoPage() {
       setErro("Pedido criado, mas houve falha ao salvar os itens: " + errItens.message);
       return;
     }
+
+    await registrarAuditoria({
+      tipoEvento: "criacao",
+      entidade: "orcamentos",
+      entidadeId: orcamento.id,
+      descricao: `Orçamento #${orcamento.numero_unidade} criado (${fmtBRL(totalGeral)}).`
+    });
 
     carrinho.limparCarrinho();
     setSucesso(true);

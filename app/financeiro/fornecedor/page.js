@@ -5,6 +5,7 @@ import { ShieldAlert, Check, ArrowLeft, ChevronDown } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import { getUnidadeAtiva } from "../../../lib/unidade";
+import { registrarAuditoria } from "../../../lib/auditoria";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -103,6 +104,12 @@ export default function PagamentoFabricantePage() {
       .from("orcamento_itens")
       .update({ custo_pago_fabricante: true, custo_pago_fabricante_por: user.id, custo_pago_fabricante_em: new Date().toISOString() })
       .in("id", ids);
+    await registrarAuditoria({
+      tipoEvento: "status",
+      entidade: "financeiro",
+      entidadeId: null,
+      descricao: `Pagamento ao fabricante confirmado — grupo "${grupo.label}": ${fmtBRL(grupo.custoTotal)} (${ids.length} peça(s)).`
+    });
     setProcessando(null);
     carregar();
   }

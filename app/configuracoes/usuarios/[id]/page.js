@@ -5,6 +5,7 @@ import { ArrowLeft, KeyRound, Lock, Unlock, Trash2, ShieldAlert, ShieldCheck, Sh
 import { supabase, getPerfilAtual } from "../../../../lib/supabaseClient";
 import { CARGOS } from "../../../../lib/usuarios";
 import { calcularCompletude, permissoesAtivas } from "../../../../lib/perfilUtils";
+import { registrarAuditoria } from "../../../../lib/auditoria";
 import AppShell from "../../../../components/AppShell";
 import Avatar from "../../../../components/Avatar";
 import Modal from "../../../../components/Modal";
@@ -79,6 +80,13 @@ export default function DetalheUsuarioPage() {
     if (unidadesVinculadas.length > 0) {
       await supabase.from("perfis_unidades").insert(unidadesVinculadas.map((unidadeId) => ({ perfil_id: id, unidade_id: unidadeId })));
     }
+    const nomesNovos = unidadesDisponiveis.filter((u) => unidadesVinculadas.includes(u.id)).map((u) => u.nome).join(", ") || "nenhuma";
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "perfis",
+      entidadeId: id,
+      descricao: `Unidades de ${usuario?.nome || ""} atualizadas: ${nomesNovos}.`
+    });
     setUnidadesOriginais(unidadesVinculadas);
     setSalvandoUnidades(false);
     setUnidadesSalvas(true);

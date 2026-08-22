@@ -8,6 +8,7 @@ import AppShell from "../../../components/AppShell";
 import Avatar from "../../../components/Avatar";
 import Modal from "../../../components/Modal";
 import CredenciaisModal from "../../../components/CredenciaisModal";
+import { registrarAuditoria } from "../../../lib/auditoria";
 
 async function chamarApi(path, options = {}) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -86,6 +87,12 @@ export default function UsuariosPage() {
         method: "POST",
         body: JSON.stringify({ nome, sobrenome, cargo: cargoNovo, unidadeIds: unidadesSelecionadas })
       });
+      await registrarAuditoria({
+        tipoEvento: "criacao",
+        entidade: "perfis",
+        entidadeId: res.id,
+        descricao: `Usuário criado: ${nome} ${sobrenome} (login ${res.login}, cargo ${cargoNovo}).`
+      });
       setModalNovo(false);
       setNome("");
       setSobrenome("");
@@ -101,11 +108,25 @@ export default function UsuariosPage() {
 
   async function mudarCargo(usuario, novoCargo) {
     await supabase.from("perfis").update({ cargo: novoCargo }).eq("id", usuario.id);
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "perfis",
+      entidadeId: usuario.id,
+      descricao: `Cargo de ${usuario.nome} alterado: ${usuario.cargo} → ${novoCargo}.`,
+      dadosAntes: { cargo: usuario.cargo },
+      dadosDepois: { cargo: novoCargo }
+    });
     await recarregar();
   }
 
   async function alternarBloqueio(usuario) {
     await supabase.from("perfis").update({ bloqueado: !usuario.bloqueado }).eq("id", usuario.id);
+    await registrarAuditoria({
+      tipoEvento: usuario.bloqueado ? "desbloqueio" : "bloqueio",
+      entidade: "perfis",
+      entidadeId: usuario.id,
+      descricao: `${usuario.nome} foi ${usuario.bloqueado ? "desbloqueado" : "bloqueado"}.`
+    });
     await recarregar();
   }
 
@@ -115,9 +136,21 @@ export default function UsuariosPage() {
     try {
       if (confirmar.tipo === "resetar") {
         const res = await chamarApi(`/api/usuarios/${confirmar.usuario.id}/resetar-senha`, { method: "POST" });
+        await registrarAuditoria({
+          tipoEvento: "senha",
+          entidade: "perfis",
+          entidadeId: confirmar.usuario.id,
+          descricao: `Senha de ${confirmar.usuario.nome} foi resetada pra senha inicial.`
+        });
         setCredenciais(res);
       } else if (confirmar.tipo === "excluir") {
         await chamarApi(`/api/usuarios/${confirmar.usuario.id}`, { method: "DELETE" });
+        await registrarAuditoria({
+          tipoEvento: "exclusao",
+          entidade: "perfis",
+          entidadeId: confirmar.usuario.id,
+          descricao: `Usuário excluído: ${confirmar.usuario.nome} (login ${confirmar.usuario.login}).`
+        });
         await recarregar();
       }
       setConfirmar(null);

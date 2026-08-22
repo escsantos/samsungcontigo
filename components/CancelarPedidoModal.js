@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { XCircle, AlertTriangle } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { registrarAuditoria } from "../lib/auditoria";
 import Modal from "./Modal";
 
 function fmtBRL(v) {
@@ -43,6 +44,14 @@ export default function CancelarPedidoModal({ open, onClose, orcamento, totalPag
         });
         if (errEstorno) throw new Error("Pedido cancelado, mas falhou ao abrir a solicitação de estorno: " + errEstorno.message);
       }
+
+      await registrarAuditoria({
+        tipoEvento: "status",
+        entidade: "orcamentos",
+        entidadeId: orcamento.id,
+        descricao: `Orçamento #${orcamento.numero_unidade} cancelado.${temValorRecebido ? ` Estorno de ${fmtBRL(totalPago)} solicitado ao Financeiro.` : ""}${motivo.trim() ? " Motivo: " + motivo.trim() : ""}`,
+        unidadeId: orcamento.unidade_id
+      });
 
       setMotivo("");
       onCancelado?.();

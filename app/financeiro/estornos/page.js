@@ -6,6 +6,7 @@ import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import { getUnidadeAtiva } from "../../../lib/unidade";
+import { registrarAuditoria } from "../../../lib/auditoria";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -57,6 +58,13 @@ export default function EstornosPage() {
       setErro("Falha ao concluir estorno: " + error.message);
       return;
     }
+    await registrarAuditoria({
+      tipoEvento: "pagamento",
+      entidade: "financeiro",
+      entidadeId: processandoModal.orcamento_id,
+      descricao: `Estorno concluído no pedido #${processandoModal.orcamentos?.numero_unidade ?? processandoModal.orcamento_id}: ${fmtBRL(processandoModal.valor)}.`,
+      unidadeId: processandoModal.unidade_id
+    });
     setProcessandoModal(null);
     setObservacao("");
     carregar();

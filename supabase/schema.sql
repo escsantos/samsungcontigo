@@ -1333,3 +1333,49 @@ begin
   values (v_estorno.orcamento_id, 'Estorno (baixa financeira)', -v_estorno.valor, current_date, auth.uid());
 end;
 $$;
+-- ================================================================
+-- AUDITORIA — log de login/logout, alterações de usuário e movimentações
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+create table if not exists auditoria_logs (
+  id bigint generated always as identity primary key,
+  tipo_evento text not null,   -- login, logout, criacao, edicao, exclusao, status, bloqueio, desbloqueio, senha, pagamento
+  entidade text not null,      -- perfis, orcamentos, clientes, pagamentos_orcamento, estoque, financeiro, base
+  entidade_id text,
+  usuario_id uuid references perfis(id),
+  unidade_id bigint references unidades(id),
+  descricao text not null,
+  dados_antes jsonb,
+  dados_depois jsonb,
+  criado_em timestamptz default now()
+);
+
+create index if not exists idx_auditoria_criado_em on auditoria_logs (criado_em desc);
+create index if not exists idx_auditoria_usuario on auditoria_logs (usuario_id);
+create index if not exists idx_auditoria_unidade on auditoria_logs (unidade_id);
+create index if not exists idx_auditoria_entidade on auditoria_logs (entidade);
+create index if not exists idx_auditoria_tipo on auditoria_logs (tipo_evento);
+
+alter table auditoria_logs enable row level security;
+
+-- qualquer usuário autenticado registra o próprio evento (login/logout precisam
+-- funcionar mesmo antes do perfil terminar de carregar)
+create policy "usuario registra proprio log"
+  on auditoria_logs for insert
+  with check (usuario_id = auth.uid() or usuario_id is null);
+
+-- Administrador vê tudo; Diretor/Gerente veem eventos gerais (sem unidade) +
+-- eventos das unidades onde têm vínculo
+create policy "gestor le auditoria"
+  on auditoria_logs for select
+  using (
+    is_administrador()
+    or (
+      pode_gerenciar_usuarios()
+      and (
+        auditoria_logs.unidade_id is null
+        or exists (select 1 from perfis_unidades pu where pu.unidade_id = auditoria_logs.unidade_id and pu.perfil_id = auth.uid())
+      )
+    )
+  );

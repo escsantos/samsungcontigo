@@ -5,10 +5,11 @@ import Link from "next/link";
 import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
   ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
-  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw
+  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
+import { registrarAuditoria } from "../lib/auditoria";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
 import Avatar from "./Avatar";
@@ -69,7 +70,8 @@ export const GRUPOS_MENU = [
       { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cor: "#C2801F", descricao: "Cadastre os impostos usados no cálculo do preço de venda.", cargos: ["Administrador"] },
       { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cor: "#7A4FB0", descricao: "Crie logins, defina cargos e controle o acesso ao sistema.", cargos: ["Administrador", "Diretor", "Gerente"] },
       { href: "/configuracoes/unidades", label: "Unidades", icone: Building2, cor: "#2C7C6E", descricao: "Cadastre as unidades do grupo e o ASC COD. de cada uma.", cargos: ["Administrador"] },
-      { href: "/configuracoes/manutencao", label: "Manutenção", icone: Database, cor: "#E1614F", descricao: "Contagem de registros, backup manual e limpeza de orçamentos por unidade.", cargos: ["Administrador"] }
+      { href: "/configuracoes/manutencao", label: "Manutenção", icone: Database, cor: "#E1614F", descricao: "Contagem de registros, backup manual e limpeza de orçamentos por unidade.", cargos: ["Administrador"] },
+      { href: "/configuracoes/auditoria", label: "Auditoria", icone: ScrollText, cor: "#2E6DA8", descricao: "Login/logout, alterações de usuário e movimentações do sistema.", cargos: ["Administrador", "Diretor", "Gerente"] }
     ]
   }
 ];
@@ -157,6 +159,13 @@ export default function AppShell({ titulo, children }) {
   }, [pathname]);
 
   async function sair() {
+    await registrarAuditoria({
+      tipoEvento: "logout",
+      entidade: "perfis",
+      entidadeId: perfil?.id,
+      descricao: `Logout de ${perfil?.nome || ""}.`,
+      usuarioId: perfil?.id
+    });
     await supabase.auth.signOut();
     limparUnidadeAtiva();
     router.replace("/login");
