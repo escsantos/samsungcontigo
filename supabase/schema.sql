@@ -385,7 +385,8 @@ alter table orcamentos add constraint orcamentos_status_check
   check (status in (
     'Pendente de Análise','Validado pelo Vendedor','Rejeitado',
     'Aguardando Separação/Compra','Peças Compradas - Aguardando Chegada',
-    'Em Estoque - Aguardando Faturamento','Faturamento Efetuado','Liberado para Retirada/Entrega'
+    'Em Estoque - Aguardando Faturamento','Faturamento Efetuado','Liberado para Retirada/Entrega',
+    'Cancelado'
   ));
 alter table orcamentos alter column status set default 'Pendente de Análise';
 
