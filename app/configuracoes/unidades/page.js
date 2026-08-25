@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Building2, Plus, Pencil, Trash2, ShieldAlert, Check } from "lucide-react";
+import { Building2, Plus, Pencil, Trash2, ShieldAlert, Check, FileCheck2 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
@@ -15,6 +15,7 @@ export default function UnidadesPage() {
   const [editando, setEditando] = useState(null); // null = criando novo
   const [nome, setNome] = useState("");
   const [ascCod, setAscCod] = useState("");
+  const [obrigaNotaFiscal, setObrigaNotaFiscal] = useState(true);
   const [salvando, setSalvando] = useState(false);
 
   const [confirmarExclusao, setConfirmarExclusao] = useState(null);
@@ -37,6 +38,7 @@ export default function UnidadesPage() {
     setEditando(null);
     setNome("");
     setAscCod("");
+    setObrigaNotaFiscal(true);
     setErro("");
     setModalAberto(true);
   }
@@ -45,6 +47,7 @@ export default function UnidadesPage() {
     setEditando(u);
     setNome(u.nome);
     setAscCod(u.asc_cod);
+    setObrigaNotaFiscal(u.obriga_nota_fiscal !== false);
     setErro("");
     setModalAberto(true);
   }
@@ -63,11 +66,11 @@ export default function UnidadesPage() {
     setSalvando(true);
 
     if (editando) {
-      const { error } = await supabase.from("unidades").update({ nome: nome.trim(), asc_cod: codLimpo }).eq("id", editando.id);
+      const { error } = await supabase.from("unidades").update({ nome: nome.trim(), asc_cod: codLimpo, obriga_nota_fiscal: obrigaNotaFiscal }).eq("id", editando.id);
       setSalvando(false);
       if (error) { setErro("Falha ao salvar: " + (error.code === "23505" ? "já existe uma unidade com esse ASC COD." : error.message)); return; }
     } else {
-      const { error } = await supabase.from("unidades").insert({ nome: nome.trim(), asc_cod: codLimpo });
+      const { error } = await supabase.from("unidades").insert({ nome: nome.trim(), asc_cod: codLimpo, obriga_nota_fiscal: obrigaNotaFiscal });
       setSalvando(false);
       if (error) { setErro("Falha ao criar: " + (error.code === "23505" ? "já existe uma unidade com esse ASC COD." : error.message)); return; }
     }
@@ -77,6 +80,11 @@ export default function UnidadesPage() {
 
   async function alternarAtivo(u) {
     await supabase.from("unidades").update({ ativo: !u.ativo }).eq("id", u.id);
+    recarregar();
+  }
+
+  async function alternarObrigaNotaFiscal(u) {
+    await supabase.from("unidades").update({ obriga_nota_fiscal: !u.obriga_nota_fiscal }).eq("id", u.id);
     recarregar();
   }
 
@@ -133,6 +141,7 @@ export default function UnidadesPage() {
                 <th className="text-left px-4 py-2.5">Nome</th>
                 <th className="text-left px-4 py-2.5">ASC COD.</th>
                 <th className="text-left px-4 py-2.5">Status</th>
+                <th className="text-left px-4 py-2.5">Nota Fiscal</th>
                 <th className="text-right px-4 py-2.5">Ações</th>
               </tr>
             </thead>
@@ -158,6 +167,19 @@ export default function UnidadesPage() {
                       }}
                     >
                       {u.ativo ? "Ativa" : "Inativa"}
+                    </button>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <button
+                      onClick={() => alternarObrigaNotaFiscal(u)}
+                      title="Clique pra alternar"
+                      className="text-[10.5px] font-mono font-bold px-2 py-0.5 rounded"
+                      style={{
+                        background: u.obriga_nota_fiscal ? "rgba(67,56,202,0.14)" : "rgba(139,147,161,0.14)",
+                        color: u.obriga_nota_fiscal ? "#4338CA" : "#5D6572"
+                      }}
+                    >
+                      {u.obriga_nota_fiscal ? "Obrigatória" : "Opcional"}
                     </button>
                   </td>
                   <td className="px-4 py-2.5">
@@ -205,6 +227,39 @@ export default function UnidadesPage() {
               inputMode="numeric"
             />
             <p className="text-[11px] text-muted mt-1">7 números — usado pra identificar essa unidade nas planilhas de Carregar Bases.</p>
+          </div>
+          <div>
+            <label className="field-label">Essa unidade é obrigada a emitir Nota Fiscal de venda?</label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setObrigaNotaFiscal(true)}
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition"
+                style={{
+                  borderColor: obrigaNotaFiscal ? "#4338CA" : "var(--line)",
+                  background: obrigaNotaFiscal ? "rgba(67,56,202,0.10)" : "transparent",
+                  color: obrigaNotaFiscal ? "#4338CA" : "var(--muted)"
+                }}
+              >
+                <FileCheck2 size={15} />
+                Sim, obrigatória
+              </button>
+              <button
+                type="button"
+                onClick={() => setObrigaNotaFiscal(false)}
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition"
+                style={{
+                  borderColor: !obrigaNotaFiscal ? "var(--accent)" : "var(--line)",
+                  background: !obrigaNotaFiscal ? "var(--accent-soft)" : "transparent",
+                  color: !obrigaNotaFiscal ? "var(--accent)" : "var(--muted)"
+                }}
+              >
+                Não, opcional
+              </button>
+            </div>
+            <p className="text-[11px] text-muted mt-1">
+              Se for obrigatória, o sistema controla no menu Fiscal os pedidos liberados que ainda faltam emitir a NF. Se for opcional, a emissão pode ser registrada mas não entra nesse controle.
+            </p>
           </div>
           {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
         </div>

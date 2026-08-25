@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2, Receipt, Paperclip, ExternalLink, AlertTriangle, XCircle } from "lucide-react";
+import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2, Receipt, Paperclip, ExternalLink, AlertTriangle, XCircle, FileCheck2, Clock } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
@@ -11,6 +11,7 @@ import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { getUnidadeAtiva } from "../../../lib/unidade";
 import { registrarAuditoria } from "../../../lib/auditoria";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, rotuloPagamentoPendente } from "../../../lib/estoque";
+import { STATUS_ELEGIVEIS_NF, statusNotaFiscal, RESUMO_STATUS_NF } from "../../../lib/fiscal";
 import { calcularPreco } from "../../../lib/precos";
 
 function fmtBRL(v) {
@@ -481,6 +482,20 @@ export default function DetalheOrcamentoPage() {
             {orcamento.motivo_cancelamento && <> Motivo: {orcamento.motivo_cancelamento}</>}
           </div>
         )}
+        {STATUS_ELEGIVEIS_NF.includes(orcamento.status) && (() => {
+          const statusNF = statusNotaFiscal(orcamento);
+          const resumo = RESUMO_STATUS_NF[statusNF];
+          return (
+            <div className="mt-4 rounded-lg px-3 py-2 text-xs flex items-center gap-2" style={{ background: resumo.bg, color: resumo.fg }}>
+              {statusNF === "marcada_depois" ? <Clock size={14} /> : <FileCheck2 size={14} />}
+              {statusNF === "emitida"
+                ? <>Nota Fiscal nº <b className="font-mono">{orcamento.nota_fiscal_numero}</b> emitida{orcamento.nota_fiscal_emitida_em ? ` em ${new Date(orcamento.nota_fiscal_emitida_em).toLocaleDateString("pt-BR")}` : ""}.</>
+                : statusNF === "marcada_depois"
+                ? "Nota Fiscal marcada pra emitir depois — ainda não saiu."
+                : "Nota Fiscal ainda não registrada."}
+            </div>
+          );
+        })()}
         {!["Pendente de Análise", "Rejeitado", "Cancelado"].includes(orcamento.status) && !orcamento.entregue && ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo) && (
           <button
             onClick={() => setCancelandoPedido(true)}

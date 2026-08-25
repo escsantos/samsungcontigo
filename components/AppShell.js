@@ -5,11 +5,12 @@ import Link from "next/link";
 import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
   ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
-  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText
+  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
 import { registrarAuditoria } from "../lib/auditoria";
+import { CARGOS_FISCAL, STATUS_LIBERADO } from "../lib/fiscal";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
 import Avatar from "./Avatar";
@@ -60,6 +61,15 @@ export const GRUPOS_MENU = [
     ]
   },
   {
+    id: "fiscal",
+    label: "Fiscal",
+    icone: FileCheck2,
+    href: "/fiscal",
+    itens: [
+      { href: "/fiscal", label: "Dashboard Fiscal", icone: FileCheck2, cor: "#4338CA", descricao: "Notas fiscais emitidas e pedidos liberados aguardando emissão.", cargos: CARGOS_FISCAL }
+    ]
+  },
+  {
     id: "sistema",
     label: "Sistema",
     icone: Settings,
@@ -85,6 +95,7 @@ export default function AppShell({ titulo, children }) {
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   const [unidadeAtiva, setUnidadeAtivaState] = useState(null);
   const [unidadesDoUsuario, setUnidadesDoUsuario] = useState([]);
+  const [alertasFiscais, setAlertasFiscais] = useState(0);
   const pathname = usePathname();
   const router = useRouter();
   const heartbeatRef = useRef(null);
@@ -135,6 +146,10 @@ export default function AppShell({ titulo, children }) {
       }
       setCarregando(false);
 
+      if (ativa && CARGOS_FISCAL.includes(p?.cargo)) {
+        carregarAlertasFiscais(ativa.id);
+      }
+
       async function marcarPresenca() {
         const { error } = await supabase
           .from("perfis")
@@ -157,6 +172,25 @@ export default function AppShell({ titulo, children }) {
   useEffect(() => {
     setMenuMobileAberto(false);
   }, [pathname]);
+
+  async function carregarAlertasFiscais(unidadeId) {
+    try {
+      const { data: u } = await supabase.from("unidades").select("obriga_nota_fiscal").eq("id", unidadeId).single();
+      if (!u?.obriga_nota_fiscal) {
+        setAlertasFiscais(0);
+        return;
+      }
+      const { count } = await supabase
+        .from("orcamentos")
+        .select("id", { count: "exact", head: true })
+        .eq("unidade_id", unidadeId)
+        .eq("status", STATUS_LIBERADO)
+        .is("nota_fiscal_numero", null);
+      setAlertasFiscais(count || 0);
+    } catch (e) {
+      console.error("[alertas fiscais] falha ao carregar:", e);
+    }
+  }
 
   async function sair() {
     await registrarAuditoria({
@@ -245,6 +279,11 @@ export default function AppShell({ titulo, children }) {
                 >
                   <GrupoIcone size={17} />
                   <span className="flex-1 text-left">{grupo.label}</span>
+                  {grupo.id === "fiscal" && alertasFiscais > 0 && (
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                      {alertasFiscais > 9 ? "9+" : alertasFiscais}
+                    </span>
+                  )}
                   <ChevronDown size={14} className="transition-transform" style={{ transform: aberto ? "rotate(180deg)" : "rotate(0deg)" }} />
                 </Link>
 
