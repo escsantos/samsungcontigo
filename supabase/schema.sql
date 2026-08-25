@@ -385,7 +385,8 @@ alter table orcamentos add constraint orcamentos_status_check
   check (status in (
     'Pendente de Análise','Validado pelo Vendedor','Rejeitado',
     'Aguardando Separação/Compra','Peças Compradas - Aguardando Chegada',
-    'Em Estoque - Aguardando Faturamento','Faturamento Efetuado','Liberado para Retirada/Entrega'
+    'Em Estoque - Aguardando Faturamento','Faturamento Efetuado','Liberado para Retirada/Entrega',
+    'Cancelado'
   ));
 alter table orcamentos alter column status set default 'Pendente de Análise';
 
@@ -446,7 +447,7 @@ create table if not exists pagamentos_orcamento (
   id bigint generated always as identity primary key,
   orcamento_id bigint not null references orcamentos(id) on delete cascade,
   forma_pagamento text not null,
-  valor numeric(12,2) not null check (valor > 0),
+  valor numeric(12,2) not null check (valor <> 0),
   data_pagamento date not null,
   anexo_url text,
   registrado_por uuid references perfis(id),
@@ -1271,6 +1272,11 @@ alter table orcamentos add column if not exists motivo_cancelamento text;
 alter table orcamentos add column if not exists cancelado_por uuid references perfis(id);
 alter table orcamentos add column if not exists cancelado_em timestamptz;
 
+-- Estorno lança um pagamento NEGATIVO em pagamentos_orcamento (ver concluir_estorno abaixo),
+-- então a constraint de valor precisa aceitar valores negativos, só não zero.
+alter table pagamentos_orcamento drop constraint if exists pagamentos_orcamento_valor_check;
+alter table pagamentos_orcamento add constraint pagamentos_orcamento_valor_check check (valor <> 0);
+
 create table if not exists estornos (
   id bigint generated always as identity primary key,
   orcamento_id bigint not null references orcamentos(id),
@@ -1379,3 +1385,55 @@ create policy "gestor le auditoria"
       )
     )
   );
+-- ================================================================
+-- MÓDULO FISCAL — Nota Fiscal por pedido + obrigatoriedade por unidade
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- 1. Unidade: se ela é obrigada a emitir Nota Fiscal de venda.
+--    Default true (obrigatória) — o cadastro de unidade pede essa resposta
+--    explicitamente na hora de criar/editar.
+alter table unidades add column if not exists obriga_nota_fiscal boolean not null default true;
+
+-- 2. Pedido: dado da Nota Fiscal emitida, ou marcação de "emitir depois".
+--    A emissão é liberada a partir do status "Faturamento Efetuado" (não
+--    bloqueia nenhuma etapa — é só registro/controle).
+alter table orcamentos add column if not exists nota_fiscal_numero text;
+alter table orcamentos add column if not exists nota_fiscal_emitida_por uuid references perfis(id);
+alter table orcamentos add column if not exists nota_fiscal_emitida_em timestamptz;
+alter table orcamentos add column if not exists nota_fiscal_emitir_depois boolean not null default false;
+alter table orcamentos add column if not exists nota_fiscal_marcada_depois_por uuid references perfis(id);
+alter table orcamentos add column if not exists nota_fiscal_marcada_depois_em timestamptz;
+alter table orcamentos add column if not exists nota_fiscal_observacao text;
+
+-- 3. Quem pode gerenciar a Nota Fiscal do pedido (tela de Estoque e o novo
+--    menu Fiscal): Administrador, Diretor, Gerente, Estoque e Financeiro.
+--    A policy "revisar orcamentos" já existente não inclui Financeiro, então
+--    criamos uma policy de update dedicada (mesmo padrão usado em "financeiro
+--    confirma recebimento").
+create or replace function pode_gerenciar_fiscal()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Estoque','Financeiro'));
+$$;
+
+drop policy if exists "gerencia nota fiscal do pedido" on orcamentos;
+create policy "gerencia nota fiscal do pedido"
+  on orcamentos for update
+  using (pode_gerenciar_fiscal() and exists (select 1 from perfis_unidades pu where pu.unidade_id = orcamentos.unidade_id and pu.perfil_id = auth.uid()))
+  with check (pode_gerenciar_fiscal() and exists (select 1 from perfis_unidades pu where pu.unidade_id = orcamentos.unidade_id and pu.perfil_id = auth.uid()));
+
+-- 4. Índice pra acelerar o dashboard Fiscal (pedidos liberados sem NF, por unidade).
+create index if not exists idx_orcamentos_nf_pendente on orcamentos (unidade_id, status) where nota_fiscal_numero is null;
+
+-- 5. Evita registrar o mesmo número de NF duas vezes na mesma unidade
+--    (cada unidade tem sua própria numeração fiscal).
+create unique index if not exists idx_orcamentos_nf_numero_unico on orcamentos (unidade_id, nota_fiscal_numero) where nota_fiscal_numero is not null;
+
+-- ================================================================
+-- CARREGAR BASES — data da solicitação da Base GSPN (coluna Q)
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- Guarda a data de solicitação mais recente encontrada na Base GSPN de cada
+-- processamento — identifica até quando aquele arquivo veio atualizado.
+alter table pecas_processamentos add column if not exists gspn_data_solicitacao_max text;

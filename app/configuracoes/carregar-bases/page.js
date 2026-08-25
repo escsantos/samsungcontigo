@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { UploadCloud, ShieldAlert, Building2 } from "lucide-react";
+import { UploadCloud, ShieldAlert, Building2, History } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { classifyDesc, categoria, normKey, parseBRDate, parseValorFlexivel, findExact } from "../../../lib/classificacao";
@@ -45,11 +45,25 @@ export default function CarregarBasesPage() {
   const [resultado, setResultado] = useState(null);
   const [erro, setErro] = useState("");
   const [confirmando, setConfirmando] = useState(false);
+  const [ultimoProcessamento, setUltimoProcessamento] = useState(undefined);
 
   useEffect(() => {
     (async () => setPerfil(await getPerfilAtual()))();
-    setUnidadeAtivaState(getUnidadeAtiva());
+    const ativa = getUnidadeAtiva();
+    setUnidadeAtivaState(ativa);
+    carregarUltimoProcessamento(ativa);
   }, []);
+
+  async function carregarUltimoProcessamento(ativa) {
+    let query = supabase
+      .from("pecas_processamentos")
+      .select("processado_em, arquivo_pecas, arquivo_gspn, total_registros, gspn_data_solicitacao_max, usuario:perfis!pecas_processamentos_usuario_id_fkey(nome)")
+      .order("processado_em", { ascending: false })
+      .limit(1);
+    if (ativa) query = query.eq("unidade_id", ativa.id);
+    const { data } = await query.maybeSingle();
+    setUltimoProcessamento(data || null);
+  }
 
   function fecharPopupResultado() {
     setResultado(null);
@@ -65,6 +79,10 @@ export default function CarregarBasesPage() {
     try {
       if (!unidadeAtiva) throw new Error("Não identifiquei a unidade ativa. Recarregue a página e tente de novo.");
 
+      // um único "agora" pra esse processamento inteiro — usado como data da última
+      // alteração real de cada registro que for criado ou modificado agora.
+      const agoraIso = new Date().toISOString();
+
       // mapa ascCod -> unidade cadastrada (pra resolver a coluna T de cada linha)
       const { data: todasUnidades } = await supabase.from("unidades").select("id, nome, asc_cod");
       const unidadePorAscCod = new Map((todasUnidades || []).map((u) => [u.asc_cod, u]));
@@ -72,6 +90,8 @@ export default function CarregarBasesPage() {
       // precoMap agora é chaveado por código + código-da-unidade (coluna T da própria linha)
       let precoMap = new Map(); // chave: codigo||ascCod -> { valor, ts, dataNF, ascCod }
       let lotes = [];
+      let gspnDataSolicitacaoMax = null; // texto dd/mm/aaaa mais recente encontrado na coluna Q da Base GSPN
+      let gspnDataSolicitacaoMaxTs = null;
       let duplicadosRemovidos = 0;
       let semEntrega = 0;
       let linhasDeOutraUnidade = 0;
@@ -187,7 +207,7 @@ export default function CarregarBasesPage() {
         while (true) {
           const { data, error } = await supabase
             .from("pecas_catalogo")
-            .select("modelo, codigo, categoria, descricao_resumida, descricao_peca")
+            .select("modelo, codigo, categoria, descricao_resumida, descricao_peca, atualizado_em")
             .range(inicio, inicio + PAGINA - 1);
           if (error) throw new Error("Falha ao ler catálogo existente: " + error.message);
           if (!data || data.length === 0) break;
@@ -196,7 +216,8 @@ export default function CarregarBasesPage() {
               modelo: p.modelo,
               categoria: p.categoria,
               descricao_resumida: p.descricao_resumida,
-              descricao_peca: p.descricao_peca
+              descricao_peca: p.descricao_peca,
+              atualizado_em: p.atualizado_em
             };
             existentesMap.set(p.modelo.toUpperCase() + "||" + p.codigo.toUpperCase(), info);
             const lista = existentesPorCodigo.get(p.codigo.toUpperCase()) || [];
@@ -216,7 +237,7 @@ export default function CarregarBasesPage() {
         while (true) {
           const { data, error } = await supabase
             .from("pecas_precos")
-            .select("codigo, valor_unitario, data_referencia, asc_cod_origem")
+            .select("codigo, valor_unitario, data_referencia, asc_cod_origem, atualizado_em")
             .range(inicio, inicio + PAGINA - 1);
           if (error) throw new Error("Falha ao ler preços existentes: " + error.message);
           if (!data || data.length === 0) break;
@@ -224,7 +245,33 @@ export default function CarregarBasesPage() {
             precosExistentes.set(p.codigo.toUpperCase() + "||" + p.asc_cod_origem, {
               valor_unitario: p.valor_unitario,
               ts: parseBRDate(p.data_referencia),
-              data_referencia: p.data_referencia
+              data_referencia: p.data_referencia,
+              atualizado_em: p.atualizado_em
+            });
+          }
+          if (data.length < PAGINA) break;
+          inicio += PAGINA;
+        }
+      }
+
+      // lotes já cadastrados (por unidade + código + nº de Delivery) — usado pra nunca
+      // regredir a data de um lote se a mesma Delivery aparecer de novo numa base
+      // reprocessada com uma data mais antiga.
+      const lotesExistentes = new Map(); // ascCod||codigo||entrega -> { data_nf, ts }
+      if (arquivoPecas && lotes.length > 0) {
+        const PAGINA = 1000;
+        let inicio = 0;
+        while (true) {
+          const { data, error } = await supabase
+            .from("lotes_pecas")
+            .select("asc_cod_origem, codigo, no_entrega, data_nf")
+            .range(inicio, inicio + PAGINA - 1);
+          if (error) throw new Error("Falha ao ler lotes existentes: " + error.message);
+          if (!data || data.length === 0) break;
+          for (const l of data) {
+            lotesExistentes.set(`${l.codigo}||${l.asc_cod_origem}||${l.no_entrega}`, {
+              data_nf: l.data_nf,
+              ts: parseBRDate(l.data_nf)
             });
           }
           if (data.length < PAGINA) break;
@@ -235,19 +282,27 @@ export default function CarregarBasesPage() {
       let registrosCatalogo = [];
       let registrosPrecos = [];
       let modelosSet = new Set();
-      let naoClassificados = 0, semCusto = 0, precosAtualizados = 0, precosMantidos = 0, novasPecas = 0;
+      let naoClassificados = 0, semCusto = 0, precosAtualizados = 0, precosMantidos = 0, novasPecas = 0, catalogoAtualizados = 0;
+      let lotesAtualizados = 0, lotesMantidos = 0;
 
       function decidirPreco(chave, precoNovo) {
         const existente = precosExistentes.get(chave);
-        if (!precoNovo) return existente ? { valor: existente.valor_unitario, data: existente.data_referencia, mudou: false } : { valor: null, data: null, mudou: false };
+        if (!precoNovo) {
+          return existente
+            ? { valor: existente.valor_unitario, data: existente.data_referencia, atualizadoEm: existente.atualizado_em, mudou: false }
+            : { valor: null, data: null, atualizadoEm: agoraIso, mudou: false };
+        }
         const existeSemData = !existente || existente.valor_unitario === null || existente.valor_unitario === undefined;
         const novoEhMaisRecente = precoNovo.ts !== null && (!existente?.ts || precoNovo.ts > existente.ts);
         if (existeSemData || novoEhMaisRecente) {
           if (existente) precosAtualizados++;
-          return { valor: Math.round(precoNovo.valor * 100) / 100, data: precoNovo.dataNF, mudou: true };
+          // registra a data mais atual encontrada (data NF do lote comprado) e marca
+          // agora como o momento da última alteração real desse preço.
+          return { valor: Math.round(precoNovo.valor * 100) / 100, data: precoNovo.dataNF, atualizadoEm: agoraIso, mudou: true };
         }
         if (existente) precosMantidos++;
-        return { valor: existente.valor_unitario, data: existente.data_referencia, mudou: false };
+        // não mudou: preserva a data de última alteração que já estava gravada.
+        return { valor: existente.valor_unitario, data: existente.data_referencia, atualizadoEm: existente.atualizado_em || agoraIso, mudou: false };
       }
 
       if (arquivoGspn) {
@@ -262,6 +317,10 @@ export default function CarregarBasesPage() {
         if (idxModelo < 0 || idxBH < 0) {
           throw new Error("Colunas Modelo e/ou Service Product Description não encontradas na Base GSPN.");
         }
+        // coluna Q — data em que aquela solicitação/BH foi feita. Identifica até quando
+        // o conteúdo dessa Base GSPN está atualizado. Não é obrigatória: se a coluna não
+        // for encontrada, o processamento continua normalmente, só sem esse dado.
+        const idxDataSolicitacao = findExact(gHeaders, "data da solicitacao");
         const slots = [];
         for (let n = 1; n <= 10; n++) {
           const suf = n < 10 ? "0" + n : "10";
@@ -281,6 +340,14 @@ export default function CarregarBasesPage() {
         for (let r = 1; r < gspnRows.length; r++) {
           const grow = gspnRows[r];
           if (!grow || grow.length === 0) continue;
+          if (idxDataSolicitacao >= 0) {
+            const solicitacaoStr = String(grow[idxDataSolicitacao] || "").trim();
+            const solicitacaoTs = parseBRDate(solicitacaoStr);
+            if (solicitacaoTs !== null && (gspnDataSolicitacaoMaxTs === null || solicitacaoTs > gspnDataSolicitacaoMaxTs)) {
+              gspnDataSolicitacaoMaxTs = solicitacaoTs;
+              gspnDataSolicitacaoMax = solicitacaoStr;
+            }
+          }
           const modelo = String(grow[idxModelo] || "").trim();
           if (!modelo) continue;
           let cat = categoria(grow[idxBH]);
@@ -298,14 +365,23 @@ export default function CarregarBasesPage() {
             if (uniqueCatalogo.has(uKey)) continue;
 
             const existenteCatalogo = existentesMap.get(uKey);
+            const descPecaTrim = descPeca ? String(descPeca).trim() : "";
+            const catalogoMudou = !existenteCatalogo
+              || existenteCatalogo.categoria !== cat
+              || existenteCatalogo.descricao_resumida !== resumida
+              || (existenteCatalogo.descricao_peca || "") !== descPecaTrim;
             if (!existenteCatalogo) novasPecas++;
+            else if (catalogoMudou) catalogoAtualizados++;
 
             uniqueCatalogo.set(uKey, {
               modelo,
               categoria: cat,
               codigo: codigoUpper,
               descricao_resumida: resumida,
-              descricao_peca: descPeca ? String(descPeca).trim() : ""
+              descricao_peca: descPecaTrim,
+              // só atualiza a data de "última alteração" quando o dado realmente mudou;
+              // se subir a mesma base de novo sem mudança, preserva a data original.
+              atualizado_em: catalogoMudou ? agoraIso : (existenteCatalogo?.atualizado_em || agoraIso)
             });
 
             // cruza o preço só da unidade ativa (o que "sobrar" de outras unidades já foi
@@ -320,7 +396,8 @@ export default function CarregarBasesPage() {
                 asc_cod_origem: unidadeAtiva.asc_cod,
                 codigo: codigoUpper,
                 valor_unitario: decisao.valor,
-                data_referencia: decisao.data
+                data_referencia: decisao.data,
+                atualizado_em: decisao.atualizadoEm
               });
             }
           }
@@ -342,7 +419,8 @@ export default function CarregarBasesPage() {
               asc_cod_origem: precoInfo.ascCod,
               codigo: precoInfo.codigo,
               valor_unitario: decisao.valor,
-              data_referencia: decisao.data
+              data_referencia: decisao.data,
+              atualizado_em: decisao.atualizadoEm
             });
           }
         }
@@ -364,7 +442,8 @@ export default function CarregarBasesPage() {
               asc_cod_origem: precoInfo.ascCod,
               codigo: precoInfo.codigo,
               valor_unitario: decisao.valor,
-              data_referencia: decisao.data
+              data_referencia: decisao.data,
+              atualizado_em: decisao.atualizadoEm
             });
           }
         }
@@ -407,8 +486,30 @@ export default function CarregarBasesPage() {
         total_registros: registrosCatalogo.length || registrosPrecos.length,
         duplicados_removidos: duplicadosRemovidos,
         nao_classificados: naoClassificados,
-        sem_custo: semCusto
+        sem_custo: semCusto,
+        gspn_data_solicitacao_max: gspnDataSolicitacaoMax
       });
+      carregarUltimoProcessamento(unidadeAtiva);
+
+      // nunca regride a data de um lote já gravado: se a mesma Delivery aparecer de
+      // novo numa base com data igual ou mais antiga que a que já está no banco, mantém
+      // o que já estava (só grava se for registro novo ou com data mais recente).
+      if (lotes.length > 0) {
+        const lotesParaGravar = [];
+        for (const l of lotes) {
+          const chave = `${l.codigo}||${l.asc_cod_origem}||${l.no_entrega}`;
+          const existente = lotesExistentes.get(chave);
+          const tsNovo = parseBRDate(l.data_nf);
+          const novoEhMaisRecente = !existente || (tsNovo !== null && (existente.ts === null || tsNovo >= existente.ts));
+          if (novoEhMaisRecente) {
+            lotesParaGravar.push(l);
+            if (existente) lotesAtualizados++;
+          } else {
+            lotesMantidos++;
+          }
+        }
+        lotes = lotesParaGravar;
+      }
 
       if (lotes.length > 0) {
         setProgresso({ pct: 96, texto: "Salvando lotes por Delivery (sem apagar os antigos)..." });
@@ -432,12 +533,16 @@ export default function CarregarBasesPage() {
         naoClassificados,
         semCusto,
         totalLotes: lotes.length,
+        lotesAtualizados,
+        lotesMantidos,
         semEntrega,
         novasPecas,
+        catalogoAtualizados,
         precosAtualizados,
         precosMantidos,
         linhasDeOutraUnidade,
-        linhasDeUnidadeNaoCadastrada
+        linhasDeUnidadeNaoCadastrada,
+        gspnDataSolicitacaoMax
       });
       setConcluido(true);
     } catch (e) {
@@ -478,11 +583,32 @@ export default function CarregarBasesPage() {
           </div>
         )}
         <p className="font-display font-semibold text-[15px] mb-1">Carregar bases de dados</p>
-        <p className="text-sm text-muted mb-5">
+        <p className="text-sm text-muted mb-4">
           Suba as duas bases juntas pra um processamento completo, ou só uma de cada vez: só Base Peças atualiza
           os custos das peças (por unidade, conforme a coluna T de cada linha); só Base GSPN atualiza a
-          classificação/modelo (compartilhado, vale pra todas as unidades).
+          classificação/modelo (compartilhado, vale pra todas as unidades). Ao subir de novo, uma peça só é considerada
+          "alterada" quando o dado realmente muda — se a data do registro (Data NF) for mais antiga do que a que já
+          está gravada, o sistema mantém o que já tinha, pra sempre mostrar a data mais atual da peça comprada.
         </p>
+
+        {ultimoProcessamento !== undefined && (
+          <div className="flex items-center gap-2 mb-5 px-3 py-2 rounded-lg text-xs" style={{ background: "rgba(139,147,161,0.14)", color: "#5D6572" }}>
+            <History size={14} className="shrink-0" />
+            {ultimoProcessamento ? (
+              <span>
+                Última base processada {unidadeAtiva ? `nesta unidade` : ""} em{" "}
+                <b>{new Date(ultimoProcessamento.processado_em).toLocaleString("pt-BR")}</b>
+                {ultimoProcessamento.usuario?.nome ? <> por <b>{ultimoProcessamento.usuario.nome}</b></> : ""}
+                {" "}({ultimoProcessamento.total_registros?.toLocaleString("pt-BR") ?? 0} registros).
+                {ultimoProcessamento.gspn_data_solicitacao_max && (
+                  <> A Base GSPN usada tem solicitações até <b>{ultimoProcessamento.gspn_data_solicitacao_max}</b>.</>
+                )}
+              </span>
+            ) : (
+              <span>Nenhuma base foi processada ainda nesta unidade.</span>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4 mb-5">
           <label className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition ${arquivoPecas ? "border-success bg-canvas" : "border-line hover:border-brand-400"}`}>
@@ -566,16 +692,23 @@ export default function CarregarBasesPage() {
             <Stat n={resultado.totalRegistros} label="registros processados" />
             {resultado.modo === "completo" && <Stat n={resultado.totalModelos} label="modelos distintos" />}
             {resultado.modo !== "so-precos" && <Stat n={resultado.novasPecas} label="peças novas no catálogo" />}
+            {resultado.modo !== "so-precos" && <Stat n={resultado.catalogoAtualizados} label="peças com classificação alterada" />}
             <Stat n={resultado.precosAtualizados} label="preços atualizados (mais recentes)" />
             <Stat n={resultado.precosMantidos} label="preços mantidos (já eram mais novos)" />
             {resultado.modo === "completo" && <Stat n={resultado.duplicadosRemovidos} label="duplicados removidos" />}
             {resultado.modo === "completo" && <Stat n={resultado.naoClassificados} label="não classificadas" />}
             {resultado.modo !== "so-precos" && <Stat n={resultado.semCusto} label="sem custo encontrado" />}
             {resultado.totalLotes > 0 && <Stat n={resultado.totalLotes} label="lotes por Delivery gravados" />}
+            {resultado.lotesMantidos > 0 && <Stat n={resultado.lotesMantidos} label="lotes mantidos (data já era mais nova)" />}
             {resultado.semEntrega > 0 && <Stat n={resultado.semEntrega} label="compras sem nº de Delivery" />}
             {resultado.linhasDeOutraUnidade > 0 && <Stat n={resultado.linhasDeOutraUnidade} label="linhas de outra unidade (colaboração)" />}
             {resultado.linhasDeUnidadeNaoCadastrada > 0 && <Stat n={resultado.linhasDeUnidadeNaoCadastrada} label="linhas de unidade ainda não cadastrada" />}
           </div>
+        )}
+        {resultado?.gspnDataSolicitacaoMax && (
+          <p className="text-xs text-muted mt-3">
+            Essa Base GSPN tem solicitações até <b className="text-ink">{resultado.gspnDataSolicitacaoMax}</b> — é até essa data que a classificação/modelo está atualizado.
+          </p>
         )}
       </Modal>
     </AppShell>

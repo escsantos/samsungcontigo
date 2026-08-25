@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, ShieldAlert, Search, Check, AlertTriangle, Package,
-  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight, Pencil, Save, XCircle
+  Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight, Pencil, Save, XCircle,
+  FileCheck2, Clock
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { getUnidadeAtiva } from "../../../lib/unidade";
@@ -14,6 +15,7 @@ import CancelarPedidoModal from "../../../components/CancelarPedidoModal";
 import { registrarAuditoria } from "../../../lib/auditoria";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, rotuloPagamentoPendente } from "../../../lib/estoque";
+import { STATUS_ELEGIVEIS_NF, statusNotaFiscal, RESUMO_STATUS_NF } from "../../../lib/fiscal";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -67,13 +69,20 @@ export default function EstoquePedidoPage() {
   const [editandoPagamento, setEditandoPagamento] = useState(null);
   const [edicaoPagamento, setEdicaoPagamento] = useState({});
 
+  // nota fiscal
+  const [numeroNF, setNumeroNF] = useState("");
+  const [editandoNF, setEditandoNF] = useState(false);
+  const [processandoNF, setProcessandoNF] = useState(false);
+  const [marcandoDepoisModal, setMarcandoDepoisModal] = useState(false);
+  const [motivoDepois, setMotivoDepois] = useState("");
+
   useEffect(() => {
     carregar();
   }, [id]);
 
   async function carregar() {
     setPerfil(await getPerfilAtual());
-    const { data: orc } = await supabase.from("orcamentos").select("*, clientes(id, nome, celular, email)").eq("id", id).single();
+    const { data: orc } = await supabase.from("orcamentos").select("*, clientes(id, nome, celular, email), unidades(nome, obriga_nota_fiscal)").eq("id", id).single();
     const unidadeAtiva = getUnidadeAtiva();
     if (orc && unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
       setOrcamento(null);
@@ -473,6 +482,64 @@ export default function EstoquePedidoPage() {
       entidadeId: id,
       descricao: `Separação confirmada no pedido #${orcamento.numero_unidade} — liberado para retirada/entrega.`
     });
+    carregar();
+  }
+
+  async function registrarNotaFiscal() {
+    const numero = numeroNF.trim();
+    if (!numero) return;
+    setProcessandoNF(true);
+    setErro("");
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from("orcamentos")
+      .update({
+        nota_fiscal_numero: numero,
+        nota_fiscal_emitida_por: user.id,
+        nota_fiscal_emitida_em: new Date().toISOString(),
+        nota_fiscal_emitir_depois: false
+      })
+      .eq("id", id);
+    setProcessandoNF(false);
+    if (error) {
+      setErro(error.code === "23505" ? `Já existe outra NF com o número ${numero} registrada nesta unidade.` : "Falha ao registrar a Nota Fiscal: " + error.message);
+      return;
+    }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Nota Fiscal nº ${numero} registrada no pedido #${orcamento.numero_unidade}.`
+    });
+    setNumeroNF("");
+    setEditandoNF(false);
+    carregar();
+  }
+
+  async function marcarNotaFiscalDepois() {
+    setProcessandoNF(true);
+    setErro("");
+    const motivo = motivoDepois.trim();
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from("orcamentos")
+      .update({
+        nota_fiscal_emitir_depois: true,
+        nota_fiscal_marcada_depois_por: user.id,
+        nota_fiscal_marcada_depois_em: new Date().toISOString(),
+        nota_fiscal_observacao: motivo || null
+      })
+      .eq("id", id);
+    setProcessandoNF(false);
+    if (error) { setErro("Falha ao marcar: " + error.message); return; }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Pedido #${orcamento.numero_unidade} marcado para emitir Nota Fiscal depois.${motivo ? ` Motivo: ${motivo}` : ""}`
+    });
+    setMarcandoDepoisModal(false);
+    setMotivoDepois("");
     carregar();
   }
 
@@ -918,6 +985,75 @@ export default function EstoquePedidoPage() {
         </div>
       )}
 
+      {STATUS_ELEGIVEIS_NF.includes(orcamento.status) && (() => {
+        const statusNF = statusNotaFiscal(orcamento);
+        const resumo = RESUMO_STATUS_NF[statusNF];
+        const obrigaNF = orcamento.unidades?.obriga_nota_fiscal !== false;
+        return (
+          <div className="card p-5 mb-4">
+            <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
+              <p className="font-display font-semibold text-sm flex items-center gap-2">
+                <FileCheck2 size={16} style={{ color: "var(--accent)" }} />
+                Nota Fiscal
+                {!obrigaNF && <span className="text-[10px] font-mono font-normal text-muted">(opcional nesta unidade)</span>}
+              </p>
+              <span className="text-[10.5px] font-mono font-bold px-2.5 py-1 rounded-full" style={{ background: resumo.bg, color: resumo.fg }}>
+                {resumo.texto}
+              </span>
+            </div>
+
+            {statusNF === "emitida" && !editandoNF ? (
+              <div className="flex items-center justify-between flex-wrap gap-2 mt-2">
+                <p className="text-xs text-muted">
+                  Nº <span className="font-mono font-semibold text-ink">{orcamento.nota_fiscal_numero}</span>
+                  {orcamento.nota_fiscal_emitida_em && <> — emitida em {new Date(orcamento.nota_fiscal_emitida_em).toLocaleString("pt-BR")}</>}
+                </p>
+                <button
+                  className="text-xs text-muted hover:text-ink flex items-center gap-1"
+                  onClick={() => { setNumeroNF(orcamento.nota_fiscal_numero || ""); setEditandoNF(true); }}
+                >
+                  <Pencil size={12} />
+                  Corrigir número
+                </button>
+              </div>
+            ) : (
+              <>
+                {statusNF === "marcada_depois" && (
+                  <p className="text-xs mt-1 mb-3 flex items-center gap-1.5" style={{ color: "#C2801F" }}>
+                    <Clock size={13} />
+                    Marcado pra emitir depois{orcamento.nota_fiscal_observacao ? ` — ${orcamento.nota_fiscal_observacao}` : ""}. Registre o número assim que a NF sair.
+                  </p>
+                )}
+                <div className="flex items-center gap-2 mt-2 max-w-md">
+                  <input
+                    className="field-input font-mono"
+                    placeholder="Nº da Nota Fiscal"
+                    inputMode="numeric"
+                    value={numeroNF}
+                    onChange={(e) => setNumeroNF(e.target.value.replace(/\D/g, "").slice(0, 12))}
+                  />
+                  <button className="btn-primary shrink-0" disabled={processandoNF || !numeroNF.trim()} onClick={registrarNotaFiscal}>
+                    <Check size={15} />
+                    Registrar
+                  </button>
+                </div>
+                {statusNF === "pendente" && (
+                  <button className="text-xs text-muted hover:text-ink mt-2 flex items-center gap-1.5" disabled={processandoNF} onClick={() => { setMotivoDepois(""); setMarcandoDepoisModal(true); }}>
+                    <Clock size={13} />
+                    Ainda não saiu — marcar pra emitir depois
+                  </button>
+                )}
+                {editandoNF && (
+                  <button className="text-xs text-muted hover:text-ink mt-2 ml-3" onClick={() => { setEditandoNF(false); setNumeroNF(""); }}>
+                    Cancelar
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
+
       {orcamento.status === "Liberado para Retirada/Entrega" && !orcamento.entregue && (
         <div className="card p-5 mb-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
@@ -1051,6 +1187,32 @@ export default function EstoquePedidoPage() {
             </label>
           ))}
         </div>
+      </Modal>
+
+      <Modal
+        open={marcandoDepoisModal}
+        onClose={() => !processandoNF && setMarcandoDepoisModal(false)}
+        title="Marcar Nota Fiscal pra emitir depois"
+        footer={
+          <>
+            <button className="btn-secondary" disabled={processandoNF} onClick={() => setMarcandoDepoisModal(false)}>Cancelar</button>
+            <button className="btn-primary" disabled={processandoNF} onClick={marcarNotaFiscalDepois}>
+              {processandoNF ? "Salvando..." : "Confirmar"}
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted mb-3">
+          O pedido #{orcamento.numero_unidade} continua sem NF registrada, mas fica marcado como "emitir depois" — ele entra no controle de pendências do menu Fiscal até você registrar o número.
+        </p>
+        <label className="field-label">Motivo (opcional)</label>
+        <textarea
+          className="field-input"
+          rows={2}
+          value={motivoDepois}
+          onChange={(e) => setMotivoDepois(e.target.value)}
+          placeholder="Ex: aguardando XML da Samsung"
+        />
       </Modal>
 
       <CancelarPedidoModal
