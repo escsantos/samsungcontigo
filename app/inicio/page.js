@@ -2,11 +2,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Search, Contact, ClipboardList, ShoppingCart, Bell, UploadCloud, Percent, Users, ChevronRight, Warehouse, FileBarChart, LayoutDashboard, Smartphone, Copy, Check
+  Search, Contact, ClipboardList, ShoppingCart, Bell, UploadCloud, Percent, Users, ChevronRight, Warehouse, FileBarChart, LayoutDashboard, Smartphone, Copy, Check, FileCheck2
 } from "lucide-react";
 import { getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import Modal from "../../components/Modal";
+import { CARGOS_FISCAL } from "../../lib/fiscal";
 
 const CARDS = [
   {
@@ -96,6 +97,14 @@ const CARDS = [
     cor: "#4338CA",
     descricao: "Custo real, imposto e lucro líquido das peças já liberadas.",
     cargos: ["Administrador", "Diretor", "Gerente"]
+  },
+  {
+    href: "/fiscal",
+    label: "Fiscal",
+    icone: FileCheck2,
+    cor: "#4338CA",
+    descricao: "Notas fiscais emitidas e pedidos liberados aguardando emissão.",
+    cargos: CARGOS_FISCAL
   }
 ];
 
