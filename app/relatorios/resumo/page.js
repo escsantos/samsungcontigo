@@ -93,7 +93,7 @@ export default function RelatorioResumoPage() {
 
       let query = supabase
         .from("orcamentos")
-        .select("id, numero_unidade, valor_total, imposto_total, vendedor_id, entregue_em, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome, comissao_percentual)")
+        .select("id, numero_unidade, valor_total, imposto_total, vendedor_id, entregue_em, nota_fiscal_numero, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome, comissao_percentual)")
         .eq("unidade_id", unidadeAtiva.id)
         .eq("entregue", true)
         .gte("entregue_em", periodo.de.toISOString())
@@ -173,6 +173,7 @@ export default function RelatorioResumoPage() {
   function exportarExcel() {
     const linhasExport = linhas.map((l) => ({
       "Número do Pedido": l.numero_unidade,
+      "Nota Fiscal": l.nota_fiscal_numero || "",
       Cliente: l.clientes?.nome || "",
       Vendedor: l.perfis?.nome || "",
       "Data de entrega": fmtData(l.entregue_em),
@@ -185,7 +186,7 @@ export default function RelatorioResumoPage() {
       "Lucro Líquido (%)": Number(l.lucroLiquidoPct.toFixed(1))
     }));
     const ws = XLSX.utils.json_to_sheet(linhasExport);
-    ws["!cols"] = [{ wch: 10 }, { wch: 22 }, { wch: 18 }, { wch: 13 }, { wch: 15 }, { wch: 15 }, { wch: 13 }, { wch: 15 }, { wch: 17 }, { wch: 15 }, { wch: 13 }];
+    ws["!cols"] = [{ wch: 10 }, { wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 13 }, { wch: 15 }, { wch: 15 }, { wch: 13 }, { wch: 15 }, { wch: 17 }, { wch: 15 }, { wch: 13 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Resumo");
     const sufixo = tipoPeriodo === "semanal" ? rotuloSemana(semanaRef) : mesSelecionado;
@@ -306,6 +307,7 @@ export default function RelatorioResumoPage() {
               <thead>
                 <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
                   <th className="text-left px-3 py-2.5 whitespace-nowrap">Pedido</th>
+                  <th className="text-left px-3 py-2.5 whitespace-nowrap">Nota Fiscal</th>
                   <th className="text-left px-3 py-2.5 whitespace-nowrap">Cliente</th>
                   {podeEscolherVendedor && <th className="text-left px-3 py-2.5 whitespace-nowrap">Vendedor</th>}
                   <th className="text-right px-3 py-2.5 whitespace-nowrap">Custo das Peças</th>
@@ -325,6 +327,9 @@ export default function RelatorioResumoPage() {
                     onClick={() => setPedidoAberto(l)}
                   >
                     <td className="px-3 py-2.5 font-mono text-muted whitespace-nowrap">#{l.numero_unidade}</td>
+                    <td className="px-3 py-2.5 font-mono whitespace-nowrap">
+                      {l.nota_fiscal_numero || <span className="text-muted">—</span>}
+                    </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">{l.clientes?.nome || "—"}</td>
                     {podeEscolherVendedor && (
                       <td className="px-3 py-2.5 whitespace-nowrap text-muted">
@@ -359,7 +364,12 @@ export default function RelatorioResumoPage() {
         {pedidoAberto && (
           <div>
             <div className="flex items-center justify-between text-xs text-muted mb-3">
-              <span>{pedidoAberto.clientes?.nome || "—"}</span>
+              <span>
+                {pedidoAberto.clientes?.nome || "—"}
+                {pedidoAberto.nota_fiscal_numero && (
+                  <span className="ml-2 font-mono" style={{ color: "var(--accent)" }}>NF {pedidoAberto.nota_fiscal_numero}</span>
+                )}
+              </span>
               <span>Entregue em {fmtData(pedidoAberto.entregue_em)}</span>
             </div>
             {pedidoAberto.itens.length === 0 ? (
