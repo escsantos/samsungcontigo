@@ -33,7 +33,7 @@ git add .
 echo [4/7] Criando commit...
 git commit -m "Sistema Consulta de Pecas - atualizacao"
 if errorlevel 1 (
-    echo (nada novo para commitar, ou commit ja existente - seguindo em frente)
+    echo ^(nada novo para commitar, ou commit ja existente - seguindo em frente^)
 )
 
 echo [5/7] Configurando o repositorio remoto (origin)...
@@ -47,8 +47,8 @@ if errorlevel 1 (
     echo.
     echo ==========================================================
     echo   Houve um CONFLITO ao juntar suas mudancas com o que ja
-    echo   estava no GitHub (o mesmo arquivo foi alterado dos dois
-    echo   lados).
+    echo   estava no GitHub ^(o mesmo arquivo foi alterado dos dois
+    echo   lados^).
     echo.
     echo   Abra os arquivos que o Git apontou acima, procure por
     echo   linhas com ^<^<^<^<^<^<^<, ======= e ^>^>^>^>^>^>^>, decida o
