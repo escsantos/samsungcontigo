@@ -1437,3 +1437,12 @@ create unique index if not exists idx_orcamentos_nf_numero_unico on orcamentos (
 -- Guarda a data de solicitação mais recente encontrada na Base GSPN de cada
 -- processamento — identifica até quando aquele arquivo veio atualizado.
 alter table pecas_processamentos add column if not exists gspn_data_solicitacao_max text;
+
+-- ================================================================
+-- MÓDULO RELATÓRIOS — Resumo (margem/comissão por pedido entregue)
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- Percentual de comissão de cada vendedor sobre o valor pago do pedido.
+-- Fica em branco (null) até alguém cadastrar — o relatório trata null como 0%.
+alter table perfis add column if not exists comissao_percentual numeric(5,2);
