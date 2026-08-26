@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, ChevronRight } from "lucide-react";
+import { Search, ChevronRight, X } from "lucide-react";
 import { getPerfilAtual, supabase } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { CORES_STATUS, ICONES_STATUS, rotuloPagamentoPendente } from "../../lib/estoque";
@@ -10,6 +10,11 @@ import { getUnidadeAtiva } from "../../lib/unidade";
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Ignora acento/caixa pra comparar "joao", "João" e "JOÃO" como iguais.
+function normKey(s) {
+  return String(s ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().toLowerCase();
 }
 
 const CORES_STATUS_FALLBACK = { bg: "rgba(139,147,161,0.14)", fg: "#5D6572" };
@@ -23,6 +28,8 @@ export default function OrcamentosPage() {
   const [numeroBusca, setNumeroBusca] = useState("");
   const [resultadoBusca, setResultadoBusca] = useState(undefined); // undefined = não buscou ainda
   const [buscando, setBuscando] = useState(false);
+  const [buscaCliente, setBuscaCliente] = useState("");
+  const [sugestoesAbertas, setSugestoesAbertas] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -31,7 +38,7 @@ export default function OrcamentosPage() {
       const unidadeAtiva = getUnidadeAtiva();
       let query = supabase
         .from("orcamentos")
-        .select("*, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome)")
+        .select("*, clientes(nome, nome_fantasia), perfis!orcamentos_vendedor_id_fkey(nome)")
         .order("criado_em", { ascending: false });
       // cliente vê tudo que é dele, independente de unidade; equipe só vê a unidade ativa
       if (p?.cargo !== "Cliente" && unidadeAtiva) {
@@ -72,6 +79,17 @@ export default function OrcamentosPage() {
   }
 
   const ehCliente = perfil?.cargo === "Cliente";
+
+  const termoClienteNorm = normKey(buscaCliente);
+  const listaFiltrada = useMemo(() => {
+    if (!termoClienteNorm) return lista;
+    return lista.filter((o) => {
+      const nome = normKey(o.clientes?.nome);
+      const fantasia = normKey(o.clientes?.nome_fantasia);
+      return nome.includes(termoClienteNorm) || fantasia.includes(termoClienteNorm);
+    });
+  }, [lista, termoClienteNorm]);
+  const sugestoesCliente = termoClienteNorm ? listaFiltrada.slice(0, 8) : [];
 
   return (
     <AppShell titulo="Orçamentos">
@@ -123,14 +141,83 @@ export default function OrcamentosPage() {
         )}
       </form>
 
-      <p className="text-sm text-muted mb-3">{lista.length} orçamento(s)</p>
+      {!ehCliente && (
+        <div className="card p-4 mb-4">
+          <p className="text-xs font-medium mb-2">Buscar por cliente ou empresa</p>
+          <div className="relative max-w-sm">
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <input
+                className="field-input pl-9 pr-8"
+                placeholder="Digite o nome do cliente ou da empresa..."
+                value={buscaCliente}
+                onChange={(e) => setBuscaCliente(e.target.value)}
+                onFocus={() => setSugestoesAbertas(true)}
+                onBlur={() => setTimeout(() => setSugestoesAbertas(false), 150)}
+              />
+              {buscaCliente && (
+                <button
+                  type="button"
+                  onClick={() => setBuscaCliente("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+                  aria-label="Limpar busca"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {sugestoesAbertas && termoClienteNorm && (
+              <div className="absolute z-20 top-full left-0 right-0 mt-1.5 card p-1.5 max-h-72 overflow-auto shadow-lg">
+                {sugestoesCliente.length === 0 ? (
+                  <p className="text-sm text-muted px-2.5 py-2">Nenhum orçamento encontrado para &quot;{buscaCliente}&quot;.</p>
+                ) : (
+                  sugestoesCliente.map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        router.push(`/orcamentos/${o.id}`);
+                        setBuscaCliente("");
+                        setSugestoesAbertas(false);
+                      }}
+                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-canvas text-sm flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate">
+                        <span className="font-mono text-muted">#{o.numero_unidade}</span>{" "}
+                        <span className="font-medium">{o.clientes?.nome || "—"}</span>
+                        {o.clientes?.nome_fantasia && <span className="text-muted text-xs"> ({o.clientes.nome_fantasia})</span>}
+                      </span>
+                      <ChevronRight size={14} className="text-muted shrink-0" />
+                    </button>
+                  ))
+                )}
+                {listaFiltrada.length > sugestoesCliente.length && (
+                  <p className="text-[11px] text-muted px-2.5 py-1.5 border-t border-line mt-1">
+                    +{listaFiltrada.length - sugestoesCliente.length} outro(s) resultado(s) — veja a lista completa abaixo.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <p className="text-sm text-muted mb-3">
+        {listaFiltrada.length} orçamento(s){termoClienteNorm ? ` encontrado(s) para "${buscaCliente}"` : ""}
+      </p>
 
       <div className="card overflow-hidden">
         {carregando ? (
           <p className="text-sm text-muted p-6">Carregando...</p>
-        ) : lista.length === 0 ? (
+        ) : listaFiltrada.length === 0 ? (
           <p className="text-sm text-muted p-6 text-center">
-            {ehCliente ? "Você ainda não tem orçamentos." : "Nenhum orçamento pendente de revisão."}
+            {termoClienteNorm
+              ? `Nenhum orçamento encontrado para "${buscaCliente}".`
+              : ehCliente
+              ? "Você ainda não tem orçamentos."
+              : "Nenhum orçamento pendente de revisão."}
           </p>
         ) : (
           <table className="w-full text-sm">
@@ -145,7 +232,7 @@ export default function OrcamentosPage() {
               </tr>
             </thead>
             <tbody>
-              {lista.map((o) => {
+              {listaFiltrada.map((o) => {
                 const cor = CORES_STATUS[o.status] || CORES_STATUS_FALLBACK;
                 const IconeStatus = ICONES_STATUS[o.status];
                 return (
@@ -158,6 +245,9 @@ export default function OrcamentosPage() {
                     {!ehCliente && (
                       <td className="px-4 py-2.5 font-medium">
                         {o.clientes?.nome || "—"}
+                        {o.clientes?.nome_fantasia && (
+                          <span className="text-muted text-xs font-normal"> ({o.clientes.nome_fantasia})</span>
+                        )}
                         {o.sem_pagamento && (() => {
                           const r = rotuloPagamentoPendente(pagosPorPedido[o.id] || 0);
                           return (
