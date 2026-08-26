@@ -2,12 +2,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Search, Contact, ClipboardList, ShoppingCart, Bell, UploadCloud, Percent, Users, ChevronRight, Warehouse, FileBarChart, LayoutDashboard, Smartphone, Copy, Check, FileCheck2
+  Search, Contact, ClipboardList, ShoppingCart, Bell, UploadCloud, Percent, Users, ChevronRight, Warehouse, FileBarChart, LayoutDashboard, Smartphone, Copy, Check, FileCheck2, BarChart3
 } from "lucide-react";
 import { getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import Modal from "../../components/Modal";
 import { CARGOS_FISCAL } from "../../lib/fiscal";
+import { CARGOS_RELATORIOS } from "../../lib/relatorios";
 
 const CARDS = [
   {
@@ -105,6 +106,14 @@ const CARDS = [
     cor: "#4338CA",
     descricao: "Notas fiscais emitidas e pedidos liberados aguardando emissão.",
     cargos: CARGOS_FISCAL
+  },
+  {
+    href: "/relatorios/resumo",
+    label: "Relatórios",
+    icone: BarChart3,
+    cor: "#7A4FB0",
+    descricao: "Margem e comissão por pedido entregue, mensal ou semanal.",
+    cargos: CARGOS_RELATORIOS
   }
 ];
 

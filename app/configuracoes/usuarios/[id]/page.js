@@ -34,6 +34,7 @@ export default function DetalheUsuarioPage() {
   const [nomeEditado, setNomeEditado] = useState("");
   const [cargoEditado, setCargoEditado] = useState("");
   const [clienteIdEditado, setClienteIdEditado] = useState("");
+  const [comissaoEditada, setComissaoEditada] = useState("");
   const [clientesDisponiveis, setClientesDisponiveis] = useState([]);
   const [salvando, setSalvando] = useState(false);
   const [salvo, setSalvo] = useState(false);
@@ -56,6 +57,7 @@ export default function DetalheUsuarioPage() {
       setNomeEditado(data?.nome || "");
       setCargoEditado(data?.cargo || "");
       setClienteIdEditado(data?.cliente_id || "");
+      setComissaoEditada(data?.comissao_percentual === null || data?.comissao_percentual === undefined ? "" : String(data.comissao_percentual));
       const { data: clientes } = await supabase.from("clientes").select("id, nome").order("nome");
       setClientesDisponiveis(clientes || []);
 
@@ -93,29 +95,37 @@ export default function DetalheUsuarioPage() {
     setTimeout(() => setUnidadesSalvas(false), 2500);
   }
 
+  const comissaoNormalizada = comissaoEditada.trim() === "" ? null : Number(comissaoEditada.replace(",", "."));
+  const comissaoOriginal = usuario?.comissao_percentual === null || usuario?.comissao_percentual === undefined ? null : Number(usuario.comissao_percentual);
+
   const houveMudanca =
     usuario &&
     (nomeEditado !== usuario.nome ||
       cargoEditado !== usuario.cargo ||
-      (clienteIdEditado || null) !== (usuario.cliente_id || null));
+      (clienteIdEditado || null) !== (usuario.cliente_id || null) ||
+      comissaoNormalizada !== comissaoOriginal);
 
   async function salvarAlteracoes() {
     if (!nomeEditado.trim()) {
       setErro("O nome não pode ficar em branco.");
       return;
     }
+    if (comissaoEditada.trim() !== "" && (isNaN(comissaoNormalizada) || comissaoNormalizada < 0 || comissaoNormalizada > 100)) {
+      setErro("A comissão precisa ser um número entre 0 e 100.");
+      return;
+    }
     setErro("");
     setSalvando(true);
     const { error } = await supabase
       .from("perfis")
-      .update({ nome: nomeEditado.trim(), cargo: cargoEditado, cliente_id: clienteIdEditado || null })
+      .update({ nome: nomeEditado.trim(), cargo: cargoEditado, cliente_id: clienteIdEditado || null, comissao_percentual: comissaoNormalizada })
       .eq("id", id);
     setSalvando(false);
     if (error) {
       setErro("Não consegui salvar: " + error.message);
       return;
     }
-    setUsuario((u) => ({ ...u, nome: nomeEditado.trim(), cargo: cargoEditado, cliente_id: clienteIdEditado || null }));
+    setUsuario((u) => ({ ...u, nome: nomeEditado.trim(), cargo: cargoEditado, cliente_id: clienteIdEditado || null, comissao_percentual: comissaoNormalizada }));
     setSalvo(true);
     setTimeout(() => setSalvo(false), 2500);
   }
@@ -232,6 +242,24 @@ export default function DetalheUsuarioPage() {
                   {clientesDisponiveis.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
                 <p className="text-[11px] text-muted mt-1">Necessário para esse login conseguir montar carrinho e ver seus próprios orçamentos.</p>
+              </div>
+            )}
+            {cargoEditado === "Vendedor" && (
+              <div>
+                <label className="field-label">Comissão sobre vendas (%)</label>
+                <input
+                  className="field-input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  placeholder="Ex: 5"
+                  value={comissaoEditada}
+                  onChange={(e) => setComissaoEditada(e.target.value)}
+                />
+                <p className="text-[11px] text-muted mt-1">
+                  Usado no relatório de Resumo (Relatórios) pra calcular a comissão sobre o valor pago de cada pedido entregue. Em branco conta como 0%.
+                </p>
               </div>
             )}
           </div>

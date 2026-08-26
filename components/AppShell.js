@@ -5,12 +5,13 @@ import Link from "next/link";
 import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
   ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
-  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2
+  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2, BarChart3
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
 import { registrarAuditoria } from "../lib/auditoria";
 import { CARGOS_FISCAL, STATUS_LIBERADO } from "../lib/fiscal";
+import { CARGOS_RELATORIOS } from "../lib/relatorios";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
 import Avatar from "./Avatar";
@@ -67,6 +68,15 @@ export const GRUPOS_MENU = [
     href: "/fiscal",
     itens: [
       { href: "/fiscal", label: "Dashboard Fiscal", icone: FileCheck2, cor: "#4338CA", descricao: "Notas fiscais emitidas e pedidos liberados aguardando emissão.", cargos: CARGOS_FISCAL }
+    ]
+  },
+  {
+    id: "relatorios",
+    label: "Relatórios",
+    icone: BarChart3,
+    href: "/relatorios/resumo",
+    itens: [
+      { href: "/relatorios/resumo", label: "Resumo", icone: BarChart3, cor: "#7A4FB0", descricao: "Margem e comissão por pedido entregue, mensal ou semanal.", cargos: CARGOS_RELATORIOS }
     ]
   },
   {
