@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ShieldAlert, ArrowLeft, ArrowRight, AlertTriangle } from "lucide-react";
+import { ShieldAlert, ArrowLeft, ArrowRight, AlertTriangle, HandCoins } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
@@ -174,13 +174,24 @@ export default function ContasAReceberPage() {
                       )}
                     </td>
                     <td className="px-4 py-2.5 text-right">
-                      <button
-                        className="btn-secondary py-1.5 px-3 text-xs whitespace-nowrap"
-                        onClick={() => router.push(`/estoque/${o.id}`)}
-                      >
-                        Ver pedido
-                        <ArrowRight size={13} />
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        {o.valor_aberto > 0.004 && (
+                          <button
+                            className="btn-primary py-1.5 px-3 text-xs whitespace-nowrap"
+                            onClick={() => router.push(`/estoque/${o.id}?pagamento=1`)}
+                          >
+                            <HandCoins size={13} />
+                            Quitar / Registrar pagamento
+                          </button>
+                        )}
+                        <button
+                          className="btn-secondary py-1.5 px-3 text-xs whitespace-nowrap"
+                          onClick={() => router.push(`/estoque/${o.id}`)}
+                        >
+                          Ver pedido
+                          <ArrowRight size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

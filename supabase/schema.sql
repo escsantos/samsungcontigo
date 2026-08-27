@@ -1498,3 +1498,56 @@ $$;
 alter table orcamentos add column if not exists liberado_sem_pagamento_por uuid references perfis(id);
 alter table orcamentos add column if not exists liberado_sem_pagamento_em timestamptz;
 alter table orcamentos add column if not exists liberado_sem_pagamento_motivo text;
+
+-- ================================================================
+-- FINANCEIRO — registrar pagamento direto pelo Contas a Receber
+-- O Financeiro já podia ver pedidos/pagamentos; agora também pode
+-- registrar/editar pagamento e subir comprovante, pra quitar a pendência
+-- sem precisar de outro cargo.
+-- ================================================================
+
+drop policy if exists "financeiro registra pagamento" on pagamentos_orcamento;
+create policy "financeiro registra pagamento"
+  on pagamentos_orcamento for insert
+  with check (
+    eh_financeiro() and exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+    )
+  );
+
+drop policy if exists "financeiro edita pagamento" on pagamentos_orcamento;
+create policy "financeiro edita pagamento"
+  on pagamentos_orcamento for update
+  using (
+    eh_financeiro() and exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+    )
+  )
+  with check (
+    eh_financeiro() and exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+    )
+  );
+
+drop policy if exists "financeiro exclui pagamento" on pagamentos_orcamento;
+create policy "financeiro exclui pagamento"
+  on pagamentos_orcamento for delete
+  using (
+    eh_financeiro() and exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+    )
+  );
+
+drop policy if exists "financeiro le comprovantes" on storage.objects;
+create policy "financeiro le comprovantes"
+  on storage.objects for select
+  using (bucket_id = 'comprovantes' and eh_financeiro());
+
+drop policy if exists "financeiro sobe comprovantes" on storage.objects;
+create policy "financeiro sobe comprovantes"
+  on storage.objects for insert
+  with check (bucket_id = 'comprovantes' and eh_financeiro());

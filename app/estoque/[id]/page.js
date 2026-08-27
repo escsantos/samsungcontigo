@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, ShieldAlert, Search, Check, AlertTriangle, Package,
   Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight, Pencil, Save, XCircle,
@@ -26,8 +26,17 @@ function hoje() {
 }
 
 export default function EstoquePedidoPage() {
+  return (
+    <Suspense fallback={<AppShell titulo="Pedido"><p className="text-muted text-sm">Carregando...</p></AppShell>}>
+      <EstoquePedidoPageInner />
+    </Suspense>
+  );
+}
+
+function EstoquePedidoPageInner() {
   const { id } = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [perfil, setPerfil] = useState(undefined);
   const [orcamento, setOrcamento] = useState(undefined);
   const [itens, setItens] = useState([]);
@@ -85,6 +94,12 @@ export default function EstoquePedidoPage() {
     carregar();
   }, [id]);
 
+  useEffect(() => {
+    if (orcamento && searchParams.get("pagamento") === "1") {
+      setPagamentoModalAberto(true);
+    }
+  }, [orcamento, searchParams]);
+
   async function carregar() {
     setPerfil(await getPerfilAtual());
     const { data: orc } = await supabase
@@ -123,7 +138,7 @@ export default function EstoquePedidoPage() {
   }
 
   const podeAcessarEstoquePedido =
-    ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil?.cargo) ||
+    ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque", "Financeiro"].includes(perfil?.cargo) ||
     (perfil?.cargo === "Vendedor" && !!orcamento && perfil.id === orcamento.vendedor_id);
 
   if (perfil && !podeAcessarEstoquePedido) {
@@ -132,7 +147,7 @@ export default function EstoquePedidoPage() {
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente, Supervisor e Estoque acessam esta página (o Vendedor também acessa quando é o pedido dele).</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente, Supervisor, Estoque e Financeiro acessam esta página (o Vendedor também acessa quando é o pedido dele).</p>
         </div>
       </AppShell>
     );
@@ -697,14 +712,26 @@ export default function EstoquePedidoPage() {
         )}
         {aindaSemPagamento && (
           <div
-            className="mt-3 rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-2"
+            className="mt-3 rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-2 flex-wrap justify-between"
             style={{ background: rotuloSemPagamento.bg, color: rotuloSemPagamento.fg }}
           >
-            <AlertTriangle size={14} />
-            {rotuloSemPagamento.texto} — faltam {fmtBRL(faltandoGeral)}.
-            {entregaAutorizadaSemPagamento
-              ? ` Liberado para entrega mesmo assim por ${orcamento.perfis?.nome ?? "usuário"}.`
-              : " Precisa quitar antes de liberar a entrega."}
+            <span className="flex items-center gap-2">
+              <AlertTriangle size={14} />
+              {rotuloSemPagamento.texto} — faltam {fmtBRL(faltandoGeral)}.
+              {orcamento.entregue
+                ? " Pedido já entregue — pendência de pagamento em aberto."
+                : entregaAutorizadaSemPagamento
+                ? ` Liberado para entrega mesmo assim por ${orcamento.perfis?.nome ?? "usuário"}.`
+                : " Precisa quitar antes de liberar a entrega."}
+            </span>
+            <button
+              className="btn-secondary py-1.5 px-3 text-xs shrink-0"
+              style={{ background: "#fff" }}
+              onClick={() => setPagamentoModalAberto(true)}
+            >
+              <Receipt size={13} />
+              Registrar pagamento
+            </button>
           </div>
         )}
         {orcamento.pedido_pai_id && (
