@@ -154,6 +154,10 @@ export default function EstoquePedidoPage() {
   const totalPagoGeral = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
   const faltandoGeral = Number(orcamento.valor_total || 0) - totalPagoGeral;
   const aindaSemPagamento = orcamento.sem_pagamento && faltandoGeral > 0.004;
+  // a autorização dada em "Liberar sem pagamento" (Estoque) já libera também a entrega —
+  // não pede uma segunda autorização pra confirmar a entrega ao cliente.
+  const entregaAutorizadaSemPagamento = aindaSemPagamento && !!orcamento.liberado_sem_pagamento_por;
+  const entregaBloqueadaPorPagamento = aindaSemPagamento && !orcamento.liberado_sem_pagamento_por;
   const podeLiberarSemPagamento =
     ["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo) ||
     (perfil?.cargo === "Vendedor" && perfil?.id === orcamento?.vendedor_id);
@@ -697,7 +701,10 @@ export default function EstoquePedidoPage() {
             style={{ background: rotuloSemPagamento.bg, color: rotuloSemPagamento.fg }}
           >
             <AlertTriangle size={14} />
-            {rotuloSemPagamento.texto} — faltam {fmtBRL(faltandoGeral)}. Precisa quitar antes de liberar a entrega.
+            {rotuloSemPagamento.texto} — faltam {fmtBRL(faltandoGeral)}.
+            {entregaAutorizadaSemPagamento
+              ? ` Liberado para entrega mesmo assim por ${orcamento.perfis?.nome ?? "usuário"}.`
+              : " Precisa quitar antes de liberar a entrega."}
           </div>
         )}
         {orcamento.pedido_pai_id && (
@@ -1164,8 +1171,10 @@ export default function EstoquePedidoPage() {
             <div>
               <p className="font-display font-semibold text-sm">Pronto pra entrega</p>
               <p className="text-xs text-muted mt-0.5">
-                {aindaSemPagamento
+                {entregaBloqueadaPorPagamento
                   ? "Ainda falta pagamento — quite antes de confirmar a entrega."
+                  : entregaAutorizadaSemPagamento
+                  ? `Liberado sem pagamento total (faltam ${fmtBRL(faltandoGeral)}) — pode gerar o romaneio e confirmar a entrega.`
                   : "Gere o romaneio e confirme a entrega ao cliente."}
               </p>
             </div>
@@ -1176,7 +1185,7 @@ export default function EstoquePedidoPage() {
                   Registrar pagamento
                 </button>
               )}
-              <button className="btn-primary" disabled={aindaSemPagamento} onClick={abrirRomaneio} title={aindaSemPagamento ? "Quite o pagamento antes de liberar a entrega" : ""}>
+              <button className="btn-primary" disabled={entregaBloqueadaPorPagamento} onClick={abrirRomaneio} title={entregaBloqueadaPorPagamento ? "Quite o pagamento antes de liberar a entrega" : ""}>
                 <Send size={15} />
                 Confirmar Entrega
               </button>

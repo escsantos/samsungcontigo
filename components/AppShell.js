@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
   ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
-  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2, BarChart3
+  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2, BarChart3, HandCoins
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
@@ -58,7 +58,8 @@ export const GRUPOS_MENU = [
       { href: "/financeiro", label: "Dashboard Financeiro", icone: Wallet, cor: "#2C7C6E", descricao: "Recebido, pago ao fabricante e margem, com filtro por período.", cargos: ["Administrador", "Financeiro"] },
       { href: "/financeiro/recebimentos", label: "Confirmar Recebimentos", icone: ClipboardCheck, cor: "#3FA796", descricao: "Confirme se o pagamento do cliente realmente entrou.", cargos: ["Administrador", "Financeiro"] },
       { href: "/financeiro/fornecedor", label: "Pagamento ao Fabricante", icone: Truck, cor: "#E1614F", descricao: "Confirme o pagamento do custo das peças à Samsung, por semana/cliente/data.", cargos: ["Administrador", "Financeiro"] },
-      { href: "/financeiro/estornos", label: "Estornos", icone: RotateCcw, cor: "#9C5A34", descricao: "Processe solicitações de estorno de pedidos cancelados.", cargos: ["Administrador", "Financeiro"] }
+      { href: "/financeiro/estornos", label: "Estornos", icone: RotateCcw, cor: "#9C5A34", descricao: "Processe solicitações de estorno de pedidos cancelados.", cargos: ["Administrador", "Financeiro"] },
+      { href: "/financeiro/contas-a-receber", label: "Contas a Receber", icone: HandCoins, cor: "#B0553B", descricao: "Pedidos já entregues com pagamento em aberto — total e parcial.", cargos: ["Administrador", "Financeiro"] }
     ]
   },
   {
