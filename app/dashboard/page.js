@@ -42,14 +42,14 @@ export default function DashboardPage() {
   const [itensLiberados, setItensLiberados] = useState([]);
   const [clientesNovos, setClientesNovos] = useState(0);
 
-  const ehGestor = ["Administrador", "Diretor", "Gerente"].includes(perfil?.cargo);
+  const ehGestor = ["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo);
   const intervalo = useMemo(() => calcularIntervalo(periodo, dataDe, dataAte), [periodo, dataDe, dataAte]);
 
   useEffect(() => {
     (async () => {
       const p = await getPerfilAtual();
       setPerfil(p);
-      if (["Administrador", "Diretor", "Gerente"].includes(p?.cargo)) {
+      if (["Administrador", "Diretor", "Gerente", "Supervisor"].includes(p?.cargo)) {
         const { data } = await supabase.from("perfis").select("id, nome").eq("cargo", "Vendedor").order("nome");
         setVendedores(data || []);
       }
@@ -67,7 +67,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (perfil === undefined) return;
-    if (!["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo)) return;
+    if (!["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo)) return;
     carregarDados();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perfil, intervalo, vendedorFiltro]);
@@ -191,7 +191,7 @@ export default function DashboardPage() {
     return <AppShell titulo="Dashboard de Vendas"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Dashboard de Vendas">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">

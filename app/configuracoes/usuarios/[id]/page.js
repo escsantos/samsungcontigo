@@ -159,13 +159,13 @@ export default function DetalheUsuarioPage() {
     return <AppShell titulo="Usuário"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (gestor && !["Administrador", "Diretor", "Gerente"].includes(gestor.cargo)) {
+  if (gestor && !["Administrador", "Diretor", "Gerente", "Supervisor"].includes(gestor.cargo)) {
     return (
       <AppShell titulo="Usuário">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só Administrador, Diretor e Gerente podem ver esta página.</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente e Supervisor podem ver esta página.</p>
         </div>
       </AppShell>
     );

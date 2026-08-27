@@ -43,7 +43,7 @@ export default function NovoClientePage() {
   const [loginDisponivel, setLoginDisponivel] = useState(null);
   const [credenciais, setCredenciais] = useState(null);
 
-  const podeGerenciarUsuarios = ["Administrador", "Diretor", "Gerente"].includes(perfil?.cargo);
+  const podeGerenciarUsuarios = ["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo);
 
   useEffect(() => {
     (async () => {
@@ -146,7 +146,7 @@ export default function NovoClientePage() {
     return <AppShell titulo="Novo Cliente"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Novo Cliente">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">

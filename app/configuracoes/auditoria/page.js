@@ -56,7 +56,7 @@ export default function AuditoriaPage() {
 
   useEffect(() => {
     if (perfil === undefined) return;
-    if (!["Administrador", "Diretor", "Gerente"].includes(perfil?.cargo)) return;
+    if (!["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo)) return;
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perfil]);
@@ -111,13 +111,13 @@ export default function AuditoriaPage() {
     return <AppShell titulo="Auditoria"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Auditoria">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só Administrador, Diretor e Gerente acessam a auditoria.</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente e Supervisor acessam a auditoria.</p>
         </div>
       </AppShell>
     );

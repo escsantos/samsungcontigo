@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --font-display: var(--font-space-grotesk);
+  --font-body: var(--font-inter);
+  --font-mono: var(--font-ibm-plex-mono);
+}
+
+/* --- Modo claro (padrão) e escuro — tons de azul e cinza, como o logo --- */
+:root, [data-theme="claro"] {
+  --color-ink-rgb: 22 50 79;        /* texto e botões primários */
+  --color-ink-700-rgb: 18 41 65;
+  --color-ink-800-rgb: 14 33 52;
+  --color-ink-600-rgb: 27 60 94;
+  --color-canvas-rgb: 242 245 248;  /* fundo da página */
+  --color-panel-rgb: 255 255 255;   /* fundo dos cards */
+  --color-sidebar-rgb: 234 238 242; /* fundo do menu lateral */
+  --color-line-rgb: 220 227 234;    /* bordas */
+  --color-muted-rgb: 100 116 138;   /* texto secundário */
+  --color-accent-rgb: 38 112 181;      /* azul do logo */
+  --color-accent-soft-rgb: 220 234 246;
+  --color-accent-strong-rgb: 24 79 130;
+}
+[data-theme="escuro"] {
+  --color-ink-rgb: 234 240 247;
+  --color-ink-700-rgb: 210 222 235;
+  --color-ink-800-rgb: 190 205 222;
+  --color-ink-600-rgb: 220 230 240;
+  --color-canvas-rgb: 15 27 43;
+  --color-panel-rgb: 22 39 59;
+  --color-sidebar-rgb: 10 19 31;
+  --color-line-rgb: 36 55 77;
+  --color-muted-rgb: 143 163 188;
+  --color-accent-rgb: 76 148 214;
+  --color-accent-soft-rgb: 30 55 79;
+  --color-accent-strong-rgb: 122 184 235;
+}
+
+/* Painel lateral (menu) e a área do login sempre em degradê azul,
+   independente do modo claro/escuro escolhido — é a cor de marca. */
+.gradiente-marca {
+  background: linear-gradient(180deg, #0E3A63 0%, #1D6FB0 100%);
+}
+
+body {
+  background: rgb(var(--color-canvas-rgb));
+  color: rgb(var(--color-ink-rgb));
+  font-family: var(--font-body), sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .display {
+  font-family: var(--font-display), sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.font-mono-num {
+  font-family: var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+@layer components {
+  .field-label {
+    @apply text-xs font-medium text-muted mb-1 block tracking-wide;
+  }
+
+  .field-input {
+    @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink
+           placeholder:text-muted outline-none transition
+           focus:border-gold focus:ring-2 focus:ring-gold/20;
+  }
+  [data-theme="escuro"] .field-input {
+    @apply bg-panel;
+  }
+
+  .field-input:disabled {
+    @apply bg-canvas text-muted cursor-not-allowed;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium
+           border border-line bg-white text-ink transition hover:bg-canvas
+           focus:outline-none focus:ring-2 focus:ring-gold/30;
+  }
+  [data-theme="escuro"] .btn {
+    @apply bg-panel;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium
+           bg-gold text-white border border-transparent transition
+           hover:bg-gold-strong focus:outline-none focus:ring-2 focus:ring-gold/30;
+  }
+
+  .card {
+    @apply rounded-xl2 border border-line bg-panel;
+  }
+
+  .checkbox-tile {
+    @apply flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm
+           cursor-pointer transition hover:border-gold/60;
+  }
+  [data-theme="escuro"] .checkbox-tile {
+    @apply bg-panel;
+  }
+
+  .checkbox-tile.is-checked {
+    @apply border-gold bg-gold-soft/60;
+  }
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #9DB3C8; border-radius: 8px; }
+
+@keyframes balaoEntrada {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.balao-notificacao {
+  animation: balaoEntrada 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}

@@ -179,13 +179,13 @@ export default function UsuariosPage() {
     return <AppShell titulo="Usuários"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Usuários">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só Administrador, Diretor e Gerente podem gerenciar usuários.</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente e Supervisor podem gerenciar usuários.</p>
         </div>
       </AppShell>
     );

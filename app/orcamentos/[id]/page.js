@@ -439,7 +439,7 @@ export default function DetalheOrcamentoPage() {
     );
   }
 
-  const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo);
+  const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo);
   const cor = CORES_STATUS[orcamento.status] || CORES_STATUS_FALLBACK;
   const IconeStatusAtual = ICONES_STATUS[orcamento.status];
   const mostraCusto = perfil?.cargo !== "Cliente";
@@ -496,7 +496,7 @@ export default function DetalheOrcamentoPage() {
             </div>
           );
         })()}
-        {!["Pendente de Análise", "Rejeitado", "Cancelado"].includes(orcamento.status) && !orcamento.entregue && ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo) && (
+        {!["Pendente de Análise", "Rejeitado", "Cancelado"].includes(orcamento.status) && !orcamento.entregue && ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo) && (
           <button
             onClick={() => setCancelandoPedido(true)}
             className="text-sm mt-4 hover:underline flex items-center gap-1.5"
@@ -506,7 +506,7 @@ export default function DetalheOrcamentoPage() {
             Cancelar pedido / registrar desistência
           </button>
         )}
-        {orcamento.status !== "Pendente de Análise" && orcamento.status !== "Rejeitado" && ["Administrador", "Diretor", "Gerente", "Estoque"].includes(perfil?.cargo) && (
+        {orcamento.status !== "Pendente de Análise" && orcamento.status !== "Rejeitado" && ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil?.cargo) && (
           <button
             onClick={() => router.push(`/estoque/${orcamento.id}`)}
             className="text-sm mt-4 hover:underline"

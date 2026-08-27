@@ -15,7 +15,7 @@ async function verificarGestor(req) {
   const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !user) return null;
   const { data: perfil } = await supabaseAdmin.from("perfis").select("*").eq("id", user.id).single();
-  if (!perfil || !["Administrador", "Diretor", "Gerente"].includes(perfil.cargo)) return null;
+  if (!perfil || !["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil.cargo)) return null;
   return perfil;
 }
 

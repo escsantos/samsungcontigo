@@ -1,5 +1,5 @@
 "use client";
-import { FileText, Send, Clock, CheckCircle2, XCircle, Receipt, PackageCheck, PackageOpen, DollarSign } from "lucide-react";
+import { FileText, Send, Clock, CheckCircle2, XCircle, Receipt, PackageCheck, PackageOpen, DollarSign, AlertTriangle } from "lucide-react";
 
 function fmtDataHora(iso) {
   if (!iso) return "";
@@ -85,6 +85,16 @@ export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [], n
       cor: "#4338CA",
       titulo: "Faturamento efetuado",
       data: orcamento.pagamento_validado_em
+    });
+  }
+
+  if (orcamento.liberado_sem_pagamento_em) {
+    eventos.push({
+      icone: AlertTriangle,
+      cor: "#C2410C",
+      titulo: `Liberado para faturamento SEM pagamento total por ${orcamento.perfis?.nome ?? "usuário"}` +
+        (orcamento.liberado_sem_pagamento_motivo ? ` — Motivo: ${orcamento.liberado_sem_pagamento_motivo}` : ""),
+      data: orcamento.liberado_sem_pagamento_em
     });
   }
 

@@ -44,7 +44,7 @@ export default function ClientesPage() {
     return <AppShell titulo="Clientes"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Clientes">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">

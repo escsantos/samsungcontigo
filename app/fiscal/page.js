@@ -83,7 +83,7 @@ export default function FiscalPage() {
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente, Estoque, Financeiro e Vendedor acessam esta área.</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente, Supervisor, Estoque, Financeiro e Vendedor acessam esta área.</p>
         </div>
       </AppShell>
     );

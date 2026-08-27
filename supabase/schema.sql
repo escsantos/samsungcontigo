@@ -1446,3 +1446,55 @@ alter table pecas_processamentos add column if not exists gspn_data_solicitacao_
 -- Percentual de comissão de cada vendedor sobre o valor pago do pedido.
 -- Fica em branco (null) até alguém cadastrar — o relatório trata null como 0%.
 alter table perfis add column if not exists comissao_percentual numeric(5,2);
+
+-- ================================================================
+-- CARGO SUPERVISOR — mesmas permissões de Gerente, por enquanto
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+alter table perfis drop constraint if exists perfis_cargo_check;
+alter table perfis add constraint perfis_cargo_check
+  check (cargo in ('Administrador','Diretor','Gerente','Supervisor','Vendedor','Estoque','Financeiro','Cliente'));
+
+create or replace function pode_gerenciar_usuarios()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (
+    select 1 from perfis
+    where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor')
+  );
+$$;
+
+create or replace function pode_gerenciar_clientes()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (
+    select 1 from perfis
+    where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor','Vendedor')
+  );
+$$;
+
+create or replace function pode_ver_todos_orcamentos()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor'));
+$$;
+
+create or replace function pode_gerenciar_estoque()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor','Estoque'));
+$$;
+
+create or replace function pode_gerenciar_fiscal()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor','Estoque','Financeiro'));
+$$;
+
+-- ================================================================
+-- MÓDULO ESTOQUE — liberar pedido pro faturamento sem pagamento total
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- Quem liberou, quando e por quê. sem_pagamento (já existente) continua
+-- marcando o pedido como pendência de pagamento nas telas que já usam esse
+-- selo (Orçamentos, Estoque, Financeiro).
+alter table orcamentos add column if not exists liberado_sem_pagamento_por uuid references perfis(id);
+alter table orcamentos add column if not exists liberado_sem_pagamento_em timestamptz;
+alter table orcamentos add column if not exists liberado_sem_pagamento_motivo text;
