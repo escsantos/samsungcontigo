@@ -5,7 +5,7 @@ import {
   ShieldAlert, Wallet, Tag, Package, Landmark, TrendingUp, Percent, PiggyBank,
   ClipboardCheck, Truck, ChevronRight, ChevronLeft
 } from "lucide-react";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList } from "recharts";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import CardStat from "../../components/CardStat";
@@ -356,14 +356,15 @@ export default function FinanceiroDashboardPage() {
         <p className="text-sm text-muted">Carregando...</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-5">
-            <CardStat icone={Wallet} cor="#2E6DA8" label="Valor Recebido" valor={fmtBRL(totais.recebido)} />
-            <CardStat icone={Tag} cor="#D6336C" corValor="#D6336C" label="Descontos concedidos" valor={"-" + fmtBRL(totais.desconto)} />
-            <CardStat icone={Package} cor="#9C5A34" label="Custo Total de Peças" valor={fmtBRL(totais.custoPecas)} destaque />
-            <CardStat icone={Landmark} cor="#E1614F" label="Valor do Imposto" valor={fmtBRL(totais.valorImposto)} tooltip="Valor Recebido × % de imposto cadastrado nos pedidos." />
-            <CardStat icone={TrendingUp} cor="#7A4FB0" label="Margem Bruta" valor={fmtBRL(totais.margemBruta)} tooltip="Valor Recebido − (Custo Total de Peças + Valor do Imposto)." />
-            <CardStat icone={Percent} cor="#C2801F" label="Comissão Vendedor" valor={fmtBRL(totais.comissaoVendedor)} tooltip="Valor Recebido × % de comissão cadastrado no perfil de cada vendedor." />
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 mb-5">
+            <CardStat compacto icone={Wallet} cor="#2E6DA8" label="Valor Recebido" valor={fmtBRL(totais.recebido)} />
+            <CardStat compacto icone={Tag} cor="#D6336C" corValor="#D6336C" label="Descontos concedidos" valor={"-" + fmtBRL(totais.desconto)} />
+            <CardStat compacto icone={Package} cor="#9C5A34" label="Custo Total de Peças" valor={fmtBRL(totais.custoPecas)} destaque />
+            <CardStat compacto icone={Landmark} cor="#E1614F" label="Valor do Imposto" valor={fmtBRL(totais.valorImposto)} tooltip="Valor Recebido × % de imposto cadastrado nos pedidos." />
+            <CardStat compacto icone={TrendingUp} cor="#7A4FB0" label="Margem Bruta" valor={fmtBRL(totais.margemBruta)} tooltip="Valor Recebido − (Custo Total de Peças + Valor do Imposto)." />
+            <CardStat compacto icone={Percent} cor="#C2801F" label="Comissão Vendedor" valor={fmtBRL(totais.comissaoVendedor)} tooltip="Valor Recebido × % de comissão cadastrado no perfil de cada vendedor." />
             <CardStat
+              compacto
               icone={PiggyBank}
               cor="#2C7C6E"
               corValor="#2C7C6E"
@@ -377,8 +378,8 @@ export default function FinanceiroDashboardPage() {
             <div className="card p-5 mb-5">
               <p className="font-display font-semibold text-sm mb-4">Recebido x Pago ao fabricante</p>
               <div style={{ filter: "drop-shadow(0 10px 14px rgba(0,0,0,0.14))" }}>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={dadosGrafico} margin={{ left: 0, right: 10, top: 10 }} barGap={6}>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={dadosGrafico} margin={{ left: 0, right: 10, top: 28 }} barGap={6}>
                     <defs>
                       <linearGradient id="gradRecebido" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#5FD0B6" />
@@ -390,12 +391,26 @@ export default function FinanceiroDashboardPage() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
-                    <XAxis dataKey="rotulo" tick={{ fontSize: 11 }} />
+                    <XAxis dataKey="rotulo" tick={{ fontSize: 13, fontWeight: 700 }} />
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={fmtBRLCompacto} width={64} />
                     <Tooltip content={<TooltipGrafico />} cursor={{ fill: "rgba(127,127,127,0.08)" }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="recebido" name="Recebido" fill="url(#gradRecebido)" radius={[6, 6, 0, 0]} maxBarSize={64} />
-                    <Bar dataKey="pago" name="Pago ao fabricante" fill="url(#gradPago)" radius={[6, 6, 0, 0]} maxBarSize={64} />
+                    <Bar dataKey="recebido" name="Recebido" fill="url(#gradRecebido)" radius={[6, 6, 0, 0]} maxBarSize={64}>
+                      <LabelList
+                        dataKey="recebido"
+                        position="top"
+                        formatter={(v) => (v ? fmtBRLCompacto(v) : "")}
+                        style={{ fontSize: 10, fontWeight: 700, fill: "#1F5F52" }}
+                      />
+                    </Bar>
+                    <Bar dataKey="pago" name="Pago ao fabricante" fill="url(#gradPago)" radius={[6, 6, 0, 0]} maxBarSize={64}>
+                      <LabelList
+                        dataKey="pago"
+                        position="top"
+                        formatter={(v) => (v ? fmtBRLCompacto(v) : "")}
+                        style={{ fontSize: 10, fontWeight: 700, fill: "#A83B29" }}
+                      />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
