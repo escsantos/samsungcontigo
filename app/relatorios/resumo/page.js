@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar, Wallet, Package, TrendingUp, Percent, PiggyBank, Info } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar, Wallet, Package, Landmark, TrendingUp, Percent, PiggyBank, Info } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
@@ -304,7 +304,7 @@ export default function RelatorioResumoPage() {
         <p className="text-sm text-muted mb-3">Período: <b>{rotuloPeriodo}</b></p>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
         <CardStat
           icone={Wallet}
           cor="#2E6DA8"
@@ -317,6 +317,13 @@ export default function RelatorioResumoPage() {
           label="Custo Total de Peças"
           valor={fmtBRL(totais.custoPecas)}
           destaque
+        />
+        <CardStat
+          icone={Landmark}
+          cor="#E1614F"
+          label="Valor do Imposto"
+          valor={fmtBRL(totais.valorImposto)}
+          tooltip="Valor Recebido × % de imposto cadastrado no pedido."
         />
         <CardStat
           icone={TrendingUp}
