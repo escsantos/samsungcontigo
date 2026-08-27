@@ -165,13 +165,13 @@ export default function RelatorioCustoPage() {
     return <AppShell titulo="Relatório de Custo"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Relatório de Custo">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só Administrador, Diretor e Gerente veem este relatório.</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente e Supervisor veem este relatório.</p>
         </div>
       </AppShell>
     );

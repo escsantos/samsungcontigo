@@ -84,13 +84,13 @@ export default function EstoquePage() {
     return <AppShell titulo="Estoque"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Estoque"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Estoque">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente e Estoque acessam esta página.</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente, Supervisor e Estoque acessam esta página.</p>
         </div>
       </AppShell>
     );

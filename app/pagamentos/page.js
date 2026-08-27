@@ -199,7 +199,7 @@ export default function PagamentosPage() {
     return <AppShell titulo="Pagamentos"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Vendedor", "Estoque"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Estoque"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Pagamentos">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">

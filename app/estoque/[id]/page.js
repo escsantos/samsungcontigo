@@ -76,13 +76,22 @@ export default function EstoquePedidoPage() {
   const [marcandoDepoisModal, setMarcandoDepoisModal] = useState(false);
   const [motivoDepois, setMotivoDepois] = useState("");
 
+  // liberar pro faturamento sem pagamento total
+  const [modalSemPagamentoAberto, setModalSemPagamentoAberto] = useState(false);
+  const [motivoSemPagamento, setMotivoSemPagamento] = useState("");
+  const [processandoSemPagamento, setProcessandoSemPagamento] = useState(false);
+
   useEffect(() => {
     carregar();
   }, [id]);
 
   async function carregar() {
     setPerfil(await getPerfilAtual());
-    const { data: orc } = await supabase.from("orcamentos").select("*, clientes(id, nome, celular, email), unidades(nome, obriga_nota_fiscal)").eq("id", id).single();
+    const { data: orc } = await supabase
+      .from("orcamentos")
+      .select("*, clientes(id, nome, celular, email), unidades(nome, obriga_nota_fiscal), perfis!orcamentos_liberado_sem_pagamento_por_fkey(nome)")
+      .eq("id", id)
+      .single();
     const unidadeAtiva = getUnidadeAtiva();
     if (orc && unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
       setOrcamento(null);
@@ -113,13 +122,17 @@ export default function EstoquePedidoPage() {
     return <AppShell titulo="Pedido"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Estoque"].includes(perfil.cargo)) {
+  const podeAcessarEstoquePedido =
+    ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil?.cargo) ||
+    (perfil?.cargo === "Vendedor" && !!orcamento && perfil.id === orcamento.vendedor_id);
+
+  if (perfil && !podeAcessarEstoquePedido) {
     return (
       <AppShell titulo="Pedido">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente e Estoque acessam esta página.</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente, Supervisor e Estoque acessam esta página (o Vendedor também acessa quando é o pedido dele).</p>
         </div>
       </AppShell>
     );
@@ -141,6 +154,9 @@ export default function EstoquePedidoPage() {
   const totalPagoGeral = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
   const faltandoGeral = Number(orcamento.valor_total || 0) - totalPagoGeral;
   const aindaSemPagamento = orcamento.sem_pagamento && faltandoGeral > 0.004;
+  const podeLiberarSemPagamento =
+    ["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo) ||
+    (perfil?.cargo === "Vendedor" && perfil?.id === orcamento?.vendedor_id);
   const rotuloSemPagamento = rotuloPagamentoPendente(totalPagoGeral);
   const IconeAtual = ICONES_STATUS[orcamento.status];
   const podeInformarDelivery = ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status);
@@ -354,6 +370,42 @@ export default function EstoquePedidoPage() {
       entidadeId: id,
       descricao: `Faturamento confirmado (já estava pago) no pedido #${orcamento.numero_unidade}: ${fmtBRL(totalPago)}.`
     });
+    carregar();
+  }
+
+  async function liberarSemPagamento() {
+    if (!motivoSemPagamento.trim()) {
+      setErro("Precisa justificar antes de liberar sem pagamento.");
+      return;
+    }
+    setProcessandoSemPagamento(true);
+    setErro("");
+    const totalPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from("orcamentos")
+      .update({
+        status: "Faturamento Efetuado",
+        valor_pago: totalPago,
+        sem_pagamento: true,
+        liberado_sem_pagamento_por: user.id,
+        liberado_sem_pagamento_em: new Date().toISOString(),
+        liberado_sem_pagamento_motivo: motivoSemPagamento.trim()
+      })
+      .eq("id", id);
+    setProcessandoSemPagamento(false);
+    if (error) {
+      setErro("Falha ao liberar sem pagamento: " + error.message);
+      return;
+    }
+    await registrarAuditoria({
+      tipoEvento: "status",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Pedido #${orcamento.numero_unidade} liberado para faturamento SEM pagamento total (pago até agora: ${fmtBRL(totalPago)} de ${fmtBRL(orcamento.valor_total)}). Motivo: ${motivoSemPagamento.trim()}.`
+    });
+    setModalSemPagamentoAberto(false);
+    setMotivoSemPagamento("");
     carregar();
   }
 
@@ -811,23 +863,75 @@ export default function EstoquePedidoPage() {
                   )}
                 </p>
               </div>
-              <button className="btn-primary" onClick={faltando <= 0.004 ? confirmarFaturamentoJaPago : () => setPagamentoModalAberto(true)} disabled={processandoPagamento}>
-                {faltando <= 0.004 ? (
-                  <>
-                    <Check size={15} />
-                    {processandoPagamento ? "Confirmando..." : "Confirmar Faturamento (já pago)"}
-                  </>
-                ) : (
-                  <>
-                    <Plus size={15} />
-                    Inserir Pagamento
-                  </>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                {faltando > 0.004 && podeLiberarSemPagamento && (
+                  <button
+                    className="btn-secondary"
+                    style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                    onClick={() => setModalSemPagamentoAberto(true)}
+                    disabled={processandoSemPagamento}
+                  >
+                    <AlertTriangle size={15} />
+                    Liberar sem pagamento
+                  </button>
                 )}
-              </button>
+                <button className="btn-primary" onClick={faltando <= 0.004 ? confirmarFaturamentoJaPago : () => setPagamentoModalAberto(true)} disabled={processandoPagamento}>
+                  {faltando <= 0.004 ? (
+                    <>
+                      <Check size={15} />
+                      {processandoPagamento ? "Confirmando..." : "Confirmar Faturamento (já pago)"}
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={15} />
+                      Inserir Pagamento
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         );
       })()}
+
+      <Modal
+        open={modalSemPagamentoAberto}
+        onClose={() => { setModalSemPagamentoAberto(false); setMotivoSemPagamento(""); }}
+        title="Liberar sem pagamento total"
+        tamanho="md"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-2 p-3 rounded-lg" style={{ background: "var(--danger-soft, #FDECEC)" }}>
+            <AlertTriangle size={16} className="text-danger shrink-0 mt-0.5" />
+            <p className="text-xs text-ink">
+              Este pedido será liberado para faturamento mesmo sem o pagamento total confirmado. Essa ação fica registrada na linha do tempo com seu login e o motivo informado abaixo.
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-muted block mb-1.5">Justificativa (obrigatória)</label>
+            <textarea
+              className="input"
+              rows={3}
+              value={motivoSemPagamento}
+              onChange={(e) => setMotivoSemPagamento(e.target.value)}
+              placeholder="Explique o motivo da liberação sem pagamento total..."
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="btn-secondary" onClick={() => { setModalSemPagamentoAberto(false); setMotivoSemPagamento(""); }}>
+              Cancelar
+            </button>
+            <button
+              className="btn-primary"
+              onClick={liberarSemPagamento}
+              disabled={processandoSemPagamento || !motivoSemPagamento.trim()}
+            >
+              <Check size={15} />
+              {processandoSemPagamento ? "Liberando..." : "Confirmar liberação"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={pagamentoModalAberto}

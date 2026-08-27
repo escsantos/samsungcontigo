@@ -71,7 +71,7 @@ export default function EditarClientePage() {
     return <AppShell titulo="Cliente"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Cliente">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">

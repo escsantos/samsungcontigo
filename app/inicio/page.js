@@ -25,7 +25,7 @@ const CARDS = [
     icone: LayoutDashboard,
     cor: "#3FA796",
     descricao: "Cards, gráficos e ranking de vendas por período.",
-    cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"]
   },
   {
     href: "/clientes",
@@ -33,7 +33,7 @@ const CARDS = [
     icone: Contact,
     cor: "#8B5CF6",
     descricao: "Cadastre e gerencie os clientes da loja.",
-    cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"]
   },
   {
     href: "/orcamentos",
@@ -41,7 +41,7 @@ const CARDS = [
     icone: ClipboardList,
     cor: "#3FA796",
     descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.",
-    cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Cliente"]
   },
   {
     href: "/carrinho",
@@ -49,7 +49,7 @@ const CARDS = [
     icone: ShoppingCart,
     cor: "#E8A33D",
     descricao: "Veja os itens já separados antes de confirmar um pedido.",
-    cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Cliente"]
   },
   {
     href: "/estoque",
@@ -57,7 +57,7 @@ const CARDS = [
     icone: Warehouse,
     cor: "#2E7F97",
     descricao: "Acompanhe a linha do tempo dos pedidos e libere peças por Delivery.",
-    cargos: ["Administrador", "Diretor", "Gerente", "Estoque"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"]
   },
   {
     href: "/notificacoes",
@@ -65,7 +65,7 @@ const CARDS = [
     icone: Bell,
     cor: "#E1614F",
     descricao: "Avisos do sistema, como solicitações de redefinição de senha.",
-    cargos: ["Administrador", "Diretor", "Gerente"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor"]
   },
   {
     href: "/configuracoes/carregar-bases",
@@ -89,7 +89,7 @@ const CARDS = [
     icone: Users,
     cor: "#7A4FB0",
     descricao: "Crie logins, defina cargos e controle o acesso ao sistema.",
-    cargos: ["Administrador", "Diretor", "Gerente"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor"]
   },
   {
     href: "/estoque/relatorio",
@@ -97,7 +97,7 @@ const CARDS = [
     icone: FileBarChart,
     cor: "#4338CA",
     descricao: "Custo real, imposto e lucro líquido das peças já liberadas.",
-    cargos: ["Administrador", "Diretor", "Gerente"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor"]
   },
   {
     href: "/fiscal",

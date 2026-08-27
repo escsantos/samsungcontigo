@@ -172,7 +172,7 @@ export default function ConsultaPecasPage() {
     setTimeout(() => setItemAdicionado(null), 1200);
   }
 
-  const staffPodeEscolherCliente = ["Administrador", "Diretor", "Gerente", "Vendedor"].includes(perfil?.cargo);
+  const staffPodeEscolherCliente = ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo);
   const podeComprar = staffPodeEscolherCliente || perfil?.cargo === "Cliente";
   const carrinhoPronto = podeComprar && !!carrinho?.clienteId;
 

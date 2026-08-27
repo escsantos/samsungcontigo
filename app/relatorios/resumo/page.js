@@ -203,7 +203,7 @@ export default function RelatorioResumoPage() {
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente e Vendedor veem este relatório.</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente, Supervisor e Vendedor veem este relatório.</p>
         </div>
       </AppShell>
     );

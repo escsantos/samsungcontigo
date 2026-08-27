@@ -32,10 +32,10 @@ export const GRUPOS_MENU = [
     icone: Briefcase,
     href: "/menu/vendas",
     itens: [
-      { href: "/dashboard", label: "Dashboard de Vendas", icone: LayoutDashboard, cor: "#3FA796", descricao: "Cards, gráficos e ranking de vendas por período.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
-      { href: "/clientes", label: "Clientes", icone: Contact, cor: "#8B5CF6", descricao: "Cadastre e gerencie os clientes da loja.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor"] },
-      { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cor: "#4A90D9", descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"] },
-      { href: "/pagamentos", label: "Pagamentos", icone: Receipt, cor: "#E1614F", descricao: "Busque um pedido pelo número e registre ou ajuste o pagamento.", cargos: ["Administrador", "Diretor", "Gerente", "Vendedor", "Estoque"] }
+      { href: "/dashboard", label: "Dashboard de Vendas", icone: LayoutDashboard, cor: "#3FA796", descricao: "Cards, gráficos e ranking de vendas por período.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"] },
+      { href: "/clientes", label: "Clientes", icone: Contact, cor: "#8B5CF6", descricao: "Cadastre e gerencie os clientes da loja.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"] },
+      { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cor: "#4A90D9", descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Cliente"] },
+      { href: "/pagamentos", label: "Pagamentos", icone: Receipt, cor: "#E1614F", descricao: "Busque um pedido pelo número e registre ou ajuste o pagamento.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Estoque"] }
     ]
   },
   {
@@ -44,9 +44,9 @@ export const GRUPOS_MENU = [
     icone: Warehouse,
     href: "/menu/estoque",
     itens: [
-      { href: "/estoque", label: "Painel de Estoque", icone: Warehouse, cor: "#2E7F97", descricao: "Acompanhe a linha do tempo dos pedidos e libere peças por Delivery.", cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
-      { href: "/estoque/pedidos", label: "Relatório de Pedidos", icone: ClipboardList, cor: "#7A4FB0", descricao: "Todos os pedidos com filtros completos, exporta para Excel.", cargos: ["Administrador", "Diretor", "Gerente", "Estoque"] },
-      { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cor: "#4338CA", descricao: "Custo real, imposto e lucro líquido das peças já liberadas.", cargos: ["Administrador", "Diretor", "Gerente"] }
+      { href: "/estoque", label: "Painel de Estoque", icone: Warehouse, cor: "#2E7F97", descricao: "Acompanhe a linha do tempo dos pedidos e libere peças por Delivery.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"] },
+      { href: "/estoque/pedidos", label: "Relatório de Pedidos", icone: ClipboardList, cor: "#7A4FB0", descricao: "Todos os pedidos com filtros completos, exporta para Excel.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"] },
+      { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cor: "#4338CA", descricao: "Custo real, imposto e lucro líquido das peças já liberadas.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor"] }
     ]
   },
   {
@@ -85,13 +85,13 @@ export const GRUPOS_MENU = [
     icone: Settings,
     href: "/configuracoes",
     itens: [
-      { href: "/notificacoes", label: "Notificações", icone: Bell, cor: "#E1614F", descricao: "Avisos do sistema, como solicitações de redefinição de senha.", cargos: ["Administrador", "Diretor", "Gerente"] },
+      { href: "/notificacoes", label: "Notificações", icone: Bell, cor: "#E1614F", descricao: "Avisos do sistema, como solicitações de redefinição de senha.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor"] },
       { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cor: "#2E6DA8", descricao: "Suba as planilhas de peças e ordens de serviço para atualizar a base.", cargos: ["Administrador"] },
       { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cor: "#C2801F", descricao: "Cadastre os impostos usados no cálculo do preço de venda.", cargos: ["Administrador"] },
-      { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cor: "#7A4FB0", descricao: "Crie logins, defina cargos e controle o acesso ao sistema.", cargos: ["Administrador", "Diretor", "Gerente"] },
+      { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cor: "#7A4FB0", descricao: "Crie logins, defina cargos e controle o acesso ao sistema.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor"] },
       { href: "/configuracoes/unidades", label: "Unidades", icone: Building2, cor: "#2C7C6E", descricao: "Cadastre as unidades do grupo e o ASC COD. de cada uma.", cargos: ["Administrador"] },
       { href: "/configuracoes/manutencao", label: "Manutenção", icone: Database, cor: "#E1614F", descricao: "Contagem de registros, backup manual e limpeza de orçamentos por unidade.", cargos: ["Administrador"] },
-      { href: "/configuracoes/auditoria", label: "Auditoria", icone: ScrollText, cor: "#2E6DA8", descricao: "Login/logout, alterações de usuário e movimentações do sistema.", cargos: ["Administrador", "Diretor", "Gerente"] }
+      { href: "/configuracoes/auditoria", label: "Auditoria", icone: ScrollText, cor: "#2E6DA8", descricao: "Login/logout, alterações de usuário e movimentações do sistema.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor"] }
     ]
   }
 ];
@@ -219,7 +219,7 @@ export default function AppShell({ titulo, children }) {
     return <div className="h-screen flex items-center justify-center bg-canvas text-muted text-sm">Carregando...</div>;
   }
 
-  const podeComprar = ["Administrador", "Diretor", "Gerente", "Vendedor", "Cliente"].includes(perfil?.cargo);
+  const podeComprar = ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Cliente"].includes(perfil?.cargo);
 
   return (
     <div className="h-screen flex bg-canvas">
@@ -341,7 +341,7 @@ export default function AppShell({ titulo, children }) {
             >
               <Menu size={17} />
             </button>
-            <SininhoNotificacoes visivel={["Administrador", "Diretor", "Gerente"].includes(perfil?.cargo)} />
+            <SininhoNotificacoes visivel={["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo)} />
             <h1 className="font-display font-semibold text-[15px] text-ink truncate">{titulo}</h1>
             {unidadeAtiva && (
               <button
