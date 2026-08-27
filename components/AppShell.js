@@ -348,16 +348,18 @@ export default function AppShell({ titulo, children }) {
               <button
                 onClick={() => unidadesDoUsuario.length > 1 && router.push("/selecionar-unidade?trocar=1")}
                 title={unidadesDoUsuario.length > 1 ? "Clique pra trocar de unidade" : unidadeAtiva.nome}
-                className="hidden sm:flex items-center gap-1.5 text-[10.5px] font-mono font-bold px-2.5 py-1 rounded-full shrink-0"
+                className="hidden sm:flex items-center gap-2 font-display font-bold uppercase text-sm md:text-base px-3.5 py-1.5 rounded-xl shrink-0 tracking-wide"
                 style={{
-                  background: "var(--accent-soft)",
-                  color: "var(--accent)",
+                  background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 100%, white 12%) 0%, var(--accent) 55%, color-mix(in srgb, var(--accent) 100%, black 25%) 100%)",
+                  color: "#fff",
+                  textShadow: "0 1px 2px rgba(0,0,0,0.4)",
+                  boxShadow: "0 4px 10px rgba(0,0,0,0.25), 0 1px 0 rgba(255,255,255,0.35) inset, 0 -2px 3px rgba(0,0,0,0.18) inset",
                   cursor: unidadesDoUsuario.length > 1 ? "pointer" : "default"
                 }}
               >
-                <Building2 size={11} />
+                <Building2 size={16} className="shrink-0" style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.35))" }} />
                 {unidadeAtiva.nome}
-                {unidadesDoUsuario.length > 1 && <ChevronDown size={10} />}
+                {unidadesDoUsuario.length > 1 && <ChevronDown size={14} className="shrink-0" />}
               </button>
             )}
           </div>
