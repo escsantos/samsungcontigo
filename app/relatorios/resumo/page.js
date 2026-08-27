@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar, Wallet, Package, Landmark, TrendingUp, Percent, PiggyBank, Info } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar, Wallet, Package, Landmark, TrendingUp, Percent, PiggyBank } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
+import CardStat from "../../../components/CardStat";
 import { getUnidadeAtiva } from "../../../lib/unidade";
 import {
   CARGOS_RELATORIOS,
@@ -39,33 +40,6 @@ const NOMES_MES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
-
-function CardStat({ icone: Icone, cor, label, valor, corValor, tooltip, destaque }) {
-  return (
-    <div
-      className="card p-4 relative"
-      style={destaque ? { borderColor: cor, boxShadow: `0 0 0 1.5px ${cor}` } : undefined}
-    >
-      <div className="flex items-center gap-2 mb-1.5">
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${cor}1F`, color: cor }}>
-          <Icone size={15} />
-        </div>
-        <p className="text-xs text-muted flex items-center gap-1 leading-tight">
-          {label}
-          {tooltip && (
-            <span className="group relative inline-flex items-center">
-              <Info size={12} className="cursor-help" />
-              <span className="pointer-events-none absolute z-10 left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-56 rounded-lg text-white text-[11px] leading-snug px-2.5 py-2 shadow-lg" style={{ background: "#1F2430" }}>
-                {tooltip}
-              </span>
-            </span>
-          )}
-        </p>
-      </div>
-      <p className="font-mono font-bold text-lg" style={corValor ? { color: corValor } : undefined}>{valor}</p>
-    </div>
-  );
-}
 
 export default function RelatorioResumoPage() {
   const [perfil, setPerfil] = useState(undefined);
