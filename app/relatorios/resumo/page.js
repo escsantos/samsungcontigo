@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar, Wallet, Package, TrendingUp, Percent, PiggyBank, Info } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
@@ -39,6 +39,33 @@ const NOMES_MES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
+
+function CardStat({ icone: Icone, cor, label, valor, corValor, tooltip, destaque }) {
+  return (
+    <div
+      className="card p-4 relative"
+      style={destaque ? { borderColor: cor, boxShadow: `0 0 0 1.5px ${cor}` } : undefined}
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${cor}1F`, color: cor }}>
+          <Icone size={15} />
+        </div>
+        <p className="text-xs text-muted flex items-center gap-1 leading-tight">
+          {label}
+          {tooltip && (
+            <span className="group relative inline-flex items-center">
+              <Info size={12} className="cursor-help" />
+              <span className="pointer-events-none absolute z-10 left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-56 rounded-lg text-white text-[11px] leading-snug px-2.5 py-2 shadow-lg" style={{ background: "#1F2430" }}>
+                {tooltip}
+              </span>
+            </span>
+          )}
+        </p>
+      </div>
+      <p className="font-mono font-bold text-lg" style={corValor ? { color: corValor } : undefined}>{valor}</p>
+    </div>
+  );
+}
 
 export default function RelatorioResumoPage() {
   const [perfil, setPerfil] = useState(undefined);
@@ -179,7 +206,7 @@ export default function RelatorioResumoPage() {
       "Data de entrega": fmtData(l.entregue_em),
       "Custo das Peças (R$)": Number(l.custoPecas.toFixed(2)),
       "Valor do Imposto (R$)": Number(l.valorImposto.toFixed(2)),
-      "Valor Pago (R$)": Number(l.valorPago.toFixed(2)),
+      "Valor Recebido (R$)": Number(l.valorPago.toFixed(2)),
       "Margem Bruta (R$)": Number(l.margemBruta.toFixed(2)),
       "Comissão Vendedor (R$)": Number(l.comissaoVendedor.toFixed(2)),
       "Margem Líquida (R$)": Number(l.margemLiquida.toFixed(2)),
@@ -277,23 +304,42 @@ export default function RelatorioResumoPage() {
         <p className="text-sm text-muted mb-3">Período: <b>{rotuloPeriodo}</b></p>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <div className="card p-4">
-          <p className="text-xs text-muted mb-1">Valor pago</p>
-          <p className="font-mono font-bold text-lg">{fmtBRL(totais.valorPago)}</p>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs text-muted mb-1">Margem bruta</p>
-          <p className="font-mono font-bold text-lg">{fmtBRL(totais.margemBruta)}</p>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs text-muted mb-1">Comissão vendedor</p>
-          <p className="font-mono font-bold text-lg">{fmtBRL(totais.comissaoVendedor)}</p>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs text-muted mb-1">Margem líquida ({fmtPct(totalLucroLiquidoPct)})</p>
-          <p className="font-mono font-bold text-lg" style={{ color: "#2C7C6E" }}>{fmtBRL(totais.margemLiquida)}</p>
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+        <CardStat
+          icone={Wallet}
+          cor="#2E6DA8"
+          label="Valor Recebido"
+          valor={fmtBRL(totais.valorPago)}
+        />
+        <CardStat
+          icone={Package}
+          cor="#9C5A34"
+          label="Custo Total de Peças"
+          valor={fmtBRL(totais.custoPecas)}
+          destaque
+        />
+        <CardStat
+          icone={TrendingUp}
+          cor="#7A4FB0"
+          label="Margem Bruta"
+          valor={fmtBRL(totais.margemBruta)}
+          tooltip="Valor Recebido − (Custo Total de Peças + Valor do Imposto)."
+        />
+        <CardStat
+          icone={Percent}
+          cor="#C2801F"
+          label="Comissão Vendedor"
+          valor={fmtBRL(totais.comissaoVendedor)}
+          tooltip="Valor Recebido × % de comissão cadastrado no perfil do vendedor."
+        />
+        <CardStat
+          icone={PiggyBank}
+          cor="#2C7C6E"
+          corValor="#2C7C6E"
+          label={`Margem Líquida (${fmtPct(totalLucroLiquidoPct)})`}
+          valor={fmtBRL(totais.margemLiquida)}
+          tooltip="Margem Bruta − Comissão do Vendedor. O percentual é a margem líquida sobre o Valor Recebido."
+        />
       </div>
 
       <div className="card overflow-hidden">
@@ -312,7 +358,7 @@ export default function RelatorioResumoPage() {
                   {podeEscolherVendedor && <th className="text-left px-3 py-2.5 whitespace-nowrap">Vendedor</th>}
                   <th className="text-right px-3 py-2.5 whitespace-nowrap">Custo das Peças</th>
                   <th className="text-right px-3 py-2.5 whitespace-nowrap">Valor do Imposto</th>
-                  <th className="text-right px-3 py-2.5 whitespace-nowrap">Valor Pago</th>
+                  <th className="text-right px-3 py-2.5 whitespace-nowrap">Valor Recebido</th>
                   <th className="text-right px-3 py-2.5 whitespace-nowrap">Margem Bruta</th>
                   <th className="text-right px-3 py-2.5 whitespace-nowrap">Comissão Vendedor</th>
                   <th className="text-right px-3 py-2.5 whitespace-nowrap">Margem Líquida</th>
