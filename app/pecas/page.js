@@ -62,6 +62,7 @@ export default function ConsultaPecasPage() {
   const [itemAdicionado, setItemAdicionado] = useState(null);
   const [tooltipDesc, setTooltipDesc] = useState(null); // { texto, top, left }
   const [unidadeAtiva] = useState(() => getUnidadeAtiva());
+  const [idsVendedoresUnidade, setIdsVendedoresUnidade] = useState(null); // null = ainda não carregou
   const carrinho = useCarrinho();
 
   useEffect(() => {
@@ -75,17 +76,34 @@ export default function ConsultaPecasPage() {
     }
   }, [perfil, carrinho]);
 
+  // Só clientes da unidade ativa (vinculados a um vendedor da mesma unidade,
+  // ou sem vendedor ainda) — mesma regra da tela de Clientes.
   useEffect(() => {
     if (!seletorClienteAberto) return;
+    (async () => {
+      if (!unidadeAtiva) { setIdsVendedoresUnidade([]); return; }
+      const { data: vinculos } = await supabase.from("perfis_unidades").select("perfil_id").eq("unidade_id", unidadeAtiva.id);
+      setIdsVendedoresUnidade((vinculos || []).map((v) => v.perfil_id));
+    })();
+  }, [seletorClienteAberto, unidadeAtiva]);
+
+  useEffect(() => {
+    if (!seletorClienteAberto) return;
+    if (idsVendedoresUnidade === null) return;
     const t = setTimeout(async () => {
       const termoBusca = normKey(buscaCliente);
       let query = supabase.from("clientes").select("id, nome, nome_fantasia").eq("status", "Ativo").order("nome").limit(20);
       if (termoBusca) query = query.ilike("nome", `%${buscaCliente}%`);
+      if (idsVendedoresUnidade.length > 0) {
+        query = query.or(`vendedor_id.is.null,vendedor_id.in.(${idsVendedoresUnidade.join(",")})`);
+      } else {
+        query = query.is("vendedor_id", null);
+      }
       const { data } = await query;
       setClientesEncontrados(data || []);
     }, 250);
     return () => clearTimeout(t);
-  }, [buscaCliente, seletorClienteAberto]);
+  }, [buscaCliente, seletorClienteAberto, idsVendedoresUnidade]);
 
   useEffect(() => {
     (async () => {

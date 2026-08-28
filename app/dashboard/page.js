@@ -107,7 +107,17 @@ export default function DashboardPage() {
 
     let queryCli = supabase.from("clientes").select("*", { count: "exact", head: true });
     if (intervalo) queryCli = queryCli.gte("criado_em", intervalo.de.toISOString()).lte("criado_em", intervalo.ate.toISOString());
-    if (vendedorAlvo) queryCli = queryCli.eq("vendedor_id", vendedorAlvo);
+    if (vendedorAlvo) {
+      queryCli = queryCli.eq("vendedor_id", vendedorAlvo);
+    } else if (unidadeAtiva) {
+      // sem vendedor específico escolhido: conta só clientes da unidade ativa
+      // (vinculados a um vendedor dessa unidade, ou ainda sem vendedor).
+      const { data: vinculos } = await supabase.from("perfis_unidades").select("perfil_id").eq("unidade_id", unidadeAtiva.id);
+      const idsDaUnidade = (vinculos || []).map((v) => v.perfil_id);
+      queryCli = idsDaUnidade.length > 0
+        ? queryCli.or(`vendedor_id.is.null,vendedor_id.in.(${idsDaUnidade.join(",")})`)
+        : queryCli.is("vendedor_id", null);
+    }
     const { count } = await queryCli;
     setClientesNovos(count || 0);
 
