@@ -143,10 +143,8 @@ export default function DashboardPage() {
   const contagemStatus = {};
   ORDEM_STATUS.forEach((s) => (contagemStatus[s] = 0));
   contagemStatus["Rejeitado"] = 0;
-  contagemStatus["Entregue"] = 0;
   orcamentos.forEach((o) => {
-    if (o.status === "Liberado para Retirada/Entrega" && o.entregue) contagemStatus["Entregue"]++;
-    else if (contagemStatus[o.status] !== undefined) contagemStatus[o.status]++;
+    if (contagemStatus[o.status] !== undefined) contagemStatus[o.status]++;
   });
 
   const evolucao = useMemo(() => {
@@ -267,9 +265,9 @@ export default function DashboardPage() {
           <div className="card p-4 mb-5 overflow-x-auto">
             <p className="text-xs text-muted mb-3 font-medium">Pedidos por status</p>
             <div className="flex gap-2 min-w-[780px]">
-              {[...ORDEM_STATUS, "Entregue", "Rejeitado"].map((s) => {
-                const cor = s === "Entregue" ? { bg: "rgba(44,124,110,0.16)", fg: "#2C7C6E" } : CORES_STATUS[s];
-                const Icone = s === "Entregue" ? PackageOpen : ICONES_STATUS[s];
+              {[...ORDEM_STATUS, "Rejeitado"].map((s) => {
+                const cor = CORES_STATUS[s];
+                const Icone = ICONES_STATUS[s];
                 return (
                   <div key={s} className="flex-1 rounded-lg p-2.5 text-center" style={{ background: cor.bg, color: cor.fg }}>
                     <div className="flex items-center justify-center gap-1">
