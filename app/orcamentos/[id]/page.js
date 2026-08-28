@@ -37,6 +37,11 @@ export default function DetalheOrcamentoPage() {
   const [foraDaUnidade, setForaDaUnidade] = useState(false);
   const [cancelandoPedido, setCancelandoPedido] = useState(false);
 
+  // OS Interna — nº da ordem de serviço do sistema interno da loja
+  const [editandoOS, setEditandoOS] = useState(false);
+  const [osInternaEdit, setOsInternaEdit] = useState("");
+  const [processandoOS, setProcessandoOS] = useState(false);
+
   const [buscaAberta, setBuscaAberta] = useState(false);
   const [termoBusca, setTermoBusca] = useState("");
   const [resultadosBusca, setResultadosBusca] = useState([]);
@@ -80,6 +85,22 @@ export default function DetalheOrcamentoPage() {
       const faltando = Number(orc.valor_total || 0) - totalPago;
       setValorPagamento(faltando > 0 ? faltando.toFixed(2) : "");
     }
+  }
+
+  async function salvarOsInterna() {
+    setProcessandoOS(true);
+    const valor = osInternaEdit.trim() || null;
+    const { error } = await supabase.from("orcamentos").update({ os_interna: valor }).eq("id", id);
+    setProcessandoOS(false);
+    if (error) { setErro("Falha ao salvar a OS Interna: " + error.message); return; }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `OS Interna do pedido #${orcamento.numero_unidade} definida como "${valor || "—"}".`
+    });
+    setEditandoOS(false);
+    carregar();
   }
 
   const subtotalItens = itens.reduce((s, i) => s + Number(i.venda_total || 0), 0);
@@ -462,6 +483,41 @@ export default function DetalheOrcamentoPage() {
             {orcamento.status}
           </span>
         </div>
+        {perfil?.cargo !== "Cliente" && (
+          <div className="flex items-center gap-2 mt-3">
+            <p className="text-xs text-muted">OS Interna:</p>
+            {editandoOS ? (
+              <>
+                <input
+                  className="field-input py-1 px-2 text-xs font-mono w-32"
+                  placeholder="nº da OS"
+                  value={osInternaEdit}
+                  onChange={(e) => setOsInternaEdit(e.target.value)}
+                  autoFocus
+                />
+                <button className="text-muted hover:text-ink" disabled={processandoOS} onClick={salvarOsInterna}>
+                  <Save size={13} />
+                </button>
+                <button className="text-muted hover:text-danger" onClick={() => setEditandoOS(false)}>
+                  <X size={13} />
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="font-mono text-xs font-semibold">{orcamento.os_interna || "—"}</span>
+                {["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo) && (
+                  <button
+                    className="text-muted hover:text-ink"
+                    onClick={() => { setOsInternaEdit(orcamento.os_interna || ""); setEditandoOS(true); }}
+                    title="Editar OS Interna"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
         {orcamento.sem_pagamento && (
           <div
             className="mt-4 rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-2"

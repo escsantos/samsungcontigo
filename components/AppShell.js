@@ -5,19 +5,25 @@ import Link from "next/link";
 import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
   ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
-  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2, BarChart3, HandCoins
+  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2, BarChart3, HandCoins, PackageOpen
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
 import { registrarAuditoria } from "../lib/auditoria";
-import { CARGOS_FISCAL, STATUS_LIBERADO } from "../lib/fiscal";
+import { CARGOS_FISCAL, STATUS_POS_LIBERACAO, STATUS_LIBERADO } from "../lib/fiscal";
 import { CARGOS_RELATORIOS } from "../lib/relatorios";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
 import Avatar from "./Avatar";
 import SininhoNotificacoes from "./SininhoNotificacoes";
 import IndicadorOnline from "./IndicadorOnline";
+import Modal from "./Modal";
 import { useCarrinho } from "../contexts/CarrinhoContext";
+
+function fmtBRLAppShell(v) {
+  if (v === null || v === undefined || isNaN(v)) return "—";
+  return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 // Itens soltos, sempre no topo do menu (sem agrupar)
 const ITENS_TOPO = [
@@ -107,6 +113,8 @@ export default function AppShell({ titulo, children }) {
   const [unidadeAtiva, setUnidadeAtivaState] = useState(null);
   const [unidadesDoUsuario, setUnidadesDoUsuario] = useState([]);
   const [alertasFiscais, setAlertasFiscais] = useState(0);
+  const [avisosRetirada, setAvisosRetirada] = useState([]);
+  const [processandoAvisoRetirada, setProcessandoAvisoRetirada] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const heartbeatRef = useRef(null);
@@ -160,6 +168,9 @@ export default function AppShell({ titulo, children }) {
       if (ativa && CARGOS_FISCAL.includes(p?.cargo)) {
         carregarAlertasFiscais(ativa.id);
       }
+      if (ativa && p?.cargo === "Cliente" && p?.cliente_id) {
+        carregarAvisosRetirada(ativa.id, p.cliente_id);
+      }
 
       async function marcarPresenca() {
         const { error } = await supabase
@@ -195,12 +206,42 @@ export default function AppShell({ titulo, children }) {
         .from("orcamentos")
         .select("id", { count: "exact", head: true })
         .eq("unidade_id", unidadeId)
-        .eq("status", STATUS_LIBERADO)
+        .in("status", STATUS_POS_LIBERACAO)
         .is("nota_fiscal_numero", null);
       setAlertasFiscais(count || 0);
     } catch (e) {
       console.error("[alertas fiscais] falha ao carregar:", e);
     }
+  }
+
+  // Pop-up no próximo acesso do cliente: pedidos liberados pra retirada que
+  // ele ainda não confirmou ter visto.
+  async function carregarAvisosRetirada(unidadeId, clienteId) {
+    try {
+      const { data } = await supabase
+        .from("orcamentos")
+        .select("id, numero_unidade, valor_total")
+        .eq("unidade_id", unidadeId)
+        .eq("cliente_id", clienteId)
+        .eq("status", STATUS_LIBERADO)
+        .eq("entregue", false)
+        .eq("aviso_retirada_visto", false)
+        .order("criado_em");
+      setAvisosRetirada(data || []);
+    } catch (e) {
+      console.error("[avisos de retirada] falha ao carregar:", e);
+    }
+  }
+
+  async function fecharAvisosRetirada() {
+    if (avisosRetirada.length === 0) return;
+    setProcessandoAvisoRetirada(true);
+    await supabase
+      .from("orcamentos")
+      .update({ aviso_retirada_visto: true })
+      .in("id", avisosRetirada.map((o) => o.id));
+    setProcessandoAvisoRetirada(false);
+    setAvisosRetirada([]);
   }
 
   async function sair() {
@@ -395,6 +436,34 @@ export default function AppShell({ titulo, children }) {
         </header>
         <main className="flex-1 overflow-auto p-3 md:p-6">{children}</main>
       </div>
+
+      <Modal
+        open={avisosRetirada.length > 0}
+        onClose={fecharAvisosRetirada}
+        title="Seu pedido está pronto!"
+        footer={
+          <button className="btn-primary" disabled={processandoAvisoRetirada} onClick={fecharAvisosRetirada}>
+            Ok, entendi
+          </button>
+        }
+      >
+        <p className="text-sm text-muted mb-3">
+          {avisosRetirada.length === 1
+            ? "Você tem 1 pedido liberado, pronto para retirada:"
+            : `Você tem ${avisosRetirada.length} pedidos liberados, prontos para retirada:`}
+        </p>
+        <div className="space-y-2">
+          {avisosRetirada.map((o) => (
+            <div key={o.id} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2" style={{ background: "rgba(63,167,150,0.10)" }}>
+              <span className="flex items-center gap-2 text-sm font-medium" style={{ color: "#2C7C6E" }}>
+                <PackageOpen size={15} />
+                Pedido #{o.numero_unidade}
+              </span>
+              <span className="font-mono text-xs text-muted">{fmtBRLAppShell(o.valor_total)}</span>
+            </div>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 }

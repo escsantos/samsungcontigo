@@ -55,6 +55,17 @@ function EstoquePedidoPageInner() {
   const [buscandoItem, setBuscandoItem] = useState({});
   const [erroItem, setErroItem] = useState({});
 
+  // quando a peça tem mais de 1 unidade: perguntar se a delivery é a mesma
+  // pra todas, ou dividir o item em deliveries diferentes por quantidade
+  const [escolhaDivisao, setEscolhaDivisao] = useState({}); // { [itemId]: "mesma" | "diferentes" }
+  const [linhasDivisao, setLinhasDivisao] = useState({}); // { [itemId]: [{qtd, delivery, validado, custoUnitario, buscando, erro}] }
+  const [processandoDivisao, setProcessandoDivisao] = useState({});
+
+  // OS Interna — nº da ordem de serviço do sistema interno da loja
+  const [editandoOS, setEditandoOS] = useState(false);
+  const [osInternaEdit, setOsInternaEdit] = useState("");
+  const [processandoOS, setProcessandoOS] = useState(false);
+
   // etapa "Em Estoque - Aguardando Faturamento"
   const [pagamentos, setPagamentos] = useState([]);
   const [formaPagamento, setFormaPagamento] = useState(FORMAS_PAGAMENTO[0]);
@@ -256,6 +267,179 @@ function EstoquePedidoPageInner() {
     if (itensAtualizados.every((i) => i.liberado)) {
       setConfirmarAvanco({ de: orcamento.status, para: "Em Estoque - Aguardando Faturamento" });
     }
+  }
+
+  // ---------- delivery diferente por unidade (peça com qtd > 1) ----------
+
+  function escolherMesmaDelivery(item) {
+    setEscolhaDivisao((a) => ({ ...a, [item.id]: "mesma" }));
+  }
+
+  function iniciarDivisaoDelivery(item) {
+    setEscolhaDivisao((a) => ({ ...a, [item.id]: "diferentes" }));
+    setLinhasDivisao((a) => ({
+      ...a,
+      [item.id]: [
+        { qtd: 1, delivery: "", validado: false, custoUnitario: null, buscando: false, erro: "" },
+        { qtd: item.qtd - 1, delivery: "", validado: false, custoUnitario: null, buscando: false, erro: "" }
+      ]
+    }));
+  }
+
+  function cancelarDivisaoDelivery(itemId) {
+    setEscolhaDivisao((a) => {
+      const copia = { ...a };
+      delete copia[itemId];
+      return copia;
+    });
+    setLinhasDivisao((a) => {
+      const copia = { ...a };
+      delete copia[itemId];
+      return copia;
+    });
+  }
+
+  function adicionarLinhaDivisao(itemId) {
+    setLinhasDivisao((a) => ({
+      ...a,
+      [itemId]: [...(a[itemId] || []), { qtd: 1, delivery: "", validado: false, custoUnitario: null, buscando: false, erro: "" }]
+    }));
+  }
+
+  function removerLinhaDivisao(itemId, idx) {
+    setLinhasDivisao((a) => ({ ...a, [itemId]: (a[itemId] || []).filter((_, i) => i !== idx) }));
+  }
+
+  function mudarLinhaDivisao(itemId, idx, campo, valor) {
+    setLinhasDivisao((a) => ({
+      ...a,
+      [itemId]: (a[itemId] || []).map((l, i) => (i === idx ? { ...l, [campo]: valor, validado: false, custoUnitario: null, erro: "" } : l))
+    }));
+  }
+
+  async function buscarLinhaDivisao(item, idx) {
+    const linha = (linhasDivisao[item.id] || [])[idx];
+    const valor = (linha?.delivery || "").trim();
+    if (!valor) return;
+    setLinhasDivisao((a) => ({
+      ...a,
+      [item.id]: a[item.id].map((l, i) => (i === idx ? { ...l, buscando: true, erro: "" } : l))
+    }));
+
+    const unidadeAtiva = getUnidadeAtiva();
+    const { data: lote } = await supabase
+      .from("lotes_pecas")
+      .select("*")
+      .eq("codigo", item.codigo)
+      .eq("no_entrega", valor)
+      .eq("asc_cod_origem", unidadeAtiva?.asc_cod)
+      .maybeSingle();
+
+    setLinhasDivisao((a) => ({
+      ...a,
+      [item.id]: a[item.id].map((l, i) =>
+        i === idx
+          ? lote
+            ? { ...l, buscando: false, validado: true, custoUnitario: lote.valor_unitario, erro: "" }
+            : { ...l, buscando: false, validado: false, custoUnitario: null, erro: `Delivery "${valor}" não encontrada pro código ${item.codigo} nesta unidade.` }
+          : l
+      )
+    }));
+  }
+
+  function totalLinhasDivisao(itemId) {
+    return (linhasDivisao[itemId] || []).reduce((s, l) => s + (Number(l.qtd) || 0), 0);
+  }
+
+  async function confirmarDivisaoDelivery(item) {
+    const linhas = linhasDivisao[item.id] || [];
+    const soma = linhas.reduce((s, l) => s + (Number(l.qtd) || 0), 0);
+    if (soma !== item.qtd || linhas.some((l) => !l.validado || !Number(l.qtd) || Number(l.qtd) <= 0)) return;
+
+    setProcessandoDivisao((p) => ({ ...p, [item.id]: true }));
+    const { data: { user } } = await supabase.auth.getUser();
+    const agora = new Date().toISOString();
+
+    // primeira linha atualiza o item existente; as demais viram novas linhas
+    const [primeira, ...restantes] = linhas;
+    const { error: errUpdate } = await supabase
+      .from("orcamento_itens")
+      .update({
+        qtd: primeira.qtd,
+        no_entrega: primeira.delivery.trim(),
+        custo_real: primeira.custoUnitario,
+        liberado: true,
+        liberado_por: user.id,
+        liberado_em: agora
+      })
+      .eq("id", item.id);
+
+    if (errUpdate) {
+      setProcessandoDivisao((p) => ({ ...p, [item.id]: false }));
+      setErro("Falha ao dividir a delivery: " + errUpdate.message);
+      return;
+    }
+
+    if (restantes.length > 0) {
+      const novasLinhas = restantes.map((l) => ({
+        orcamento_id: orcamento.id,
+        peca_id: item.peca_id,
+        modelo: item.modelo,
+        categoria: item.categoria,
+        codigo: item.codigo,
+        descricao_resumida: item.descricao_resumida,
+        descricao_peca: item.descricao_peca,
+        qtd: l.qtd,
+        custo_unitario: item.custo_unitario,
+        venda_unitario: item.venda_unitario,
+        venda_total: Number(item.venda_unitario || 0) * Number(l.qtd),
+        no_entrega: l.delivery.trim(),
+        custo_real: l.custoUnitario,
+        liberado: true,
+        liberado_por: user.id,
+        liberado_em: agora
+      }));
+      const { error: errInsert } = await supabase.from("orcamento_itens").insert(novasLinhas);
+      if (errInsert) {
+        setProcessandoDivisao((p) => ({ ...p, [item.id]: false }));
+        setErro("Delivery da 1ª unidade salva, mas falhou ao dividir o restante: " + errInsert.message);
+        return;
+      }
+    }
+
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Peça ${item.codigo} do pedido #${orcamento.numero_unidade} dividida em ${linhas.length} deliveries diferentes (${linhas.map((l) => `${l.qtd}un/${l.delivery}`).join(", ")}).`
+    });
+
+    cancelarDivisaoDelivery(item.id);
+    setProcessandoDivisao((p) => ({ ...p, [item.id]: false }));
+
+    const { data: itsFrescos } = await supabase.from("orcamento_itens").select("*").eq("orcamento_id", id).order("id");
+    setItens(itsFrescos || []);
+    if ((itsFrescos || []).length > 0 && itsFrescos.every((i) => i.liberado)) {
+      setConfirmarAvanco({ de: orcamento.status, para: "Em Estoque - Aguardando Faturamento" });
+    }
+  }
+
+  // ---------- OS Interna ----------
+
+  async function salvarOsInterna() {
+    setProcessandoOS(true);
+    const valor = osInternaEdit.trim() || null;
+    const { error } = await supabase.from("orcamentos").update({ os_interna: valor }).eq("id", id);
+    setProcessandoOS(false);
+    if (error) { setErro("Falha ao salvar a OS Interna: " + error.message); return; }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `OS Interna do pedido #${orcamento.numero_unidade} definida como "${valor || "—"}".`
+    });
+    setEditandoOS(false);
+    carregar();
   }
 
   async function liberarParcialmente() {
@@ -641,7 +825,7 @@ function EstoquePedidoPageInner() {
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from("orcamentos")
-      .update({ entregue: true, entregue_por: user.id, entregue_em: new Date().toISOString() })
+      .update({ entregue: true, entregue_por: user.id, entregue_em: new Date().toISOString(), status: "Produto Entregue" })
       .in("id", selecionados);
     setProcessando(false);
     if (error) { setErro("Falha ao confirmar entrega: " + error.message); return; }
@@ -680,6 +864,37 @@ function EstoquePedidoPageInner() {
             {IconeAtual && <IconeAtual size={17} />}
             {orcamento.status}
           </span>
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          <p className="text-xs text-muted">OS Interna:</p>
+          {editandoOS ? (
+            <>
+              <input
+                className="field-input py-1 px-2 text-xs font-mono w-32"
+                placeholder="nº da OS"
+                value={osInternaEdit}
+                onChange={(e) => setOsInternaEdit(e.target.value)}
+                autoFocus
+              />
+              <button className="text-muted hover:text-ink" disabled={processandoOS} onClick={salvarOsInterna}>
+                <Save size={13} />
+              </button>
+              <button className="text-muted hover:text-danger" onClick={() => setEditandoOS(false)}>
+                <XCircle size={13} />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="font-mono text-xs font-semibold">{orcamento.os_interna || "—"}</span>
+              <button
+                className="text-muted hover:text-ink"
+                onClick={() => { setOsInternaEdit(orcamento.os_interna || ""); setEditandoOS(true); }}
+                title="Editar OS Interna"
+              >
+                <Pencil size={12} />
+              </button>
+            </>
+          )}
         </div>
         {orcamento.numero_pedido_compra && (
           <p className="text-xs text-muted mt-3">Nº do pedido de compra: <span className="font-mono">{orcamento.numero_pedido_compra}</span></p>
@@ -814,7 +1029,97 @@ function EstoquePedidoPageInner() {
                   <td className="px-3 py-2.5">
                     {i.liberado ? (
                       <span className="font-mono text-xs">{i.no_entrega}</span>
-                    ) : podeInformarDelivery ? (
+                    ) : !podeInformarDelivery ? (
+                      <span className="text-xs text-muted">—</span>
+                    ) : i.qtd > 1 && !escolhaDivisao[i.id] ? (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] text-muted leading-snug">{i.qtd} unidades — mesma delivery pra todas?</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            onClick={() => escolherMesmaDelivery(i)}
+                            className="text-[10.5px] font-mono font-semibold px-2 py-1 rounded-md hover:opacity-80"
+                            style={{ background: "rgba(63,167,150,0.14)", color: "#2C7C6E" }}
+                          >
+                            Sim, mesma
+                          </button>
+                          <button
+                            onClick={() => iniciarDivisaoDelivery(i)}
+                            className="text-[10.5px] font-mono font-semibold px-2 py-1 rounded-md hover:opacity-80"
+                            style={{ background: "rgba(122,79,176,0.12)", color: "#7A4FB0" }}
+                          >
+                            Deliveries diferentes
+                          </button>
+                        </div>
+                      </div>
+                    ) : i.qtd > 1 && escolhaDivisao[i.id] === "diferentes" ? (
+                      <div className="space-y-1.5">
+                        {(linhasDivisao[i.id] || []).map((l, idx) => (
+                          <div key={idx} className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={1}
+                              className="field-input py-1 px-1 text-[11px] font-mono w-10 text-center shrink-0"
+                              value={l.qtd}
+                              onChange={(e) => mudarLinhaDivisao(i.id, idx, "qtd", Number(e.target.value))}
+                            />
+                            <input
+                              className="field-input py-1 px-1.5 text-[11px] w-full"
+                              placeholder="nº delivery"
+                              value={l.delivery}
+                              onChange={(e) => mudarLinhaDivisao(i.id, idx, "delivery", e.target.value)}
+                            />
+                            {l.validado ? (
+                              <Check size={13} className="shrink-0" style={{ color: "#2C7C6E" }} />
+                            ) : (
+                              <button
+                                onClick={() => buscarLinhaDivisao(i, idx)}
+                                disabled={l.buscando || !l.delivery}
+                                className="w-6 h-6 flex items-center justify-center rounded-md text-muted hover:text-ink hover:bg-canvas shrink-0"
+                              >
+                                {l.buscando ? <RefreshCw size={12} className="animate-spin" /> : <Search size={12} />}
+                              </button>
+                            )}
+                            {(linhasDivisao[i.id] || []).length > 1 && (
+                              <button onClick={() => removerLinhaDivisao(i.id, idx)} className="text-muted hover:text-danger shrink-0">
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        {(linhasDivisao[i.id] || []).map((l, idx) => l.erro && (
+                          <p key={`erro-${idx}`} className="text-[9.5px] text-danger leading-snug">{l.erro}</p>
+                        ))}
+                        <div className="flex items-center justify-between gap-1">
+                          <button onClick={() => adicionarLinhaDivisao(i.id)} className="text-[10px] text-muted hover:text-ink flex items-center gap-1">
+                            <Plus size={11} />
+                            Outra delivery
+                          </button>
+                          <span
+                            className="text-[10px] font-mono font-semibold"
+                            style={{ color: totalLinhasDivisao(i.id) === i.qtd ? "#2C7C6E" : "var(--danger)" }}
+                          >
+                            {totalLinhasDivisao(i.id)}/{i.qtd}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="text-[10.5px] font-mono font-semibold px-2 py-1 rounded-md hover:opacity-80 disabled:opacity-40"
+                            style={{ background: "rgba(63,167,150,0.14)", color: "#2C7C6E" }}
+                            disabled={
+                              processandoDivisao[i.id] ||
+                              totalLinhasDivisao(i.id) !== i.qtd ||
+                              (linhasDivisao[i.id] || []).some((l) => !l.validado)
+                            }
+                            onClick={() => confirmarDivisaoDelivery(i)}
+                          >
+                            Confirmar divisão
+                          </button>
+                          <button onClick={() => cancelarDivisaoDelivery(i.id)} className="text-[10.5px] text-muted hover:text-ink">
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
                       <div className="flex items-center gap-1">
                         <input
                           className="field-input py-1.5 text-xs w-full"
@@ -830,8 +1135,6 @@ function EstoquePedidoPageInner() {
                           {buscandoItem[i.id] ? <RefreshCw size={13} className="animate-spin" /> : <Search size={13} />}
                         </button>
                       </div>
-                    ) : (
-                      <span className="text-xs text-muted">—</span>
                     )}
                     {erroItem[i.id] && (
                       <p className="text-[10px] text-danger mt-1 leading-snug">{erroItem[i.id]}</p>
@@ -1138,6 +1441,18 @@ function EstoquePedidoPageInner() {
               <span className="text-[10.5px] font-mono font-bold px-2.5 py-1 rounded-full" style={{ background: resumo.bg, color: resumo.fg }}>
                 {resumo.texto}
               </span>
+            </div>
+
+            <div
+              className="mb-3 text-xs px-3 py-2 rounded-lg"
+              style={{
+                background: orcamento.os_interna ? "rgba(63,167,150,0.10)" : "rgba(232,163,61,0.12)",
+                color: orcamento.os_interna ? "#2C7C6E" : "#C2801F"
+              }}
+            >
+              {orcamento.os_interna
+                ? <>OS Interna pro chamado da Nota Fiscal: <span className="font-mono font-bold">{orcamento.os_interna}</span></>
+                : "Nenhuma OS Interna registrada ainda — informe no topo do pedido antes de abrir o chamado da Nota Fiscal."}
             </div>
 
             {statusNF === "emitida" && !editandoNF ? (

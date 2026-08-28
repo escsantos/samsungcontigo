@@ -7,7 +7,7 @@ import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { getUnidadeAtiva } from "../../lib/unidade";
 import { PERIODOS, calcularIntervalo } from "../../lib/periodo";
-import { STATUS_LIBERADO, faltaEmitirNF, CARGOS_FISCAL } from "../../lib/fiscal";
+import { STATUS_POS_LIBERACAO, faltaEmitirNF, CARGOS_FISCAL } from "../../lib/fiscal";
 
 const CARGOS_PERMITIDOS = CARGOS_FISCAL;
 
@@ -95,7 +95,7 @@ export default function FiscalPage() {
 
   const obrigaNF = unidadeInfo?.obriga_nota_fiscal !== false;
 
-  const liberados = lista.filter((o) => o.status === STATUS_LIBERADO);
+  const liberados = lista.filter((o) => STATUS_POS_LIBERACAO.includes(o.status));
   const pendentes = lista.filter((o) => faltaEmitirNF(o, obrigaNF));
   const marcadasDepois = pendentes.filter((o) => o.nota_fiscal_emitir_depois);
   const emitidas = lista.filter((o) => o.nota_fiscal_numero);

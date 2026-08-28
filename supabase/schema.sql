@@ -1563,3 +1563,35 @@ drop policy if exists "cliente le seu proprio cadastro" on clientes;
 create policy "cliente le seu proprio cadastro"
   on clientes for select
   using (id = meu_cliente_id());
+
+-- ================================================================
+-- OS Interna + status "Produto Entregue" + aviso de retirada pro cliente
+-- ================================================================
+
+-- OS Interna: nº da ordem de serviço do sistema interno da loja, acompanha
+-- o pedido até a finalização e serve de referência pro chamado da NF.
+alter table orcamentos add column if not exists os_interna text;
+
+-- Marca se o cliente já viu o pop-up "pedido pronto pra retirada".
+alter table orcamentos add column if not exists aviso_retirada_visto boolean not null default false;
+
+drop policy if exists "cliente marca aviso de retirada visto" on orcamentos;
+create policy "cliente marca aviso de retirada visto"
+  on orcamentos for update
+  using (cliente_id = meu_cliente_id())
+  with check (cliente_id = meu_cliente_id());
+
+-- Novo status "Produto Entregue": passa a ser um status real do pedido
+-- (antes só existia o boolean "entregue" em cima de "Liberado para Retirada/Entrega").
+alter table orcamentos drop constraint if exists orcamentos_status_check;
+alter table orcamentos add constraint orcamentos_status_check
+  check (status in (
+    'Pendente de Análise','Validado pelo Vendedor','Rejeitado',
+    'Aguardando Separação/Compra','Peças Compradas - Aguardando Chegada',
+    'Em Estoque - Aguardando Faturamento','Faturamento Efetuado','Liberado para Retirada/Entrega',
+    'Produto Entregue',
+    'Cancelado'
+  ));
+
+-- Migra os pedidos já entregues no passado pro novo status.
+update orcamentos set status = 'Produto Entregue' where status = 'Liberado para Retirada/Entrega' and entregue = true;
