@@ -20,20 +20,24 @@ function normKey(s) {
 }
 
 // Busca TODAS as linhas de uma coluna, contornando o limite padrão de 1000
-// linhas por requisição do Supabase, paginando em blocos.
+// linhas por requisição do Supabase, paginando por id (mais rápido que por
+// offset numa tabela grande — offset teria que reler tudo desde o início a
+// cada página).
 async function buscarColunaCompleta(tabela, coluna) {
   const PAGINA = 1000;
-  let inicio = 0;
+  let cursor = 0;
   let tudo = [];
   while (true) {
     const { data, error } = await supabase
       .from(tabela)
-      .select(coluna)
-      .range(inicio, inicio + PAGINA - 1);
-    if (error || !data) break;
+      .select(`id, ${coluna}`)
+      .gt("id", cursor)
+      .order("id", { ascending: true })
+      .limit(PAGINA);
+    if (error || !data || data.length === 0) break;
     tudo = tudo.concat(data);
+    cursor = data[data.length - 1].id;
     if (data.length < PAGINA) break;
-    inicio += PAGINA;
   }
   return tudo;
 }
