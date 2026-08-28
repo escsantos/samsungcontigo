@@ -4,6 +4,7 @@ import { Building2, Plus, Pencil, Trash2, ShieldAlert, Check, FileCheck2 } from 
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
+import { registrarAuditoria } from "../../../lib/auditoria";
 
 export default function UnidadesPage() {
   const [perfil, setPerfil] = useState(undefined);
@@ -70,9 +71,31 @@ export default function UnidadesPage() {
       setSalvando(false);
       if (error) { setErro("Falha ao salvar: " + (error.code === "23505" ? "já existe uma unidade com esse ASC COD." : error.message)); return; }
     } else {
-      const { error } = await supabase.from("unidades").insert({ nome: nome.trim(), asc_cod: codLimpo, obriga_nota_fiscal: obrigaNotaFiscal });
+      const { data: novaUnidade, error } = await supabase
+        .from("unidades")
+        .insert({ nome: nome.trim(), asc_cod: codLimpo, obriga_nota_fiscal: obrigaNotaFiscal })
+        .select()
+        .single();
+      if (error) {
+        setSalvando(false);
+        setErro("Falha ao criar: " + (error.code === "23505" ? "já existe uma unidade com esse ASC COD." : error.message));
+        return;
+      }
+      // Vincula automaticamente quem criou a unidade — senão ela fica sem
+      // ninguém vinculado e some da tela de seleção de unidade no login.
+      // Os demais usuários precisam ser vinculados em Usuários > (usuário) > Unidades.
+      if (perfil?.id) {
+        const { error: errVinculo } = await supabase.from("perfis_unidades").insert({ perfil_id: perfil.id, unidade_id: novaUnidade.id });
+        if (!errVinculo) {
+          await registrarAuditoria({
+            tipoEvento: "criacao",
+            entidade: "unidades",
+            entidadeId: novaUnidade.id,
+            descricao: `Unidade "${novaUnidade.nome}" criada e vinculada automaticamente a ${perfil.nome}.`
+          });
+        }
+      }
       setSalvando(false);
-      if (error) { setErro("Falha ao criar: " + (error.code === "23505" ? "já existe uma unidade com esse ASC COD." : error.message)); return; }
     }
     setModalAberto(false);
     recarregar();
