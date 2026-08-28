@@ -203,12 +203,15 @@ export default function CarregarBasesPage() {
       const existentesPorCodigo = new Map(); // codigo -> [ {...catálogo} ]
       {
         const PAGINA = 1000;
-        let inicio = 0;
+        let cursor = 0;
+        let lidos = 0;
         while (true) {
           const { data, error } = await supabase
             .from("pecas_catalogo")
-            .select("modelo, codigo, categoria, descricao_resumida, descricao_peca, atualizado_em")
-            .range(inicio, inicio + PAGINA - 1);
+            .select("id, modelo, codigo, categoria, descricao_resumida, descricao_peca, atualizado_em")
+            .gt("id", cursor)
+            .order("id", { ascending: true })
+            .limit(PAGINA);
           if (error) throw new Error("Falha ao ler catálogo existente: " + error.message);
           if (!data || data.length === 0) break;
           for (const p of data) {
@@ -224,8 +227,10 @@ export default function CarregarBasesPage() {
             lista.push({ ...info, codigo: p.codigo.toUpperCase() });
             existentesPorCodigo.set(p.codigo.toUpperCase(), lista);
           }
+          cursor = data[data.length - 1].id;
+          lidos += data.length;
+          setProgresso({ pct: 40, texto: `Lendo catálogo já cadastrado... ${lidos} registro(s)` });
           if (data.length < PAGINA) break;
-          inicio += PAGINA;
         }
       }
 
@@ -233,12 +238,15 @@ export default function CarregarBasesPage() {
       const precosExistentes = new Map(); // codigo||ascCod -> { valor_unitario, ts, data_referencia }
       {
         const PAGINA = 1000;
-        let inicio = 0;
+        let cursor = 0;
+        let lidos = 0;
         while (true) {
           const { data, error } = await supabase
             .from("pecas_precos")
-            .select("codigo, valor_unitario, data_referencia, asc_cod_origem, atualizado_em")
-            .range(inicio, inicio + PAGINA - 1);
+            .select("id, codigo, valor_unitario, data_referencia, asc_cod_origem, atualizado_em")
+            .gt("id", cursor)
+            .order("id", { ascending: true })
+            .limit(PAGINA);
           if (error) throw new Error("Falha ao ler preços existentes: " + error.message);
           if (!data || data.length === 0) break;
           for (const p of data) {
@@ -249,8 +257,10 @@ export default function CarregarBasesPage() {
               atualizado_em: p.atualizado_em
             });
           }
+          cursor = data[data.length - 1].id;
+          lidos += data.length;
+          setProgresso({ pct: 40, texto: `Lendo preços já cadastrados... ${lidos} registro(s)` });
           if (data.length < PAGINA) break;
-          inicio += PAGINA;
         }
       }
 
@@ -260,12 +270,15 @@ export default function CarregarBasesPage() {
       const lotesExistentes = new Map(); // ascCod||codigo||entrega -> { data_nf, ts }
       if (arquivoPecas && lotes.length > 0) {
         const PAGINA = 1000;
-        let inicio = 0;
+        let cursor = 0;
+        let lidos = 0;
         while (true) {
           const { data, error } = await supabase
             .from("lotes_pecas")
-            .select("asc_cod_origem, codigo, no_entrega, data_nf")
-            .range(inicio, inicio + PAGINA - 1);
+            .select("id, asc_cod_origem, codigo, no_entrega, data_nf")
+            .gt("id", cursor)
+            .order("id", { ascending: true })
+            .limit(PAGINA);
           if (error) throw new Error("Falha ao ler lotes existentes: " + error.message);
           if (!data || data.length === 0) break;
           for (const l of data) {
@@ -274,8 +287,10 @@ export default function CarregarBasesPage() {
               ts: parseBRDate(l.data_nf)
             });
           }
+          cursor = data[data.length - 1].id;
+          lidos += data.length;
+          setProgresso({ pct: 40, texto: `Lendo lotes já cadastrados... ${lidos} registro(s)` });
           if (data.length < PAGINA) break;
-          inicio += PAGINA;
         }
       }
 
@@ -644,10 +659,13 @@ export default function CarregarBasesPage() {
 
         {processando && (
           <div className="mt-4">
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <p className="text-xs text-muted font-mono truncate">{progresso.texto}</p>
+              <p className="text-xs font-mono font-bold shrink-0" style={{ color: "var(--accent)" }}>{progresso.pct}%</p>
+            </div>
             <div className="h-1.5 bg-canvas rounded-full overflow-hidden">
               <div className="h-full bg-brand-400 transition-all" style={{ width: progresso.pct + "%" }} />
             </div>
-            <p className="text-xs text-muted mt-2 font-mono">{progresso.texto}</p>
           </div>
         )}
 
