@@ -1551,3 +1551,15 @@ drop policy if exists "financeiro sobe comprovantes" on storage.objects;
 create policy "financeiro sobe comprovantes"
   on storage.objects for insert
   with check (bucket_id = 'comprovantes' and eh_financeiro());
+
+-- ================================================================
+-- CORREÇÃO — Cliente (login próprio) precisa ler seu próprio cadastro
+-- em "clientes" para que o vendedor_id seja herdado no orçamento
+-- criado no autoatendimento (carrinho). Sem isso, o RLS bloqueia a
+-- leitura (só gestores/financeiro liam a tabela) e o pedido do
+-- cliente ficava sem vendedor.
+-- ================================================================
+drop policy if exists "cliente le seu proprio cadastro" on clientes;
+create policy "cliente le seu proprio cadastro"
+  on clientes for select
+  using (id = meu_cliente_id());
