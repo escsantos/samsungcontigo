@@ -570,13 +570,13 @@ export default function CarregarBasesPage() {
     return <AppShell titulo="Carregar Bases"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && perfil.cargo !== "Administrador") {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Carregar Bases">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só o Administrador pode carregar e reprocessar as bases.</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente, Supervisor e Estoque podem carregar e reprocessar as bases.</p>
         </div>
       </AppShell>
     );
