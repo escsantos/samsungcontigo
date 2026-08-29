@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, ChevronRight, X } from "lucide-react";
+import { Search, ChevronRight, X, Hash, Contact, Wrench } from "lucide-react";
 import { getPerfilAtual, supabase } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { CORES_STATUS, ICONES_STATUS, rotuloPagamentoPendente } from "../../lib/estoque";
@@ -30,6 +30,7 @@ export default function OrcamentosPage() {
   const [buscando, setBuscando] = useState(false);
   const [buscaCliente, setBuscaCliente] = useState("");
   const [sugestoesAbertas, setSugestoesAbertas] = useState(false);
+  const [buscaOS, setBuscaOS] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -81,32 +82,119 @@ export default function OrcamentosPage() {
   const ehCliente = perfil?.cargo === "Cliente";
 
   const termoClienteNorm = normKey(buscaCliente);
+  const termoOSNorm = normKey(buscaOS);
   const listaFiltrada = useMemo(() => {
-    if (!termoClienteNorm) return lista;
     return lista.filter((o) => {
-      const nome = normKey(o.clientes?.nome);
-      const fantasia = normKey(o.clientes?.nome_fantasia);
-      return nome.includes(termoClienteNorm) || fantasia.includes(termoClienteNorm);
+      if (termoClienteNorm) {
+        const nome = normKey(o.clientes?.nome);
+        const fantasia = normKey(o.clientes?.nome_fantasia);
+        if (!nome.includes(termoClienteNorm) && !fantasia.includes(termoClienteNorm)) return false;
+      }
+      if (termoOSNorm && !normKey(o.os_interna).includes(termoOSNorm)) return false;
+      return true;
     });
-  }, [lista, termoClienteNorm]);
+  }, [lista, termoClienteNorm, termoOSNorm]);
   const sugestoesCliente = termoClienteNorm ? listaFiltrada.slice(0, 8) : [];
 
   return (
     <AppShell titulo="Orçamentos">
       <form onSubmit={buscarPorNumero} className="card p-4 mb-4">
-        <p className="text-xs font-medium mb-2">Consultar orçamento pelo número</p>
-        <div className="flex gap-2 max-w-sm">
-          <input
-            className="field-input"
-            placeholder="Ex: 7"
-            value={numeroBusca}
-            onChange={(e) => setNumeroBusca(e.target.value)}
-            inputMode="numeric"
-          />
+        <p className="text-xs font-medium mb-2">Consultar orçamento</p>
+        <div className="flex gap-2 flex-wrap items-stretch">
+          <div className="relative w-32 shrink-0">
+            <Hash size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+            <input
+              className="field-input pl-8"
+              placeholder="Nº pedido"
+              value={numeroBusca}
+              onChange={(e) => setNumeroBusca(e.target.value)}
+              inputMode="numeric"
+            />
+          </div>
           <button className="btn-primary shrink-0" type="submit" disabled={buscando || !numeroBusca}>
             <Search size={15} />
             Buscar
           </button>
+
+          {!ehCliente && (
+            <div className="relative flex-1 min-w-[200px]">
+              <Contact size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <input
+                className="field-input pl-8 pr-8"
+                placeholder="Cliente ou empresa"
+                value={buscaCliente}
+                onChange={(e) => setBuscaCliente(e.target.value)}
+                onFocus={() => setSugestoesAbertas(true)}
+                onBlur={() => setTimeout(() => setSugestoesAbertas(false), 150)}
+              />
+              {buscaCliente && (
+                <button
+                  type="button"
+                  onClick={() => setBuscaCliente("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+                  aria-label="Limpar busca"
+                >
+                  <X size={14} />
+                </button>
+              )}
+
+              {sugestoesAbertas && termoClienteNorm && (
+                <div className="absolute z-20 top-full left-0 right-0 mt-1.5 card p-1.5 max-h-72 overflow-auto shadow-lg">
+                  {sugestoesCliente.length === 0 ? (
+                    <p className="text-sm text-muted px-2.5 py-2">Nenhum orçamento encontrado para &quot;{buscaCliente}&quot;.</p>
+                  ) : (
+                    sugestoesCliente.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          router.push(`/orcamentos/${o.id}`);
+                          setBuscaCliente("");
+                          setSugestoesAbertas(false);
+                        }}
+                        className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-canvas text-sm flex items-center justify-between gap-2"
+                      >
+                        <span className="truncate">
+                          <span className="font-mono text-muted">#{o.numero_unidade}</span>{" "}
+                          <span className="font-medium">{o.clientes?.nome || "—"}</span>
+                          {o.clientes?.nome_fantasia && <span className="text-muted text-xs"> ({o.clientes.nome_fantasia})</span>}
+                        </span>
+                        <ChevronRight size={14} className="text-muted shrink-0" />
+                      </button>
+                    ))
+                  )}
+                  {listaFiltrada.length > sugestoesCliente.length && (
+                    <p className="text-[11px] text-muted px-2.5 py-1.5 border-t border-line mt-1">
+                      +{listaFiltrada.length - sugestoesCliente.length} outro(s) resultado(s) — veja a lista completa abaixo.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!ehCliente && (
+            <div className="relative flex-1 min-w-[160px]">
+              <Wrench size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <input
+                className="field-input pl-8 pr-8"
+                placeholder="OS Interna"
+                value={buscaOS}
+                onChange={(e) => setBuscaOS(e.target.value)}
+              />
+              {buscaOS && (
+                <button
+                  type="button"
+                  onClick={() => setBuscaOS("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+                  aria-label="Limpar busca"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {resultadoBusca !== undefined && (
@@ -125,6 +213,7 @@ export default function OrcamentosPage() {
                     <p className="text-sm font-semibold">Pedido #{resultadoBusca.numero_unidade} — {resultadoBusca.clientes?.nome || "—"}</p>
                     <p className="text-xs text-muted mt-0.5">
                       Vendedor: {resultadoBusca.perfis?.nome || "—"} · {fmtBRL(resultadoBusca.valor_total)}
+                      {resultadoBusca.os_interna && <> · OS: <span className="font-mono">{resultadoBusca.os_interna}</span></>}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -141,71 +230,10 @@ export default function OrcamentosPage() {
         )}
       </form>
 
-      {!ehCliente && (
-        <div className="card p-4 mb-4">
-          <p className="text-xs font-medium mb-2">Buscar por cliente ou empresa</p>
-          <div className="relative max-w-sm">
-            <div className="relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
-              <input
-                className="field-input pl-9 pr-8"
-                placeholder="Digite o nome do cliente ou da empresa..."
-                value={buscaCliente}
-                onChange={(e) => setBuscaCliente(e.target.value)}
-                onFocus={() => setSugestoesAbertas(true)}
-                onBlur={() => setTimeout(() => setSugestoesAbertas(false), 150)}
-              />
-              {buscaCliente && (
-                <button
-                  type="button"
-                  onClick={() => setBuscaCliente("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
-                  aria-label="Limpar busca"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-
-            {sugestoesAbertas && termoClienteNorm && (
-              <div className="absolute z-20 top-full left-0 right-0 mt-1.5 card p-1.5 max-h-72 overflow-auto shadow-lg">
-                {sugestoesCliente.length === 0 ? (
-                  <p className="text-sm text-muted px-2.5 py-2">Nenhum orçamento encontrado para &quot;{buscaCliente}&quot;.</p>
-                ) : (
-                  sugestoesCliente.map((o) => (
-                    <button
-                      key={o.id}
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        router.push(`/orcamentos/${o.id}`);
-                        setBuscaCliente("");
-                        setSugestoesAbertas(false);
-                      }}
-                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-canvas text-sm flex items-center justify-between gap-2"
-                    >
-                      <span className="truncate">
-                        <span className="font-mono text-muted">#{o.numero_unidade}</span>{" "}
-                        <span className="font-medium">{o.clientes?.nome || "—"}</span>
-                        {o.clientes?.nome_fantasia && <span className="text-muted text-xs"> ({o.clientes.nome_fantasia})</span>}
-                      </span>
-                      <ChevronRight size={14} className="text-muted shrink-0" />
-                    </button>
-                  ))
-                )}
-                {listaFiltrada.length > sugestoesCliente.length && (
-                  <p className="text-[11px] text-muted px-2.5 py-1.5 border-t border-line mt-1">
-                    +{listaFiltrada.length - sugestoesCliente.length} outro(s) resultado(s) — veja a lista completa abaixo.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <p className="text-sm text-muted mb-3">
-        {listaFiltrada.length} orçamento(s){termoClienteNorm ? ` encontrado(s) para "${buscaCliente}"` : ""}
+        {listaFiltrada.length} orçamento(s)
+        {termoClienteNorm ? ` — cliente/empresa "${buscaCliente}"` : ""}
+        {termoOSNorm ? ` — OS Interna "${buscaOS}"` : ""}
       </p>
 
       <div className="card overflow-hidden">
@@ -213,8 +241,8 @@ export default function OrcamentosPage() {
           <p className="text-sm text-muted p-6">Carregando...</p>
         ) : listaFiltrada.length === 0 ? (
           <p className="text-sm text-muted p-6 text-center">
-            {termoClienteNorm
-              ? `Nenhum orçamento encontrado para "${buscaCliente}".`
+            {termoClienteNorm || termoOSNorm
+              ? "Nenhum orçamento encontrado pra esses filtros."
               : ehCliente
               ? "Você ainda não tem orçamentos."
               : "Nenhum orçamento pendente de revisão."}
@@ -224,8 +252,9 @@ export default function OrcamentosPage() {
             <thead>
               <tr className="bg-canvas border-b border-line text-[10.5px] uppercase tracking-wide text-muted font-mono">
                 <th className="text-left px-4 py-2.5">#</th>
-                {!ehCliente && <th className="text-left px-4 py-2.5">Cliente</th>}
+                {!ehCliente && <th className="text-left px-4 py-2.5"><span className="inline-flex items-center gap-1.5"><Contact size={11} />Cliente</span></th>}
                 <th className="text-left px-4 py-2.5">Vendedor</th>
+                {!ehCliente && <th className="text-left px-4 py-2.5"><span className="inline-flex items-center gap-1.5"><Wrench size={11} />OS Interna</span></th>}
                 <th className="text-left px-4 py-2.5">Data</th>
                 <th className="text-right px-4 py-2.5">Total</th>
                 <th className="text-left px-4 py-2.5">Status</th>
@@ -259,6 +288,7 @@ export default function OrcamentosPage() {
                       </td>
                     )}
                     <td className="px-4 py-2.5 text-muted">{o.perfis?.nome || "—"}</td>
+                    {!ehCliente && <td className="px-4 py-2.5 font-mono text-muted">{o.os_interna || "—"}</td>}
                     <td className="px-4 py-2.5 text-muted">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</td>
                     <td className="px-4 py-2.5 text-right font-mono font-semibold">{fmtBRL(o.valor_total)}</td>
                     <td className="px-4 py-2.5">
