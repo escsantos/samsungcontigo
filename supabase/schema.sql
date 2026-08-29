@@ -1670,3 +1670,17 @@ drop policy if exists "admin exclui processamentos" on pecas_processamentos;
 create policy "admin exclui processamentos"
   on pecas_processamentos for delete
   using (pode_gerenciar_estoque());
+
+-- ================================================================
+-- VISÃO 360º — feed de atividade ao vivo (Realtime em cima de auditoria_logs)
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'auditoria_logs'
+  ) then
+    alter publication supabase_realtime add table auditoria_logs;
+  end if;
+end $$;

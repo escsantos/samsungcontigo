@@ -6,13 +6,13 @@ import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
   ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
   Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2, BarChart3, HandCoins, PackageOpen,
-  ShoppingBag, AlertTriangle
+  ShoppingBag, AlertTriangle, Sparkles
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
 import { registrarAuditoria } from "../lib/auditoria";
 import { CARGOS_FISCAL, STATUS_POS_LIBERACAO, STATUS_LIBERADO } from "../lib/fiscal";
-import { CARGOS_RELATORIOS, CARGOS_COMISSOES } from "../lib/relatorios";
+import { CARGOS_RELATORIOS, CARGOS_COMISSOES, CARGOS_VISAO_360 } from "../lib/relatorios";
 import { ORDEM_STATUS } from "../lib/estoque";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
@@ -121,7 +121,8 @@ export const GRUPOS_MENU = [
     href: "/relatorios/resumo",
     itens: [
       { href: "/relatorios/resumo", label: "Resumo", icone: BarChart3, cor: "#7A4FB0", descricao: "Margem e comissão por pedido entregue, mensal ou semanal.", cargos: CARGOS_RELATORIOS },
-      { href: "/relatorios/comissoes", label: "Comissões", icone: Percent, cor: "#C2801F", descricao: "Ranking e detalhe da comissão de cada vendedor, mensal ou semanal.", cargos: CARGOS_COMISSOES }
+      { href: "/relatorios/comissoes", label: "Comissões", icone: Percent, cor: "#C2801F", descricao: "Ranking e detalhe da comissão de cada vendedor, mensal ou semanal.", cargos: CARGOS_COMISSOES },
+      { href: "/relatorios/visao-360", label: "Visão 360º", icone: Sparkles, cor: "#4338CA", descricao: "Painel executivo: KPIs, funil de vendas, ranking gamificado, saúde financeira e feed ao vivo.", cargos: CARGOS_VISAO_360 }
     ]
   },
   {
