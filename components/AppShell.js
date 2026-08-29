@@ -12,7 +12,7 @@ import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
 import { registrarAuditoria } from "../lib/auditoria";
 import { CARGOS_FISCAL, STATUS_POS_LIBERACAO, STATUS_LIBERADO } from "../lib/fiscal";
-import { CARGOS_RELATORIOS } from "../lib/relatorios";
+import { CARGOS_RELATORIOS, CARGOS_COMISSOES } from "../lib/relatorios";
 import { ORDEM_STATUS } from "../lib/estoque";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
@@ -120,7 +120,8 @@ export const GRUPOS_MENU = [
     icone: BarChart3,
     href: "/relatorios/resumo",
     itens: [
-      { href: "/relatorios/resumo", label: "Resumo", icone: BarChart3, cor: "#7A4FB0", descricao: "Margem e comissão por pedido entregue, mensal ou semanal.", cargos: CARGOS_RELATORIOS }
+      { href: "/relatorios/resumo", label: "Resumo", icone: BarChart3, cor: "#7A4FB0", descricao: "Margem e comissão por pedido entregue, mensal ou semanal.", cargos: CARGOS_RELATORIOS },
+      { href: "/relatorios/comissoes", label: "Comissões", icone: Percent, cor: "#C2801F", descricao: "Ranking e detalhe da comissão de cada vendedor, mensal ou semanal.", cargos: CARGOS_COMISSOES }
     ]
   },
   {
@@ -130,7 +131,7 @@ export const GRUPOS_MENU = [
     href: "/configuracoes",
     itens: [
       { href: "/notificacoes", label: "Notificações", icone: Bell, cor: "#E1614F", descricao: "Avisos do sistema, como solicitações de redefinição de senha.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor"] },
-      { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cor: "#2E6DA8", descricao: "Suba as planilhas de peças e ordens de serviço para atualizar a base.", cargos: ["Administrador"] },
+      { href: "/configuracoes/carregar-bases", label: "Carregar Bases", icone: UploadCloud, cor: "#2E6DA8", descricao: "Suba as planilhas de peças e ordens de serviço para atualizar a base.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"] },
       { href: "/configuracoes/impostos", label: "Impostos", icone: Percent, cor: "#C2801F", descricao: "Cadastre os impostos usados no cálculo do preço de venda.", cargos: ["Administrador"] },
       { href: "/configuracoes/usuarios", label: "Usuários", icone: Users, cor: "#7A4FB0", descricao: "Crie logins, defina cargos e controle o acesso ao sistema.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor"] },
       { href: "/configuracoes/unidades", label: "Unidades", icone: Building2, cor: "#2C7C6E", descricao: "Cadastre as unidades do grupo e o ASC COD. de cada uma.", cargos: ["Administrador"] },

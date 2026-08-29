@@ -1627,3 +1627,46 @@ begin
     alter publication supabase_realtime add table orcamentos;
   end if;
 end $$;
+
+-- ================================================================
+-- Carregar Bases: além do Administrador, quem "gerencia estoque" também
+-- pode carregar/reprocessar as bases (Diretor, Gerente, Supervisor, Estoque).
+-- ================================================================
+
+drop policy if exists "administrador gerencia pecas" on pecas_catalogo;
+create policy "administrador gerencia pecas"
+  on pecas_catalogo for all
+  using (pode_gerenciar_estoque())
+  with check (pode_gerenciar_estoque());
+
+drop policy if exists "administrador insere log de processamento" on pecas_processamentos;
+create policy "administrador insere log de processamento"
+  on pecas_processamentos for insert
+  with check (pode_gerenciar_estoque());
+
+drop policy if exists "admin grava precos da propria unidade" on pecas_precos;
+create policy "admin grava precos da propria unidade"
+  on pecas_precos for insert
+  with check (pode_gerenciar_estoque());
+
+drop policy if exists "admin atualiza precos da propria unidade" on pecas_precos;
+create policy "admin atualiza precos da propria unidade"
+  on pecas_precos for update
+  using (pode_gerenciar_estoque())
+  with check (pode_gerenciar_estoque());
+
+drop policy if exists "admin exclui precos" on pecas_precos;
+create policy "admin exclui precos"
+  on pecas_precos for delete
+  using (pode_gerenciar_estoque());
+
+drop policy if exists "administrador gerencia lotes" on lotes_pecas;
+create policy "administrador gerencia lotes"
+  on lotes_pecas for all
+  using (pode_gerenciar_estoque())
+  with check (pode_gerenciar_estoque());
+
+drop policy if exists "admin exclui processamentos" on pecas_processamentos;
+create policy "admin exclui processamentos"
+  on pecas_processamentos for delete
+  using (pode_gerenciar_estoque());
