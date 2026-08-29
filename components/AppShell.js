@@ -5,13 +5,15 @@ import Link from "next/link";
 import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
   ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
-  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2, BarChart3, HandCoins, PackageOpen
+  Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2, BarChart3, HandCoins, PackageOpen,
+  ShoppingBag, AlertTriangle
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
 import { registrarAuditoria } from "../lib/auditoria";
 import { CARGOS_FISCAL, STATUS_POS_LIBERACAO, STATUS_LIBERADO } from "../lib/fiscal";
 import { CARGOS_RELATORIOS } from "../lib/relatorios";
+import { ORDEM_STATUS } from "../lib/estoque";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
 import Avatar from "./Avatar";
@@ -23,6 +25,41 @@ import { useCarrinho } from "../contexts/CarrinhoContext";
 function fmtBRLAppShell(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Quem vê o balão de "novo pedido" e o de "pendência no estoque" (com bip).
+const CARGOS_TOAST_PEDIDO = ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Estoque", "Financeiro"];
+const CARGOS_TOAST_ESTOQUE = ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"];
+// Status que representam uma pendência pro time de Estoque (tudo além de
+// "Pendente de Análise" — e "Produto Entregue" não conta, já foi concluído).
+const STATUS_PENDENCIA_ESTOQUE = ORDEM_STATUS.filter((s) => s !== "Pendente de Análise" && s !== "Produto Entregue");
+
+// Simula "3 bips" (tipo alerta do Windows) com Web Audio — sem depender de
+// nenhum arquivo de som. Alguns navegadores só liberam áudio depois de uma
+// interação do usuário na página; se isso falhar, o balão ainda aparece normalmente.
+function tocarBips() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    let t = ctx.currentTime;
+    for (let i = 0; i < 3; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.2);
+      t += 0.28;
+    }
+    setTimeout(() => ctx.close(), 1500);
+  } catch (e) {
+    console.error("[bips] falha ao tocar som:", e);
+  }
 }
 
 // Itens soltos, sempre no topo do menu (sem agrupar)
@@ -115,6 +152,7 @@ export default function AppShell({ titulo, children }) {
   const [alertasFiscais, setAlertasFiscais] = useState(0);
   const [avisosRetirada, setAvisosRetirada] = useState([]);
   const [processandoAvisoRetirada, setProcessandoAvisoRetirada] = useState(false);
+  const [toasts, setToasts] = useState([]);
   const pathname = usePathname();
   const router = useRouter();
   const heartbeatRef = useRef(null);
@@ -194,6 +232,75 @@ export default function AppShell({ titulo, children }) {
   useEffect(() => {
     setMenuMobileAberto(false);
   }, [pathname]);
+
+  function removerToast(toastId) {
+    setToasts((atual) => atual.filter((t) => t.id !== toastId));
+  }
+
+  function adicionarToast(dados) {
+    const toastId = `${Date.now()}-${Math.random()}`;
+    setToasts((atual) => [...atual, { id: toastId, ...dados }]);
+    setTimeout(() => removerToast(toastId), 15000);
+  }
+
+  // Balão de "novo pedido" (assim que alguém cria um orçamento) e de
+  // "pendência no estoque" (com 3 bips) quando um pedido muda pra algum
+  // status que o time de Estoque precisa tratar. Via Realtime do Supabase,
+  // sempre da unidade ativa.
+  useEffect(() => {
+    if (!unidadeAtiva?.id || !perfil?.cargo || perfil.cargo === "Cliente") return;
+    const vePedido = CARGOS_TOAST_PEDIDO.includes(perfil.cargo);
+    const vePendenciaEstoque = CARGOS_TOAST_ESTOQUE.includes(perfil.cargo);
+    if (!vePedido && !vePendenciaEstoque) return;
+
+    const canal = supabase
+      .channel(`orcamentos-toasts-${unidadeAtiva.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "orcamentos", filter: `unidade_id=eq.${unidadeAtiva.id}` },
+        async (payload) => {
+          if (!vePedido) return;
+          const o = payload.new;
+          const [{ data: cliente }, { data: vendedor }] = await Promise.all([
+            supabase.from("clientes").select("nome").eq("id", o.cliente_id).maybeSingle(),
+            o.vendedor_id
+              ? supabase.from("perfis").select("nome").eq("id", o.vendedor_id).maybeSingle()
+              : Promise.resolve({ data: null })
+          ]);
+          adicionarToast({
+            tipo: "novo_pedido",
+            titulo: `Novo pedido #${o.numero_unidade}`,
+            linhas: [
+              `Cliente: ${cliente?.nome || "—"}`,
+              `Vendedor: ${vendedor?.nome || "—"}`,
+              `Valor: ${fmtBRLAppShell(o.valor_total)}`
+            ]
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "orcamentos", filter: `unidade_id=eq.${unidadeAtiva.id}` },
+        (payload) => {
+          if (!vePendenciaEstoque) return;
+          const antes = payload.old;
+          const depois = payload.new;
+          if (antes?.status !== depois.status && STATUS_PENDENCIA_ESTOQUE.includes(depois.status)) {
+            adicionarToast({
+              tipo: "pendencia_estoque",
+              titulo: `Pedido #${depois.numero_unidade}`,
+              linhas: [`Nova pendência no Estoque: ${depois.status}`]
+            });
+            tocarBips();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(canal);
+    };
+  }, [unidadeAtiva?.id, perfil?.cargo]);
 
   async function carregarAlertasFiscais(unidadeId) {
     try {
@@ -415,7 +522,7 @@ export default function AppShell({ titulo, children }) {
                 <ShoppingCart size={16} />
                 {carrinho?.totalItens > 0 && (
                   <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center">
-                    {carrinho.totalItens > 9 ? "9+" : carrinho.totalItens}
+                    {carrinho.totalItens}
                   </span>
                 )}
               </Link>
@@ -464,6 +571,35 @@ export default function AppShell({ titulo, children }) {
           ))}
         </div>
       </Modal>
+
+      <div className="fixed bottom-4 left-4 z-[60] w-80 max-w-[90vw] space-y-2 no-print">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className="card p-3.5 shadow-2xl border-l-4"
+            style={{ borderLeftColor: t.tipo === "pendencia_estoque" ? "#C2801F" : "#2C7C6E" }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="flex items-center gap-2">
+                {t.tipo === "pendencia_estoque" ? (
+                  <AlertTriangle size={15} style={{ color: "#C2801F" }} />
+                ) : (
+                  <ShoppingBag size={15} style={{ color: "#2C7C6E" }} />
+                )}
+                <p className="text-sm font-semibold">{t.titulo}</p>
+              </span>
+              <button onClick={() => removerToast(t.id)} className="text-muted hover:text-ink shrink-0" aria-label="Fechar aviso">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="mt-1.5 space-y-0.5">
+              {t.linhas.map((l, i) => (
+                <p key={i} className="text-xs text-muted">{l}</p>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

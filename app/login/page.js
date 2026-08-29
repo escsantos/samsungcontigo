@@ -63,6 +63,8 @@ function LoginForm() {
       return;
     }
 
+    await supabase.from("perfis").update({ ultimo_login_em: new Date().toISOString() }).eq("id", user.id);
+
     await registrarAuditoria({
       tipoEvento: "login",
       entidade: "perfis",

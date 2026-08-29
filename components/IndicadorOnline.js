@@ -3,9 +3,15 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import Avatar from "./Avatar";
 
+function fmtDataHora(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 export default function IndicadorOnline() {
   const [aberto, setAberto] = useState(false);
   const [lista, setLista] = useState([]);
+  const [expandido, setExpandido] = useState(null);
   const ref = useRef(null);
 
   async function carregar() {
@@ -45,14 +51,26 @@ export default function IndicadorOnline() {
       </button>
 
       {aberto && (
-        <div className="absolute right-0 top-10 z-40 card w-56 shadow-2xl p-2">
+        <div className="absolute right-0 top-10 z-40 card w-64 shadow-2xl p-2 max-h-80 overflow-auto">
           {lista.length === 0 ? (
             <p className="text-xs text-muted p-2">Ninguém online no momento.</p>
           ) : (
             lista.map((u) => (
-              <div key={u.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-canvas">
-                <Avatar nome={u.nome} fotoUrl={u.foto_url} tamanho={26} />
-                <span className="text-xs">{u.nome}</span>
+              <div key={u.id}>
+                <button
+                  type="button"
+                  onClick={() => setExpandido((v) => (v === u.id ? null : u.id))}
+                  className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-canvas text-left"
+                >
+                  <Avatar nome={u.nome} fotoUrl={u.foto_url} tamanho={26} />
+                  <span className="text-xs flex-1 truncate">{u.nome}</span>
+                </button>
+                {expandido === u.id && (
+                  <div className="pl-[42px] pr-2 pb-2 -mt-0.5 text-[11px] text-muted leading-relaxed">
+                    <p>Login: <span className="font-mono text-ink">{u.login || "—"}</span></p>
+                    <p>Desde: <span className="font-mono text-ink">{fmtDataHora(u.ultimo_login_em)}</span></p>
+                  </div>
+                )}
               </div>
             ))
           )}

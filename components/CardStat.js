@@ -6,10 +6,14 @@ import { Info } from "lucide-react";
 // tooltip: texto opcional que aparece num balão ao passar o mouse no ícone "i".
 // destaque: dá um contorno colorido no card, pra chamar mais atenção.
 // compacto: versão menor (padding/ícone/fonte reduzidos), pra caber mais cards numa linha só.
-export default function CardStat({ icone: Icone, cor, label, valor, corValor, tooltip, destaque, compacto }) {
+// onClick: opcional — quando passado, o card vira clicável (cursor, hover, foco de teclado).
+export default function CardStat({ icone: Icone, cor, label, valor, corValor, tooltip, destaque, compacto, onClick }) {
+  const Wrapper = onClick ? "button" : "div";
   return (
-    <div
-      className={compacto ? "card p-2.5 relative" : "card p-4 relative"}
+    <Wrapper
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={(compacto ? "card p-2.5 relative" : "card p-4 relative") + " w-full text-left" + (onClick ? " hover:-translate-y-0.5 hover:shadow-md transition cursor-pointer" : "")}
       style={destaque ? { borderColor: cor, boxShadow: `0 0 0 ${compacto ? 1 : 1.5}px ${cor}` } : undefined}
     >
       <div className={compacto ? "flex items-center gap-1.5 mb-1" : "flex items-center gap-2 mb-1.5"}>
@@ -32,6 +36,6 @@ export default function CardStat({ icone: Icone, cor, label, valor, corValor, to
         </p>
       </div>
       <p className={compacto ? "font-mono font-bold text-sm truncate" : "font-mono font-bold text-lg"} style={corValor ? { color: corValor } : undefined}>{valor}</p>
-    </div>
+    </Wrapper>
   );
 }

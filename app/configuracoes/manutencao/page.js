@@ -50,11 +50,17 @@ export default function ManutencaoPage() {
   async function carregarContagens(unis) {
     setCarregandoContagens(true);
 
-    const { count: totalCatalogo } = await supabase.from("pecas_catalogo").select("*", { count: "exact", head: true });
+    // contagem "exact" nas tabelas grandes (catálogo/preços/lotes/processamentos) pode
+    // estourar o timeout do Postgres — usa "estimated" (bem mais rápido, baseado no
+    // planner) pros cards de totais gerais, já que aqui é só um número aproximado.
+    const { count: totalCatalogo, error: errCatalogo } = await supabase.from("pecas_catalogo").select("*", { count: "estimated", head: true });
     const { count: totalUsuarios } = await supabase.from("perfis").select("*", { count: "exact", head: true });
-    const { count: totalPrecos } = await supabase.from("pecas_precos").select("*", { count: "exact", head: true });
-    const { count: totalLotes } = await supabase.from("lotes_pecas").select("*", { count: "exact", head: true });
-    const { count: totalProcessamentos } = await supabase.from("pecas_processamentos").select("*", { count: "exact", head: true });
+    const { count: totalPrecos, error: errPrecos } = await supabase.from("pecas_precos").select("*", { count: "estimated", head: true });
+    const { count: totalLotes, error: errLotes } = await supabase.from("lotes_pecas").select("*", { count: "estimated", head: true });
+    const { count: totalProcessamentos, error: errProc } = await supabase.from("pecas_processamentos").select("*", { count: "estimated", head: true });
+    if (errCatalogo || errPrecos || errLotes || errProc) {
+      console.error("[contagens] falha ao contar tabela grande:", errCatalogo || errPrecos || errLotes || errProc);
+    }
     setCompartilhado({
       catalogo: totalCatalogo || 0,
       usuarios: totalUsuarios || 0,

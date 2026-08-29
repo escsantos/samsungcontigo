@@ -9,6 +9,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import CardStat from "../../components/CardStat";
+import Modal from "../../components/Modal";
 import { inicioHoje, fimHoje } from "../../lib/periodo";
 import { inicioSemana, fimSemana, rotuloSemana, calcularLinhaResumo } from "../../lib/relatorios";
 import { getUnidadeAtiva } from "../../lib/unidade";
@@ -32,6 +33,18 @@ function noPeriodo(dataStr, intervalo) {
   const t = new Date(dataStr).getTime();
   return t >= intervalo.de.getTime() && t <= intervalo.ate.getTime();
 }
+
+// mapeia cada card clicável pro campo correspondente em "linhasResumo",
+// pra montar o pop-up de detalhe (pedido a pedido) por trás do total do card.
+const CAMPOS_CARD = {
+  recebido: { titulo: "Valor Recebido", cor: "#2E6DA8", campo: "valorRealPago" },
+  desconto: { titulo: "Descontos concedidos", cor: "#D6336C", campo: "desconto" },
+  custoPecas: { titulo: "Custo Total de Peças", cor: "#9C5A34", campo: "custoPecas" },
+  valorImposto: { titulo: "Valor do Imposto", cor: "#E1614F", campo: "valorImposto" },
+  margemBruta: { titulo: "Margem Bruta", cor: "#7A4FB0", campo: "margemBruta" },
+  comissaoVendedor: { titulo: "Comissão Vendedor", cor: "#C2801F", campo: "comissaoVendedor" },
+  margemLiquida: { titulo: "Margem Líquida", cor: "#2C7C6E", campo: "margemLiquida" }
+};
 function diaCurto(d) {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
@@ -169,6 +182,7 @@ export default function FinanceiroDashboardPage() {
   const [itensPagosFabricante, setItensPagosFabricante] = useState([]);
   const [pendentesRecebimento, setPendentesRecebimento] = useState(0);
   const [pendentesFabricante, setPendentesFabricante] = useState(0);
+  const [cardDetalhe, setCardDetalhe] = useState(null);
 
   const { granularidade, de, ate } = useMemo(() => {
     if (filtro === "hoje") return { granularidade: "dia", de: inicioHoje(), ate: fimHoje() };
@@ -221,7 +235,7 @@ export default function FinanceiroDashboardPage() {
 
     let queryOrc = supabase
       .from("orcamentos")
-      .select("id, valor_total, desconto, imposto_total, vendedor_id, valor_herdado_pai, recebimento_confirmado, recebimento_confirmado_em, perfis!orcamentos_vendedor_id_fkey(comissao_percentual)");
+      .select("id, numero_unidade, valor_total, desconto, imposto_total, vendedor_id, valor_herdado_pai, recebimento_confirmado, recebimento_confirmado_em, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome, comissao_percentual)");
     if (unidadeAtiva) queryOrc = queryOrc.eq("unidade_id", unidadeAtiva.id);
     const { data: orcs } = await queryOrc;
 
@@ -357,12 +371,12 @@ export default function FinanceiroDashboardPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 mb-5">
-            <CardStat compacto icone={Wallet} cor="#2E6DA8" label="Valor Recebido" valor={fmtBRL(totais.recebido)} />
-            <CardStat compacto icone={Tag} cor="#D6336C" corValor="#D6336C" label="Descontos concedidos" valor={"-" + fmtBRL(totais.desconto)} />
-            <CardStat compacto icone={Package} cor="#9C5A34" label="Custo Total de Peças" valor={fmtBRL(totais.custoPecas)} destaque />
-            <CardStat compacto icone={Landmark} cor="#E1614F" label="Valor do Imposto" valor={fmtBRL(totais.valorImposto)} tooltip="Valor Recebido × % de imposto cadastrado nos pedidos." />
-            <CardStat compacto icone={TrendingUp} cor="#7A4FB0" label="Margem Bruta" valor={fmtBRL(totais.margemBruta)} tooltip="Valor Recebido − (Custo Total de Peças + Valor do Imposto)." />
-            <CardStat compacto icone={Percent} cor="#C2801F" label="Comissão Vendedor" valor={fmtBRL(totais.comissaoVendedor)} tooltip="Valor Recebido × % de comissão cadastrado no perfil de cada vendedor." />
+            <CardStat compacto icone={Wallet} cor="#2E6DA8" label="Valor Recebido" valor={fmtBRL(totais.recebido)} onClick={() => setCardDetalhe("recebido")} />
+            <CardStat compacto icone={Tag} cor="#D6336C" corValor="#D6336C" label="Descontos concedidos" valor={"-" + fmtBRL(totais.desconto)} onClick={() => setCardDetalhe("desconto")} />
+            <CardStat compacto icone={Package} cor="#9C5A34" label="Custo Total de Peças" valor={fmtBRL(totais.custoPecas)} destaque onClick={() => setCardDetalhe("custoPecas")} />
+            <CardStat compacto icone={Landmark} cor="#E1614F" label="Valor do Imposto" valor={fmtBRL(totais.valorImposto)} tooltip="Valor Recebido × % de imposto cadastrado nos pedidos." onClick={() => setCardDetalhe("valorImposto")} />
+            <CardStat compacto icone={TrendingUp} cor="#7A4FB0" label="Margem Bruta" valor={fmtBRL(totais.margemBruta)} tooltip="Valor Recebido − (Custo Total de Peças + Valor do Imposto)." onClick={() => setCardDetalhe("margemBruta")} />
+            <CardStat compacto icone={Percent} cor="#C2801F" label="Comissão Vendedor" valor={fmtBRL(totais.comissaoVendedor)} tooltip="Valor Recebido × % de comissão cadastrado no perfil de cada vendedor." onClick={() => setCardDetalhe("comissaoVendedor")} />
             <CardStat
               compacto
               icone={PiggyBank}
@@ -371,8 +385,56 @@ export default function FinanceiroDashboardPage() {
               label={`Margem Líquida (${fmtPct(totalLucroLiquidoPct)})`}
               valor={fmtBRL(totais.margemLiquida)}
               tooltip="Margem Bruta − Comissão do Vendedor. O percentual é a margem líquida sobre o Valor Recebido."
+              onClick={() => setCardDetalhe("margemLiquida")}
             />
           </div>
+
+          {cardDetalhe && (() => {
+            const cfg = CAMPOS_CARD[cardDetalhe];
+            const linhasOrdenadas = [...linhasResumo].sort((a, b) => Number(b[cfg.campo] || 0) - Number(a[cfg.campo] || 0));
+            const totalCampo = linhasOrdenadas.reduce((s, l) => s + Number(l[cfg.campo] || 0), 0);
+            return (
+              <Modal open onClose={() => setCardDetalhe(null)} title={cfg.titulo} tamanho="lg">
+                <p className="text-xs text-muted mb-3">{rotuloJanela} · {linhasOrdenadas.length} pedido(s)</p>
+                {linhasOrdenadas.length === 0 ? (
+                  <p className="text-sm text-muted p-4 text-center">Nenhum pedido nesse período.</p>
+                ) : (
+                  <div className="overflow-auto max-h-[60vh] border border-line rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-canvas border-b border-line text-[10.5px] uppercase tracking-wide text-muted font-mono sticky top-0">
+                          <th className="text-left px-3 py-2">Pedido</th>
+                          <th className="text-left px-3 py-2">Cliente</th>
+                          <th className="text-left px-3 py-2">Vendedor</th>
+                          <th className="text-right px-3 py-2">{cfg.titulo}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {linhasOrdenadas.map((l) => (
+                          <tr
+                            key={l.id}
+                            className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
+                            onClick={() => router.push(`/estoque/${l.id}`)}
+                          >
+                            <td className="px-3 py-2 font-mono text-muted">#{l.numero_unidade}</td>
+                            <td className="px-3 py-2">{l.clientes?.nome || "—"}</td>
+                            <td className="px-3 py-2 text-muted">{l.perfis?.nome || "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono font-semibold" style={{ color: cfg.cor }}>{fmtBRL(l[cfg.campo])}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-line bg-canvas font-semibold">
+                          <td className="px-3 py-2" colSpan={3}>Total</td>
+                          <td className="px-3 py-2 text-right font-mono" style={{ color: cfg.cor }}>{fmtBRL(totalCampo)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </Modal>
+            );
+          })()}
 
           {dadosGrafico.length > 0 && (
             <div className="card p-5 mb-5">

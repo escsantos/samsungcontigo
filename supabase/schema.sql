@@ -1595,3 +1595,35 @@ alter table orcamentos add constraint orcamentos_status_check
 
 -- Migra os pedidos já entregues no passado pro novo status.
 update orcamentos set status = 'Produto Entregue' where status = 'Liberado para Retirada/Entrega' and entregue = true;
+
+-- ================================================================
+-- Indicador online mostra login + data/hora do login, balões de novo
+-- pedido / pendência no estoque em tempo real
+-- ================================================================
+
+-- Data/hora do login (diferente de visto_em, que é o "last seen" do heartbeat).
+alter table perfis add column if not exists ultimo_login_em timestamptz;
+
+drop function if exists usuarios_online();
+create or replace function usuarios_online()
+returns table(id uuid, nome text, foto_url text, login text, ultimo_login_em timestamptz)
+language sql security definer set search_path = public stable as $$
+  select id, nome, foto_url, login, ultimo_login_em from perfis
+  where visto_em > now() - interval '2 minutes'
+    and coalesce(bloqueado, false) = false
+  order by nome;
+$$;
+
+-- Realtime: precisa da tabela na publicação e do registro antigo completo
+-- (senão o "old" do evento UPDATE só vem com o id, e não dá pra comparar status).
+alter table orcamentos replica identity full;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'orcamentos'
+  ) then
+    alter publication supabase_realtime add table orcamentos;
+  end if;
+end $$;
