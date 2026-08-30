@@ -16,6 +16,7 @@ import { CARGOS_RELATORIOS, CARGOS_COMISSOES, CARGOS_VISAO_360 } from "../lib/re
 import { ORDEM_STATUS } from "../lib/estoque";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
+import SeletorTema, { aplicarTemaVisual } from "./SeletorTema";
 import Avatar from "./Avatar";
 import SininhoNotificacoes from "./SininhoNotificacoes";
 import IndicadorOnline from "./IndicadorOnline";
@@ -155,6 +156,7 @@ export default function AppShell({ titulo, children }) {
   const [avisosRetirada, setAvisosRetirada] = useState([]);
   const [processandoAvisoRetirada, setProcessandoAvisoRetirada] = useState(false);
   const [toasts, setToasts] = useState([]);
+  const [temaVisual, setTemaVisual] = useState("original");
   const pathname = usePathname();
   const router = useRouter();
   const heartbeatRef = useRef(null);
@@ -203,6 +205,8 @@ export default function AppShell({ titulo, children }) {
       if (p?.cor_accent) {
         aplicarAccent(p.cor_accent);
       }
+      aplicarTemaVisual(p?.tema_visual || "original");
+      setTemaVisual(p?.tema_visual || "original");
       setCarregando(false);
 
       if (ativa && CARGOS_FISCAL.includes(p?.cargo)) {
@@ -382,7 +386,7 @@ export default function AppShell({ titulo, children }) {
         className={`fixed md:static inset-y-0 left-0 z-50 w-64 md:w-60 shrink-0 flex flex-col text-white no-print transform transition-transform duration-200 ${
           menuMobileAberto ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0`}
-        style={{ background: "linear-gradient(180deg, var(--accent-dark), var(--accent))" }}
+        style={{ background: "var(--sidebar-grad, linear-gradient(180deg, var(--accent-dark), var(--accent)))" }}
       >
         <div className="px-5 py-6 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -538,8 +542,19 @@ export default function AppShell({ titulo, children }) {
               <Avatar nome={perfil?.nome} fotoUrl={perfil?.foto_url} tamanho={34} />
             </Link>
             <span className="hidden sm:flex items-center gap-1.5 md:gap-3">
-              <SeletorCor perfil={perfil} />
-              <BotaoTema />
+              <SeletorTema perfil={perfil} onChange={setTemaVisual} />
+              <span
+                className={temaVisual !== "original" ? "opacity-40 pointer-events-none" : ""}
+                title={temaVisual !== "original" ? "Indisponível com um tema especial ativo" : undefined}
+              >
+                <SeletorCor perfil={perfil} />
+              </span>
+              <span
+                className={temaVisual !== "original" ? "opacity-40 pointer-events-none" : ""}
+                title={temaVisual !== "original" ? "Indisponível com um tema especial ativo" : undefined}
+              >
+                <BotaoTema />
+              </span>
             </span>
           </div>
         </header>
@@ -602,6 +617,35 @@ export default function AppShell({ titulo, children }) {
           </div>
         ))}
       </div>
+
+      {/* Decoração do tema visual escolhido — puramente visual, não recebe cliques. */}
+      {temaVisual === "dos" && <div className="tema-decoracao tema-scanlines no-print" aria-hidden="true" />}
+      {temaVisual === "criancas" && (
+        <div className="tema-decoracao tema-confetti no-print" aria-hidden="true">
+          <span style={{ top: "6%", left: "4%", animationDelay: "0s" }}>🎈</span>
+          <span style={{ top: "18%", right: "6%", animationDelay: "1.2s" }}>🧸</span>
+          <span style={{ top: "48%", left: "2%", animationDelay: "0.6s" }}>🪁</span>
+          <span style={{ bottom: "10%", right: "4%", animationDelay: "2s" }}>🎨</span>
+          <span style={{ bottom: "22%", left: "6%", animationDelay: "1.6s" }}>⭐</span>
+        </div>
+      )}
+      {temaVisual === "natal" && (
+        <div className="tema-decoracao tema-neve no-print" aria-hidden="true">
+          {Array.from({ length: 22 }).map((_, i) => (
+            <span
+              key={i}
+              style={{
+                left: `${(i * 97) % 100}%`,
+                fontSize: `${8 + ((i * 13) % 12)}px`,
+                animationDuration: `${6 + ((i * 7) % 8)}s`,
+                animationDelay: `-${(i * 3) % 10}s`
+              }}
+            >
+              ❄
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

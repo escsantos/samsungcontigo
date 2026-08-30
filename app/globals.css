@@ -26,6 +26,69 @@ html.dark {
   --line: #262C36;
 }
 
+/* ================================================================
+   TEMAS VISUAIS — Retrô DOS/Clipper, Mês das Crianças, Natal.
+   Ativados via atributo [data-tema-visual] na tag <html>, escolhidos
+   no seletor de tema (components/SeletorTema.js) e salvos em
+   perfis.tema_visual. Sobrepõem tanto o modo claro quanto o escuro
+   (por isso vêm depois de html.dark aqui no arquivo).
+   ================================================================ */
+
+html[data-tema-visual="dos"] {
+  --canvas: #000000;
+  --surface: #001400;
+  --ink: #33FF33;
+  --muted: #1FAA1F;
+  --line: #1FAA1F;
+  --font-display: "VT323", "Courier New", monospace;
+  --font-body: "VT323", "Courier New", monospace;
+  --accent: #33FF33;
+  --accent-dark: #17B317;
+  --accent-soft: rgba(51,255,51,0.14);
+  --danger: #FF3333;
+  --danger-soft: rgba(255,51,51,0.16);
+  --success: #33FF33;
+  --sidebar-grad: #000000;
+}
+html[data-tema-visual="dos"] body {
+  text-shadow: 0 0 1px rgba(51,255,51,0.45);
+  letter-spacing: 0.3px;
+}
+
+html[data-tema-visual="criancas"] {
+  --canvas: #FFF7ED;
+  --surface: #FFFFFF;
+  --ink: #3A2E52;
+  --muted: #8B7FA8;
+  --line: #F3D9E8;
+  --font-display: "Fredoka", "Sora", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --accent: #FF6B9D;
+  --accent-dark: #E14C82;
+  --accent-soft: rgba(255,107,157,0.14);
+  --danger: #E1614F;
+  --danger-soft: rgba(225,97,79,0.12);
+  --success: #4ECDC4;
+  --sidebar-grad: linear-gradient(180deg, #FF9F45, #FF6B9D 55%, #B0559C);
+}
+
+html[data-tema-visual="natal"] {
+  --canvas: #F8F4EC;
+  --surface: #FFFFFF;
+  --ink: #1B2B22;
+  --muted: #6E7C72;
+  --line: #E7DCC4;
+  --font-display: "Sora", "Inter", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --accent: #B3141F;
+  --accent-dark: #7A0D14;
+  --accent-soft: rgba(179,20,31,0.10);
+  --danger: #B3141F;
+  --danger-soft: rgba(179,20,31,0.12);
+  --success: #1B5E3A;
+  --sidebar-grad: linear-gradient(180deg, #0B3B24, #1B5E3A 65%, #0B3B24);
+}
+
 * {
   border-color: var(--line);
 }
@@ -187,6 +250,42 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+
+  /* Tema Retrô DOS/Clipper — sem cantos arredondados, sem sombra, como uma
+     tela de terminal. */
+  html[data-tema-visual="dos"] .card,
+  html[data-tema-visual="dos"] .field-input,
+  html[data-tema-visual="dos"] .btn-primary,
+  html[data-tema-visual="dos"] .btn-secondary,
+  html[data-tema-visual="dos"] .chip {
+    border-radius: 0;
+  }
+  html[data-tema-visual="dos"] .card {
+    box-shadow: none;
+    border-width: 1px;
+  }
+  html[data-tema-visual="dos"] .btn-primary {
+    background: #000;
+    color: var(--ink);
+    border: 1px solid var(--ink);
+    box-shadow: none;
+  }
+  html[data-tema-visual="dos"] .chip-active {
+    background: #000;
+    color: var(--ink);
+    box-shadow: none;
+    border: 1px solid var(--ink);
+  }
+
+  /* Tema Mês das Crianças — cantos bem arredondados, clima de festa. */
+  html[data-tema-visual="criancas"] .card {
+    border-radius: 22px;
+  }
+  html[data-tema-visual="criancas"] .field-input,
+  html[data-tema-visual="criancas"] .btn-primary,
+  html[data-tema-visual="criancas"] .btn-secondary {
+    border-radius: 999px;
+  }
 }
 
 @media print {
@@ -195,5 +294,65 @@ body {
   main { padding: 0 !important; overflow: visible !important; }
   .card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; }
   table { font-size: 11px !important; }
+}
+
+/* ================================================================
+   Decorações dos temas visuais — camada fixa, não recebe cliques,
+   fica por cima do conteúdo mas atrás de modais/balões (components/AppShell.js
+   renderiza a camada certa conforme o tema ativo).
+   ================================================================ */
+.tema-decoracao {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 45;
+  overflow: hidden;
+}
+
+.tema-scanlines {
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(51,255,51,0.05) 0px,
+    rgba(51,255,51,0.05) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  box-shadow: inset 0 0 140px rgba(51,255,51,0.10);
+}
+
+.tema-confetti span {
+  position: absolute;
+  font-size: 22px;
+  opacity: 0.55;
+  animation: tema-flutuar 6s ease-in-out infinite;
+}
+@keyframes tema-flutuar {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-18px) rotate(8deg); }
+}
+
+.tema-neve span {
+  position: absolute;
+  top: -24px;
+  color: #FFFFFF;
+  text-shadow: 0 0 3px rgba(0,0,0,0.18);
+  opacity: 0.85;
+  animation: tema-cair linear infinite;
+}
+@keyframes tema-cair {
+  to { transform: translateY(110vh) translateX(12px); }
+}
+
+.tema-cursor-blink {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  background: var(--ink);
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  animation: tema-piscar 1s steps(1) infinite;
+}
+@keyframes tema-piscar {
+  50% { opacity: 0; }
 }
 

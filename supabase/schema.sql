@@ -1684,3 +1684,13 @@ begin
     alter publication supabase_realtime add table auditoria_logs;
   end if;
 end $$;
+
+-- ================================================================
+-- TEMAS VISUAIS — Retrô DOS/Clipper, Mês das Crianças, Natal
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+alter table perfis add column if not exists tema_visual text not null default 'original';
+
+alter table perfis drop constraint if exists perfis_tema_visual_check;
+alter table perfis add constraint perfis_tema_visual_check
+  check (tema_visual in ('original','dos','criancas','natal'));
