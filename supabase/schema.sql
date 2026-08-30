@@ -1694,3 +1694,34 @@ alter table perfis add column if not exists tema_visual text not null default 'o
 alter table perfis drop constraint if exists perfis_tema_visual_check;
 alter table perfis add constraint perfis_tema_visual_check
   check (tema_visual in ('original','dos','criancas','natal'));
+
+-- ================================================================
+-- PAGAMENTOS — busca por cliente/empresa e por OS Interna (mesma linha de
+-- busca de Orçamentos). Mesma checagem de permissão das outras funções da
+-- tela de Pagamentos (buscar_orcamento_pagamento etc.) — devolve uma lista
+-- leve pra alimentar as sugestões, sem depender do RLS direto de orcamentos
+-- (que não libera Estoque/Vendedor pra ver pedidos de outra pessoa).
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+drop function if exists buscar_orcamentos_pagamento_lista(bigint);
+create or replace function buscar_orcamentos_pagamento_lista(p_unidade_id bigint)
+returns table(
+  id bigint,
+  numero_unidade integer,
+  cliente_id bigint,
+  cliente_nome text,
+  cliente_nome_fantasia text,
+  os_interna text,
+  valor_total numeric,
+  status text,
+  entregue boolean
+)
+language sql security definer set search_path = public stable as $$
+  select o.id, o.numero_unidade, o.cliente_id, c.nome, c.nome_fantasia, o.os_interna, o.valor_total, o.status, o.entregue
+  from orcamentos o
+  join clientes c on c.id = o.cliente_id
+  where o.unidade_id = p_unidade_id
+    and (pode_gerenciar_clientes() or pode_gerenciar_estoque())
+    and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+  order by o.criado_em desc;
+$$;
