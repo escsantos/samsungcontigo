@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Search, ShieldAlert, Receipt, Plus, Trash2, Pencil, Save, ExternalLink, Paperclip, Check, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Search, ShieldAlert, Receipt, Plus, Trash2, Pencil, Save, ExternalLink, Paperclip, Check, RefreshCw, Hash, Contact, Wrench, X, ChevronRight } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO } from "../../lib/estoque";
@@ -14,6 +14,10 @@ function fmtBRL(v) {
 function hoje() {
   return new Date().toISOString().slice(0, 10);
 }
+// Ignora acento/caixa pra comparar "joao", "João" e "JOÃO" como iguais.
+function normKey(s) {
+  return String(s ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().toLowerCase();
+}
 
 export default function PagamentosPage() {
   const [perfil, setPerfil] = useState(undefined);
@@ -24,6 +28,11 @@ export default function PagamentosPage() {
   const [outraUnidade, setOutraUnidade] = useState(false);
   const [pagamentos, setPagamentos] = useState([]);
   const [erro, setErro] = useState("");
+  const [listaResumo, setListaResumo] = useState([]);
+  const [buscaCliente, setBuscaCliente] = useState("");
+  const [sugestoesClienteAbertas, setSugestoesClienteAbertas] = useState(false);
+  const [buscaOS, setBuscaOS] = useState("");
+  const [sugestoesOSAbertas, setSugestoesOSAbertas] = useState(false);
 
   const [formaPagamento, setFormaPagamento] = useState(FORMAS_PAGAMENTO[0]);
   const [valorPagamento, setValorPagamento] = useState("");
@@ -39,9 +48,22 @@ export default function PagamentosPage() {
     getPerfilAtual().then(setPerfil);
   }, []);
 
-  async function buscarPedido(e) {
-    e?.preventDefault();
-    const n = parseInt(numeroBusca, 10);
+  // Lista leve de pedidos da unidade ativa, só pra alimentar as sugestões de
+  // busca por cliente/empresa e por OS Interna (a mesma linha de busca de
+  // Orçamentos) — quem realmente carrega os dados completos pro pagamento é
+  // carregarPedidoPorNumero, via RPC.
+  useEffect(() => {
+    if (perfil === undefined) return;
+    if (!["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Estoque"].includes(perfil?.cargo)) return;
+    (async () => {
+      const unidadeAtiva = getUnidadeAtiva();
+      if (!unidadeAtiva) return;
+      const { data } = await supabase.rpc("buscar_orcamentos_pagamento_lista", { p_unidade_id: unidadeAtiva.id });
+      setListaResumo(data || []);
+    })();
+  }, [perfil]);
+
+  async function carregarPedidoPorNumero(n) {
     if (!n) return;
     const unidadeAtiva = getUnidadeAtiva();
     if (!unidadeAtiva) return;
@@ -70,6 +92,35 @@ export default function PagamentosPage() {
     setValorPagamento(faltando > 0 ? faltando.toFixed(2) : "");
     setBuscando(false);
   }
+
+  async function buscarPedido(e) {
+    e?.preventDefault();
+    const n = parseInt(numeroBusca, 10);
+    if (!n) return;
+    await carregarPedidoPorNumero(n);
+  }
+
+  function selecionarPedidoResumo(resumo) {
+    setNumeroBusca(String(resumo.numero_unidade));
+    setBuscaCliente("");
+    setBuscaOS("");
+    setSugestoesClienteAbertas(false);
+    setSugestoesOSAbertas(false);
+    carregarPedidoPorNumero(resumo.numero_unidade);
+  }
+
+  const termoClienteNorm = normKey(buscaCliente);
+  const termoOSNorm = normKey(buscaOS);
+  const sugestoesCliente = useMemo(() => {
+    if (!termoClienteNorm) return [];
+    return listaResumo
+      .filter((o) => normKey(o.cliente_nome).includes(termoClienteNorm) || normKey(o.cliente_nome_fantasia).includes(termoClienteNorm))
+      .slice(0, 8);
+  }, [listaResumo, termoClienteNorm]);
+  const sugestoesOS = useMemo(() => {
+    if (!termoOSNorm) return [];
+    return listaResumo.filter((o) => normKey(o.os_interna).includes(termoOSNorm)).slice(0, 8);
+  }, [listaResumo, termoOSNorm]);
 
   async function recarregarPedido() {
     if (!orcamento) return;
@@ -217,19 +268,121 @@ export default function PagamentosPage() {
   return (
     <AppShell titulo="Pagamentos">
       <form onSubmit={buscarPedido} className="card p-4 mb-4">
-        <p className="text-xs font-medium mb-2">Buscar pedido pelo número</p>
-        <div className="flex gap-2 max-w-sm">
-          <input
-            className="field-input"
-            placeholder="Ex: 13"
-            value={numeroBusca}
-            onChange={(e) => setNumeroBusca(e.target.value)}
-            inputMode="numeric"
-          />
+        <p className="text-xs font-medium mb-2">Buscar pedido</p>
+        <div className="flex gap-2 flex-wrap items-stretch">
+          <div className="relative w-32 shrink-0">
+            <Hash size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+            <input
+              className="field-input pl-8"
+              placeholder="Nº pedido"
+              value={numeroBusca}
+              onChange={(e) => setNumeroBusca(e.target.value)}
+              inputMode="numeric"
+            />
+          </div>
           <button className="btn-primary shrink-0" type="submit" disabled={buscando || !numeroBusca}>
             <Search size={15} />
             Buscar
           </button>
+
+          <div className="relative flex-1 min-w-[200px]">
+            <Contact size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+            <input
+              className="field-input pl-8 pr-8"
+              placeholder="Cliente ou empresa"
+              value={buscaCliente}
+              onChange={(e) => setBuscaCliente(e.target.value)}
+              onFocus={() => setSugestoesClienteAbertas(true)}
+              onBlur={() => setTimeout(() => setSugestoesClienteAbertas(false), 150)}
+            />
+            {buscaCliente && (
+              <button
+                type="button"
+                onClick={() => setBuscaCliente("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+                aria-label="Limpar busca"
+              >
+                <X size={14} />
+              </button>
+            )}
+
+            {sugestoesClienteAbertas && termoClienteNorm && (
+              <div className="absolute z-20 top-full left-0 right-0 mt-1.5 card p-1.5 max-h-72 overflow-auto shadow-lg">
+                {sugestoesCliente.length === 0 ? (
+                  <p className="text-sm text-muted px-2.5 py-2">Nenhum pedido encontrado para &quot;{buscaCliente}&quot;.</p>
+                ) : (
+                  sugestoesCliente.map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => selecionarPedidoResumo(o)}
+                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-canvas text-sm flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate">
+                        <span className="font-mono text-muted">#{o.numero_unidade}</span>{" "}
+                        <span className="font-medium">{o.cliente_nome || "—"}</span>
+                        {o.cliente_nome_fantasia && <span className="text-muted text-xs"> ({o.cliente_nome_fantasia})</span>}
+                      </span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono text-xs text-muted">{fmtBRL(o.valor_total)}</span>
+                        <ChevronRight size={14} className="text-muted" />
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="relative flex-1 min-w-[160px]">
+            <Wrench size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+            <input
+              className="field-input pl-8 pr-8"
+              placeholder="OS Interna"
+              value={buscaOS}
+              onChange={(e) => setBuscaOS(e.target.value)}
+              onFocus={() => setSugestoesOSAbertas(true)}
+              onBlur={() => setTimeout(() => setSugestoesOSAbertas(false), 150)}
+            />
+            {buscaOS && (
+              <button
+                type="button"
+                onClick={() => setBuscaOS("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+                aria-label="Limpar busca"
+              >
+                <X size={14} />
+              </button>
+            )}
+
+            {sugestoesOSAbertas && termoOSNorm && (
+              <div className="absolute z-20 top-full left-0 right-0 mt-1.5 card p-1.5 max-h-72 overflow-auto shadow-lg">
+                {sugestoesOS.length === 0 ? (
+                  <p className="text-sm text-muted px-2.5 py-2">Nenhum pedido encontrado com OS &quot;{buscaOS}&quot;.</p>
+                ) : (
+                  sugestoesOS.map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => selecionarPedidoResumo(o)}
+                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-canvas text-sm flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate">
+                        <span className="font-mono text-muted">#{o.numero_unidade}</span>{" "}
+                        <span className="font-medium">{o.cliente_nome || "—"}</span>
+                      </span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono text-xs text-muted">OS: {o.os_interna}</span>
+                        <ChevronRight size={14} className="text-muted" />
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </div>
         {naoEncontrado && <p className="text-sm text-danger mt-3">Nenhum pedido encontrado com o número #{numeroBusca}.</p>}
         {outraUnidade && <p className="text-sm text-danger mt-3">O pedido #{numeroBusca} pertence a outra unidade. Troque de unidade pra acessá-lo.</p>}
