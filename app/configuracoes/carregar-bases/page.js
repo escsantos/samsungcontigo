@@ -291,6 +291,7 @@ export default function CarregarBasesPage() {
       let registrosPrecos = [];
       let modelosSet = new Set();
       let naoClassificados = 0, semCusto = 0, precosAtualizados = 0, precosMantidos = 0, novasPecas = 0, catalogoAtualizados = 0;
+      let precosSemCatalogo = 0;
       let lotesAtualizados = 0, lotesMantidos = 0;
 
       function decidirPreco(chave, precoNovo) {
@@ -413,15 +414,19 @@ export default function CarregarBasesPage() {
         registrosCatalogo = Array.from(uniqueCatalogo.values());
         registrosPrecos = Array.from(uniquePrecos.values());
       } else {
-        // ---------- modo só-preço: atualiza custo das peças já cadastradas, sem GSPN ----------
-        setProgresso({ pct: 65, texto: "Atualizando preços das peças já cadastradas..." });
+        // ---------- modo só-preço: atualiza (ou registra) o custo de cada peça
+        // encontrada na Base Peças, mesmo que o código ainda não esteja no catálogo
+        // (ainda não apareceu em nenhuma Base GSPN). Ela já fica vendável e
+        // consultável como "Não Classificado" (ver buscar_pecas()); quando o modelo
+        // chegar depois por uma Base GSPN, o preço já gravado aqui é reaproveitado
+        // automaticamente pra ela.
+        setProgresso({ pct: 65, texto: "Atualizando preços das peças..." });
         await sleep(0);
         for (const [chave, precoInfo] of precoMap.entries()) {
-          const candidatos = existentesPorCodigo.get(precoInfo.codigo) || [];
-          if (candidatos.length === 0) continue; // sem GSPN não sabemos o modelo, não cadastra peça nova
           const decisao = decidirPreco(chave, precoInfo);
           if (decisao.mudou) {
             const unidadeResolvida = unidadePorAscCod.get(precoInfo.ascCod);
+            if (!existentesPorCodigo.has(precoInfo.codigo)) precosSemCatalogo++;
             registrosPrecos.push({
               unidade_id: unidadeResolvida ? unidadeResolvida.id : null,
               asc_cod_origem: precoInfo.ascCod,
@@ -525,6 +530,7 @@ export default function CarregarBasesPage() {
         catalogoAtualizados,
         precosAtualizados,
         precosMantidos,
+        precosSemCatalogo,
         gspnDataSolicitacaoMax
       });
       setConcluido(true);
@@ -568,11 +574,13 @@ export default function CarregarBasesPage() {
         )}
         <p className="font-display font-semibold text-[15px] mb-1">Carregar bases de dados</p>
         <p className="text-sm text-muted mb-4">
-          Suba as duas bases juntas pra um processamento completo, ou só uma de cada vez: só Base Peças atualiza
-          os custos das peças (sempre na unidade em que você está agora); só Base GSPN atualiza a
-          classificação/modelo (compartilhado, vale pra todas as unidades). Ao subir de novo, uma peça só é considerada
-          "alterada" quando o dado realmente muda — se a data do registro (Data NF) for mais antiga do que a que já
-          está gravada, o sistema mantém o que já tinha, pra sempre mostrar a data mais atual da peça comprada.
+          Suba as duas bases juntas pra um processamento completo, ou só uma de cada vez: só Base Peças já registra
+          código, Delivery e custo de cada peça (sempre na unidade em que você está agora), mesmo pra peças que ainda
+          não têm modelo — elas ficam disponíveis pra vender e consultar como "Não Classificado"; só Base GSPN atualiza
+          a classificação/modelo (compartilhado, vale pra todas as unidades) e, quando encontra uma dessas peças, o
+          modelo passa a aparecer com o custo que ela já tinha. Ao subir de novo, uma peça só é considerada "alterada"
+          quando o dado realmente muda — se a data do registro (Data NF) for mais antiga do que a que já está gravada,
+          o sistema mantém o que já tinha, pra sempre mostrar a data mais atual da peça comprada.
         </p>
 
         {ultimoProcessamento !== undefined && (
@@ -612,7 +620,7 @@ export default function CarregarBasesPage() {
         {(arquivoPecas || arquivoGspn) && !(arquivoPecas && arquivoGspn) && (
           <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
             {arquivoPecas
-              ? `Só Base Peças selecionada: vai atualizar o custo das peças já cadastradas, sempre em ${unidadeAtiva?.nome || "sua unidade"} (não cadastra peça nova).`
+              ? `Só Base Peças selecionada: vai atualizar (ou registrar) o custo de cada peça, sempre em ${unidadeAtiva?.nome || "sua unidade"} — mesmo peça sem modelo ainda fica registrada (código + Delivery + custo) e disponível como "Não Classificado" até a Base GSPN trazer o modelo dela.`
               : "Só Base GSPN selecionada: vai atualizar modelo/categoria/descrição no catálogo compartilhado (mantém os preços já cadastrados de todas as unidades)."}
           </p>
         )}
@@ -682,6 +690,7 @@ export default function CarregarBasesPage() {
             {resultado.modo !== "so-precos" && <Stat n={resultado.catalogoAtualizados} label="peças com classificação alterada" />}
             <Stat n={resultado.precosAtualizados} label="preços atualizados (mais recentes)" />
             <Stat n={resultado.precosMantidos} label="preços mantidos (já eram mais novos)" />
+            {resultado.precosSemCatalogo > 0 && <Stat n={resultado.precosSemCatalogo} label="peças sem modelo ainda (Não Classificado)" />}
             {resultado.modo === "completo" && <Stat n={resultado.duplicadosRemovidos} label="duplicados removidos" />}
             {resultado.modo === "completo" && <Stat n={resultado.naoClassificados} label="não classificadas" />}
             {resultado.modo !== "so-precos" && <Stat n={resultado.semCusto} label="sem custo encontrado" />}
