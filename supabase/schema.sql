@@ -1745,3 +1745,92 @@ drop policy if exists "administrador exclui estornos" on estornos;
 create policy "administrador exclui estornos"
   on estornos for delete
   using (is_administrador());
+
+-- ================================================================
+-- PEÇAS SEM CLASSIFICAÇÃO GSPN — vendáveis e consultáveis usando o custo
+-- mais recente da Base Peças (lotes_pecas), mesmo sem nunca ter aparecido
+-- na Base GSPN. Antes, buscar_pecas() só listava o que já estava em
+-- pecas_catalogo (que só é populado a partir da Base GSPN) — um código
+-- comprado mas nunca classificado ficava invisível na Consulta de Peças e
+-- na busca de itens do Orçamento, mesmo já tendo custo conhecido.
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- buscar_pecas precisa virar SECURITY DEFINER: lotes_pecas só é legível via
+-- RLS por quem tem pode_gerenciar_estoque() (Administrador/Diretor/Gerente/
+-- Estoque) — sem isso, Vendedor e Cliente não veriam nada dessas peças
+-- "Não Classificado" ao chamar essa função (só custo/código são expostos,
+-- nunca o nº da Delivery, então não abre nada sensível a mais do que
+-- pecas_precos já expõe hoje pra esses papéis).
+drop function if exists buscar_pecas(bigint);
+create or replace function buscar_pecas(p_unidade_id bigint)
+returns table (
+  id bigint,
+  modelo text,
+  categoria text,
+  codigo text,
+  descricao_resumida text,
+  descricao_peca text,
+  valor_unitario numeric,
+  data_referencia text,
+  unidade_origem_id bigint,
+  unidade_origem_nome text,
+  asc_cod_origem text
+)
+language sql security definer set search_path = public stable as $$
+  with unidade_atual as (select asc_cod from unidades where id = p_unidade_id),
+  catalogadas as (
+    select
+      c.id, c.modelo, c.categoria, c.codigo, c.descricao_resumida, c.descricao_peca,
+      coalesce(p_local.valor_unitario, p_fallback.valor_unitario) as valor_unitario,
+      coalesce(p_local.data_referencia, p_fallback.data_referencia) as data_referencia,
+      coalesce(p_local.unidade_id, p_fallback.unidade_id) as unidade_origem_id,
+      coalesce(u_local.nome, u_fallback.nome) as unidade_origem_nome,
+      coalesce(p_local.asc_cod_origem, p_fallback.asc_cod_origem) as asc_cod_origem
+    from pecas_catalogo c
+    left join pecas_precos p_local
+      on p_local.codigo = c.codigo
+      and p_local.asc_cod_origem = (select asc_cod from unidade_atual)
+      and p_local.valor_unitario is not null
+    left join unidades u_local on u_local.id = p_local.unidade_id
+    left join lateral (
+      select pp.unidade_id, pp.valor_unitario, pp.data_referencia, pp.asc_cod_origem
+      from pecas_precos pp
+      where pp.codigo = c.codigo
+        and pp.asc_cod_origem is distinct from (select asc_cod from unidade_atual)
+        and pp.valor_unitario is not null
+      order by pp.atualizado_em desc
+      limit 1
+    ) p_fallback on p_local.valor_unitario is null
+    left join unidades u_fallback on u_fallback.id = p_fallback.unidade_id
+  ),
+  -- códigos que só existem em lotes_pecas (vieram da Base Peças, nunca
+  -- apareceram na Base GSPN) — mesmo sem modelo/descrição, já dá pra vender
+  -- e consultar usando o custo da Delivery mais recente daquele código
+  -- (preferindo a unidade ativa; sem isso, cai pra Delivery mais recente de
+  -- outra unidade).
+  nao_classificadas as (
+    select distinct on (l.codigo)
+      -l.id as id,
+      ''::text as modelo,
+      'Não Classificado'::text as categoria,
+      l.codigo,
+      'Sem classificação (Base GSPN) — custo da Base Peças'::text as descricao_resumida,
+      ''::text as descricao_peca,
+      l.valor_unitario,
+      l.data_nf as data_referencia,
+      l.unidade_id as unidade_origem_id,
+      u.nome as unidade_origem_nome,
+      l.asc_cod_origem
+    from lotes_pecas l
+    left join unidades u on u.id = l.unidade_id
+    where l.valor_unitario is not null
+      and not exists (select 1 from pecas_catalogo c where c.codigo = l.codigo)
+    order by l.codigo,
+      case when l.asc_cod_origem = (select asc_cod from unidade_atual) then 0 else 1 end,
+      l.criado_em desc
+  )
+  select * from catalogadas
+  union all
+  select * from nao_classificadas;
+$$;

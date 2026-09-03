@@ -16,6 +16,7 @@ import { registrarAuditoria } from "../../../lib/auditoria";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, rotuloPagamentoPendente } from "../../../lib/estoque";
 import { STATUS_ELEGIVEIS_NF, statusNotaFiscal, RESUMO_STATUS_NF } from "../../../lib/fiscal";
+import { parseBRDate } from "../../../lib/classificacao";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -60,6 +61,13 @@ function EstoquePedidoPageInner() {
   const [escolhaDivisao, setEscolhaDivisao] = useState({}); // { [itemId]: "mesma" | "diferentes" }
   const [linhasDivisao, setLinhasDivisao] = useState({}); // { [itemId]: [{qtd, delivery, validado, custoUnitario, buscando, erro}] }
   const [processandoDivisao, setProcessandoDivisao] = useState({});
+
+  // sugestões de Delivery pro código da peça — clicou no campo, busca na base
+  // de peças (lotes_pecas) quais deliveries já existem pra esse código, da
+  // mais recente pra mais antiga, e mostra uma caixa de seleção suspensa.
+  const [popoverDelivery, setPopoverDelivery] = useState(null); // { chave, codigo, top, left, width, onSelecionar }
+  const [sugestoesPorCodigo, setSugestoesPorCodigo] = useState({}); // codigo -> lotes ordenados (cache)
+  const [carregandoSugestao, setCarregandoSugestao] = useState(false);
 
   // OS Interna — nº da ordem de serviço do sistema interno da loja
   const [editandoOS, setEditandoOS] = useState(false);
@@ -219,8 +227,8 @@ function EstoquePedidoPageInner() {
     carregar();
   }
 
-  async function buscarDeliveryItem(item) {
-    const valor = (deliveries[item.id] || "").trim();
+  async function buscarDeliveryItem(item, valorOverride) {
+    const valor = (valorOverride || deliveries[item.id] || "").trim();
     if (!valor) return;
     setBuscandoItem((b) => ({ ...b, [item.id]: true }));
     setErroItem((e) => ({ ...e, [item.id]: "" }));
@@ -267,6 +275,73 @@ function EstoquePedidoPageInner() {
     if (itensAtualizados.every((i) => i.liberado)) {
       setConfirmarAvanco({ de: orcamento.status, para: "Em Estoque - Aguardando Faturamento" });
     }
+  }
+
+  // busca (com cache por código) as deliveries já cadastradas em lotes_pecas
+  // pra esse código de peça, da mais recente pra mais antiga (por Data NF,
+  // caindo pra data de cadastro quando a Data NF não existir/não for válida).
+  async function carregarSugestoesPorCodigo(codigo) {
+    if (sugestoesPorCodigo[codigo]) return sugestoesPorCodigo[codigo];
+    setCarregandoSugestao(true);
+    const unidadeAtiva = getUnidadeAtiva();
+    const { data } = await supabase
+      .from("lotes_pecas")
+      .select("no_entrega, valor_unitario, qtd, data_nf, criado_em")
+      .eq("codigo", codigo)
+      .eq("asc_cod_origem", unidadeAtiva?.asc_cod);
+    const ordenadas = (data || []).slice().sort((a, b) => {
+      const ta = parseBRDate(a.data_nf);
+      const tb = parseBRDate(b.data_nf);
+      if (ta !== null && tb !== null) return tb - ta;
+      if (ta !== null) return -1;
+      if (tb !== null) return 1;
+      return new Date(b.criado_em) - new Date(a.criado_em);
+    });
+    setSugestoesPorCodigo((s) => ({ ...s, [codigo]: ordenadas }));
+    setCarregandoSugestao(false);
+    return ordenadas;
+  }
+
+  function abrirSugestaoPrincipal(item, e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPopoverDelivery({
+      chave: `item-${item.id}`,
+      codigo: item.codigo,
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 260),
+      onSelecionar: (noEntrega) => {
+        setDeliveries((atual) => ({ ...atual, [item.id]: noEntrega }));
+        buscarDeliveryItem(item, noEntrega);
+      }
+    });
+    carregarSugestoesPorCodigo(item.codigo);
+  }
+
+  function abrirSugestaoDivisao(item, idx, e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPopoverDelivery({
+      chave: `div-${item.id}-${idx}`,
+      codigo: item.codigo,
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 260),
+      onSelecionar: (noEntrega) => {
+        mudarLinhaDivisao(item.id, idx, "delivery", noEntrega);
+        buscarLinhaDivisao(item, idx, noEntrega);
+      }
+    });
+    carregarSugestoesPorCodigo(item.codigo);
+  }
+
+  function fecharPopoverDelivery(chave) {
+    // só fecha se ainda for o mesmo popover que estava aberto quando o campo
+    // perdeu o foco — evita fechar por engano o popover de OUTRO campo que
+    // acabou de abrir (quando o foco pula direto de um campo Delivery pro
+    // próximo, o blur do antigo dispara antes do focus do novo).
+    setTimeout(() => {
+      setPopoverDelivery((atual) => (atual && atual.chave === chave ? null : atual));
+    }, 150);
   }
 
   // ---------- delivery diferente por unidade (peça com qtd > 1) ----------
@@ -317,9 +392,9 @@ function EstoquePedidoPageInner() {
     }));
   }
 
-  async function buscarLinhaDivisao(item, idx) {
+  async function buscarLinhaDivisao(item, idx, valorOverride) {
     const linha = (linhasDivisao[item.id] || [])[idx];
-    const valor = (linha?.delivery || "").trim();
+    const valor = (valorOverride || linha?.delivery || "").trim();
     if (!valor) return;
     setLinhasDivisao((a) => ({
       ...a,
@@ -1067,6 +1142,8 @@ function EstoquePedidoPageInner() {
                               placeholder="nº delivery"
                               value={l.delivery}
                               onChange={(e) => mudarLinhaDivisao(i.id, idx, "delivery", e.target.value)}
+                              onFocus={(e) => abrirSugestaoDivisao(i, idx, e)}
+                              onBlur={() => fecharPopoverDelivery(`div-${i.id}-${idx}`)}
                             />
                             {l.validado ? (
                               <Check size={13} className="shrink-0" style={{ color: "#2C7C6E" }} />
@@ -1126,6 +1203,8 @@ function EstoquePedidoPageInner() {
                           placeholder="nº delivery"
                           value={deliveries[i.id] || ""}
                           onChange={(e) => setDeliveries((atual) => ({ ...atual, [i.id]: e.target.value }))}
+                          onFocus={(e) => abrirSugestaoPrincipal(i, e)}
+                          onBlur={() => fecharPopoverDelivery(`item-${i.id}`)}
                         />
                         <button
                           onClick={() => buscarDeliveryItem(i)}
@@ -1677,6 +1756,37 @@ function EstoquePedidoPageInner() {
         totalPago={totalPagoGeral}
         onCancelado={carregar}
       />
+
+      {popoverDelivery && (
+        <div
+          className="fixed z-[999] rounded-lg border border-line overflow-hidden"
+          style={{ top: popoverDelivery.top, left: popoverDelivery.left, width: popoverDelivery.width, background: "var(--surface)", boxShadow: "0 8px 24px rgba(20,24,31,0.16)" }}
+          // impede o blur do input de fechar o popover antes do clique na sugestão registrar
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {carregandoSugestao && !sugestoesPorCodigo[popoverDelivery.codigo] ? (
+            <p className="text-xs text-muted px-3 py-2.5">Buscando deliveries...</p>
+          ) : (sugestoesPorCodigo[popoverDelivery.codigo] || []).length === 0 ? (
+            <p className="text-xs text-muted px-3 py-2.5">Nenhuma Delivery encontrada pro código {popoverDelivery.codigo} nesta unidade.</p>
+          ) : (
+            <div className="max-h-64 overflow-auto">
+              {(sugestoesPorCodigo[popoverDelivery.codigo] || []).map((l, i) => (
+                <button
+                  key={`${l.no_entrega}-${i}`}
+                  onClick={() => { popoverDelivery.onSelecionar(l.no_entrega); setPopoverDelivery(null); }}
+                  className="w-full text-left px-3 py-2 hover:bg-canvas border-b border-line last:border-0 flex items-center justify-between gap-2"
+                >
+                  <span className="font-mono text-xs font-semibold">{l.no_entrega}</span>
+                  <span className="text-[10px] text-muted font-mono text-right shrink-0">
+                    {fmtBRL(l.valor_unitario)}
+                    {l.data_nf ? <> · {l.data_nf}</> : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </AppShell>
   );
 }
