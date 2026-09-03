@@ -4,13 +4,9 @@ import { UploadCloud, ShieldAlert, Building2, History } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { classifyDesc, categoria, normKey, parseBRDate, parseValorFlexivel, findExact, findAny } from "../../../lib/classificacao";
-import { getUnidadeAtiva, extrairAscCod } from "../../../lib/unidade";
+import { getUnidadeAtiva } from "../../../lib/unidade";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
-
-// posição das colunas de ASC COD nos arquivos-padrão exportados (0-indexado)
-const COL_ASC_COD_PECAS = 19; // coluna T
-const COL_ASC_COD_GSPN = 3;   // coluna D
 
 function sleep(ms) {
   return new Promise((res) => setTimeout(res, ms));
@@ -83,19 +79,18 @@ export default function CarregarBasesPage() {
       // alteração real de cada registro que for criado ou modificado agora.
       const agoraIso = new Date().toISOString();
 
-      // mapa ascCod -> unidade cadastrada (pra resolver a coluna T de cada linha)
+      // mapa ascCod -> unidade cadastrada (pra resolver o id da unidade ativa)
       const { data: todasUnidades } = await supabase.from("unidades").select("id, nome, asc_cod");
       const unidadePorAscCod = new Map((todasUnidades || []).map((u) => [u.asc_cod, u]));
 
-      // precoMap agora é chaveado por código + código-da-unidade (coluna T da própria linha)
+      // precoMap é chaveado por código + código da unidade ativa (todas as linhas
+      // deste upload ficam sob o mesmo ascCod — o da unidade em que você está)
       let precoMap = new Map(); // chave: codigo||ascCod -> { valor, ts, dataNF, ascCod }
       let lotes = [];
       let gspnDataSolicitacaoMax = null; // texto dd/mm/aaaa mais recente encontrado na coluna Q da Base GSPN
       let gspnDataSolicitacaoMaxTs = null;
       let duplicadosRemovidos = 0;
       let semEntrega = 0;
-      let linhasDeOutraUnidade = 0;
-      let linhasDeUnidadeNaoCadastrada = 0;
 
       // ---------- Base Peças (opcional) ----------
       if (arquivoPecas) {
@@ -131,9 +126,11 @@ export default function CarregarBasesPage() {
           if (!row || row.length === 0) continue;
           const code = String(row[idxPecasEnv] || "").trim();
           if (!code) continue;
-          // código da unidade real que comprou ESSA linha, lido da própria linha (coluna T).
-          // se a linha não tiver, assume a unidade ativa como melhor esforço.
-          const ascCodLinha = extrairAscCod(row[COL_ASC_COD_PECAS]) || unidadeAtiva.asc_cod;
+          // Toda linha da Base Peças fica atribuída à unidade em que o upload foi feito
+          // (a unidade ativa), nunca à unidade indicada na própria planilha — cada
+          // unidade só enxerga a Delivery/preço que ELA MESMA subiu, pra não misturar
+          // custo/estoque de uma unidade com o de outra.
+          const ascCodLinha = unidadeAtiva.asc_cod;
           const key = [
             idxBilling >= 0 ? row[idxBilling] : "",
             idxDocConta >= 0 ? row[idxDocConta] : "",
@@ -163,10 +160,6 @@ export default function CarregarBasesPage() {
         await sleep(0);
         for (const p of pecasDedup) {
           if (!p.qtd || !p.valor) continue;
-          if (p.ascCod !== unidadeAtiva.asc_cod) {
-            if (unidadePorAscCod.has(p.ascCod)) linhasDeOutraUnidade++;
-            else linhasDeUnidadeNaoCadastrada++;
-          }
           const chave = p.codigo + "||" + p.ascCod;
           const ts = parseBRDate(p.dataNF);
           const atual = precoMap.get(chave);
@@ -441,29 +434,6 @@ export default function CarregarBasesPage() {
         }
       }
 
-      // também grava direto (sem passar pelo cruzamento com GSPN) qualquer preço de OUTRA
-      // unidade encontrado na Base Peças — não precisamos do catálogo pra saber que aquele
-      // código já existe, só registrar o preço daquela unidade de origem.
-      if (arquivoPecas) {
-        for (const [chave, precoInfo] of precoMap.entries()) {
-          if (precoInfo.ascCod === unidadeAtiva.asc_cod) continue; // já tratado acima
-          const jaEsta = registrosPrecos.some((r) => r.codigo === precoInfo.codigo && r.asc_cod_origem === precoInfo.ascCod);
-          if (jaEsta) continue;
-          const decisao = decidirPreco(chave, precoInfo);
-          if (decisao.mudou) {
-            const unidadeResolvida = unidadePorAscCod.get(precoInfo.ascCod);
-            registrosPrecos.push({
-              unidade_id: unidadeResolvida ? unidadeResolvida.id : null,
-              asc_cod_origem: precoInfo.ascCod,
-              codigo: precoInfo.codigo,
-              valor_unitario: decisao.valor,
-              data_referencia: decisao.data,
-              atualizado_em: decisao.atualizadoEm
-            });
-          }
-        }
-      }
-
       if (registrosCatalogo.length > 0) {
         setProgresso({ pct: 75, texto: "Gravando catálogo (compartilhado entre unidades)..." });
         await sleep(0);
@@ -555,8 +525,6 @@ export default function CarregarBasesPage() {
         catalogoAtualizados,
         precosAtualizados,
         precosMantidos,
-        linhasDeOutraUnidade,
-        linhasDeUnidadeNaoCadastrada,
         gspnDataSolicitacaoMax
       });
       setConcluido(true);
@@ -591,16 +559,17 @@ export default function CarregarBasesPage() {
           <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
             <Building2 size={15} />
             <p className="text-sm">
-              Você está em <b>{unidadeAtiva.nome}</b> (ASC COD. {unidadeAtiva.asc_cod}). Cada linha da Base Peças é atribuída
-              à unidade real que comprou aquela peça (coluna T), não necessariamente a que você está — isso permite colaboração
-              entre unidades. O catálogo (modelo/categoria/descrição) é sempre compartilhado.
+              Você está em <b>{unidadeAtiva.nome}</b> (ASC COD. {unidadeAtiva.asc_cod}). Tudo que você subir aqui — preço e
+              Delivery de cada peça — fica atribuído a <b>esta unidade</b>. Pra outra unidade ter suas próprias Deliveries e
+              preços, alguém precisa subir a Base Peças estando naquela unidade. O catálogo (modelo/categoria/descrição) é o
+              único dado sempre compartilhado entre todas as unidades.
             </p>
           </div>
         )}
         <p className="font-display font-semibold text-[15px] mb-1">Carregar bases de dados</p>
         <p className="text-sm text-muted mb-4">
           Suba as duas bases juntas pra um processamento completo, ou só uma de cada vez: só Base Peças atualiza
-          os custos das peças (por unidade, conforme a coluna T de cada linha); só Base GSPN atualiza a
+          os custos das peças (sempre na unidade em que você está agora); só Base GSPN atualiza a
           classificação/modelo (compartilhado, vale pra todas as unidades). Ao subir de novo, uma peça só é considerada
           "alterada" quando o dado realmente muda — se a data do registro (Data NF) for mais antiga do que a que já
           está gravada, o sistema mantém o que já tinha, pra sempre mostrar a data mais atual da peça comprada.
@@ -643,7 +612,7 @@ export default function CarregarBasesPage() {
         {(arquivoPecas || arquivoGspn) && !(arquivoPecas && arquivoGspn) && (
           <p className="text-xs mb-4 px-3 py-2 rounded-lg" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
             {arquivoPecas
-              ? "Só Base Peças selecionada: vai atualizar o custo das peças já cadastradas, cada linha na unidade indicada pela coluna T (não cadastra peça nova)."
+              ? `Só Base Peças selecionada: vai atualizar o custo das peças já cadastradas, sempre em ${unidadeAtiva?.nome || "sua unidade"} (não cadastra peça nova).`
               : "Só Base GSPN selecionada: vai atualizar modelo/categoria/descrição no catálogo compartilhado (mantém os preços já cadastrados de todas as unidades)."}
           </p>
         )}
@@ -689,8 +658,8 @@ export default function CarregarBasesPage() {
         }
       >
         <p className="text-sm text-muted">
-          Isso vai atualizar (ou cadastrar) peças com base no(s) arquivo(s) selecionado(s). Cada linha da Base Peças
-          é atribuída à unidade indicada na própria planilha (coluna T), não necessariamente <b>{unidadeAtiva?.nome}</b>.
+          Isso vai atualizar (ou cadastrar) peças com base no(s) arquivo(s) selecionado(s). Preço e Delivery de cada peça
+          da Base Peças ficam atribuídos a <b>{unidadeAtiva?.nome}</b> (a unidade em que você está agora).
           {" "}Essa mudança fica visível pra todo mundo que usa o sistema imediatamente.
         </p>
       </Modal>
@@ -719,8 +688,6 @@ export default function CarregarBasesPage() {
             {resultado.totalLotes > 0 && <Stat n={resultado.totalLotes} label="lotes por Delivery gravados" />}
             {resultado.lotesMantidos > 0 && <Stat n={resultado.lotesMantidos} label="lotes mantidos (data já era mais nova)" />}
             {resultado.semEntrega > 0 && <Stat n={resultado.semEntrega} label="compras sem nº de Delivery" />}
-            {resultado.linhasDeOutraUnidade > 0 && <Stat n={resultado.linhasDeOutraUnidade} label="linhas de outra unidade (colaboração)" />}
-            {resultado.linhasDeUnidadeNaoCadastrada > 0 && <Stat n={resultado.linhasDeUnidadeNaoCadastrada} label="linhas de unidade ainda não cadastrada" />}
           </div>
         )}
         {resultado?.gspnDataSolicitacaoMax && (
