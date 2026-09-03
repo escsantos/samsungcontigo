@@ -201,7 +201,10 @@ export default function DetalheOrcamentoPage() {
     const novoItem = {
       id: `novo-${peca.id}-${Date.now()}`,
       _novo: true,
-      peca_id: peca.id,
+      // peças "Não Classificado" (só existem em lotes_pecas, sem entrada no
+      // catálogo GSPN) chegam com um id sintético negativo — não é um id
+      // real de pecas_catalogo, então não pode ir na FK peca_id.
+      peca_id: peca.id > 0 ? peca.id : null,
       modelo: peca.modelo,
       categoria: peca.categoria,
       codigo: peca.codigo,

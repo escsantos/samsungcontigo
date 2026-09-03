@@ -99,7 +99,10 @@ export default function CarrinhoPage() {
 
     const itensParaInserir = itensCalculados.map((i) => ({
       orcamento_id: orcamento.id,
-      peca_id: i.pecaId,
+      // peças "Não Classificado" (só existem em lotes_pecas, sem entrada no
+      // catálogo GSPN) chegam com um id sintético negativo — não é um id
+      // real de pecas_catalogo, então não pode ir na FK peca_id.
+      peca_id: i.pecaId > 0 ? i.pecaId : null,
       modelo: i.modelo,
       categoria: i.categoria,
       codigo: i.codigo,
