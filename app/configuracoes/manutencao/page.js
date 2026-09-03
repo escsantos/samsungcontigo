@@ -80,6 +80,10 @@ export default function ManutencaoPage() {
         .from("pagamentos_orcamento")
         .select("*, orcamentos!inner(unidade_id)", { count: "exact", head: true })
         .eq("orcamentos.unidade_id", u.id);
+      const { count: estornos } = await supabase
+        .from("estornos")
+        .select("*, orcamentos!inner(unidade_id)", { count: "exact", head: true })
+        .eq("orcamentos.unidade_id", u.id);
       const { count: precos } = await supabase.from("pecas_precos").select("*", { count: "exact", head: true }).eq("unidade_id", u.id);
       const { count: lotes } = await supabase.from("lotes_pecas").select("*", { count: "exact", head: true }).eq("unidade_id", u.id);
 
@@ -91,7 +95,7 @@ export default function ManutencaoPage() {
         clientes = count || 0;
       }
 
-      porUnidade[u.id] = { orcamentos: orcs || 0, itens: itens || 0, pagamentos: pagamentos || 0, precos: precos || 0, lotes: lotes || 0, clientes };
+      porUnidade[u.id] = { orcamentos: orcs || 0, itens: itens || 0, pagamentos: pagamentos || 0, estornos: estornos || 0, precos: precos || 0, lotes: lotes || 0, clientes };
     }
     setContagens(porUnidade);
     setCarregandoContagens(false);
@@ -118,6 +122,9 @@ export default function ManutencaoPage() {
 
     const { data: pags } = await supabase.from("pagamentos_orcamento").select("*");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pags || []), "Pagamentos");
+
+    const { data: estornosSnap } = await supabase.from("estornos").select("*");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(estornosSnap || []), "Estornos");
 
     const { data: clientes } = await supabase.from("clientes").select("*");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(clientes || []), "Clientes");
@@ -164,6 +171,10 @@ export default function ManutencaoPage() {
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itens || []), "Itens");
         const { data: pags } = await supabase.from("pagamentos_orcamento").select("*").in("orcamento_id", idsOrc);
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pags || []), "Pagamentos");
+        const { data: estornos } = await supabase.from("estornos").select("*").in("orcamento_id", idsOrc);
+        if (estornos && estornos.length > 0) {
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(estornos), "Estornos");
+        }
       }
       XLSX.writeFile(wb, `backup-antes-de-excluir-${contagemAlvo.unidade.nome}-${new Date().toISOString().slice(0, 10)}.xlsx`);
 
@@ -484,7 +495,7 @@ export default function ManutencaoPage() {
               <AlertTriangle size={16} className="shrink-0 mt-0.5" />
               <span>Isso vai apagar <b>permanentemente</b> os dados abaixo de <b>{contagemAlvo.unidade?.nome}</b>. Não pode ser desfeito.</span>
             </div>
-            <div className="grid grid-cols-3 gap-2 mb-4 text-center">
+            <div className="grid grid-cols-4 gap-2 mb-4 text-center">
               <div className="bg-canvas rounded-lg p-2.5">
                 <p className="font-mono font-bold">{contagemAlvo.orcamentos}</p>
                 <p className="text-[10.5px] text-muted">orçamentos</p>
@@ -496,6 +507,10 @@ export default function ManutencaoPage() {
               <div className="bg-canvas rounded-lg p-2.5">
                 <p className="font-mono font-bold">{contagemAlvo.pagamentos}</p>
                 <p className="text-[10.5px] text-muted">pagamentos</p>
+              </div>
+              <div className="bg-canvas rounded-lg p-2.5">
+                <p className="font-mono font-bold">{contagemAlvo.estornos}</p>
+                <p className="text-[10.5px] text-muted">estornos</p>
               </div>
             </div>
             <p className="text-xs text-muted mb-3">
