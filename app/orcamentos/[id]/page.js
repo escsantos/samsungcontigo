@@ -133,6 +133,21 @@ export default function DetalheOrcamentoPage() {
     );
   }
 
+  // Preço de venda editável direto (ex: negociar um valor maior/menor com o
+  // cliente) — não mexe no custo, só recalcula o total da linha. O imposto e
+  // a margem (por item e no resumo final) são sempre calculados a partir de
+  // i.venda_total, então já recalculam sozinhos assim que esse valor muda.
+  function mudarVendaItem(itemId, valor) {
+    const novoVenda = parseFloat(valor);
+    setItens((atual) =>
+      atual.map((i) => {
+        if (i.id !== itemId) return i;
+        const venda = isNaN(novoVenda) ? 0 : novoVenda;
+        return { ...i, venda_unitario: venda, venda_total: venda * i.qtd };
+      })
+    );
+  }
+
   function removerItem(itemId) {
     setItens((atual) => atual.filter((i) => i.id !== itemId));
   }
@@ -654,7 +669,23 @@ export default function DetalheOrcamentoPage() {
                       </td>
                     </>
                   )}
-                  <td className="px-3 py-2.5 text-right font-mono font-semibold text-sm" style={{ color: mostraCusto ? "#2C7C6E" : undefined }}>{fmtBRL(i.venda_total)}</td>
+                  <td className="px-3 py-2.5 text-right text-sm">
+                    {ajustando ? (
+                      <>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="field-input py-1 px-1.5 text-right font-mono font-semibold w-full"
+                          value={i.venda_unitario ?? ""}
+                          onChange={(e) => mudarVendaItem(i.id, e.target.value)}
+                          title="Preço de venda editável só pra este pedido — o imposto e a margem recalculam na hora"
+                        />
+                        <p className="font-mono text-muted mt-0.5 text-[11px]">total {fmtBRL(i.venda_total)}</p>
+                      </>
+                    ) : (
+                      <p className="font-mono font-semibold" style={{ color: mostraCusto ? "#2C7C6E" : undefined }}>{fmtBRL(i.venda_total)}</p>
+                    )}
+                  </td>
                   {ajustando && (
                     <td className="px-3 py-2.5 text-right">
                       <button onClick={() => removerItem(i.id)} className="text-muted hover:text-danger">
