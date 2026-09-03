@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { UploadCloud, ShieldAlert, Building2, History } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
-import { classifyDesc, categoria, normKey, parseBRDate, parseValorFlexivel, findExact } from "../../../lib/classificacao";
+import { classifyDesc, categoria, normKey, parseBRDate, parseValorFlexivel, findExact, findAny } from "../../../lib/classificacao";
 import { getUnidadeAtiva, extrairAscCod } from "../../../lib/unidade";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
@@ -106,7 +106,7 @@ export default function CarregarBasesPage() {
 
         const idxDataNF = findExact(pHeaders, "data nf");
         const idxPecasEnv = findExact(pHeaders, "pecas enviadas");
-        const idxQtd = findExact(pHeaders, "qtd");
+        const idxQtd = findAny(pHeaders, ["qtd", "qtde"]);
         const idxValor = findExact(pHeaders, "valor");
         const idxBilling = findExact(pHeaders, "nro. billing");
         const idxDocConta = findExact(pHeaders, "documento de conta");
@@ -117,7 +117,7 @@ export default function CarregarBasesPage() {
         const faltando = [];
         if (idxDataNF < 0) faltando.push("Data NF");
         if (idxPecasEnv < 0) faltando.push("Peças enviadas");
-        if (idxQtd < 0) faltando.push("Qtd");
+        if (idxQtd < 0) faltando.push("Qtd (ou Qtde)");
         if (idxValor < 0) faltando.push("Valor");
         if (faltando.length) {
           throw new Error(`Colunas não encontradas na Base Peças: ${faltando.join(", ")}`);

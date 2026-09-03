@@ -1725,3 +1725,23 @@ language sql security definer set search_path = public stable as $$
     and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
   order by o.criado_em desc;
 $$;
+
+-- ================================================================
+-- FIX — Limpar unidade (Manutenção) falhava com "violates foreign key
+-- constraint estornos_orcamento_id_fkey" ao excluir um orçamento que tem
+-- estorno vinculado. As outras tabelas filhas de orcamentos (orcamento_itens,
+-- pagamentos_orcamento) já excluem em cascata; estornos ficou de fora na
+-- criação da tabela. Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+alter table estornos drop constraint if exists estornos_orcamento_id_fkey;
+alter table estornos add constraint estornos_orcamento_id_fkey
+  foreign key (orcamento_id) references orcamentos(id) on delete cascade;
+
+-- A tabela estornos nunca teve policy de "delete" — sem isso, o RLS barra a
+-- exclusão em cascata mesmo já com "on delete cascade" acima (a cascata roda
+-- com a permissão de quem disparou o delete, não ignora RLS). A tela de
+-- Manutenção que faz essa limpeza já é restrita a Administrador.
+drop policy if exists "administrador exclui estornos" on estornos;
+create policy "administrador exclui estornos"
+  on estornos for delete
+  using (is_administrador());
