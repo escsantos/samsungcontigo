@@ -107,7 +107,7 @@ export default function CarregarBasesPage() {
         const idxDocConta = findExact(pHeaders, "documento de conta");
         const idxItemNro = findExact(pHeaders, "item nro.");
         const idxArrived = findExact(pHeaders, "arrived date");
-        const idxEntrega = findExact(pHeaders, "no. da entrega");
+        const idxEntrega = findAny(pHeaders, ["no. da entrega", "numero da entrega"]);
 
         const faltando = [];
         if (idxDataNF < 0) faltando.push("Data NF");
