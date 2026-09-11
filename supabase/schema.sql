@@ -1834,3 +1834,37 @@ language sql security definer set search_path = public stable as $$
   union all
   select * from nao_classificadas;
 $$;
+-- ================================================================
+-- CORREÇÃO — Cliente (e outros papéis sem pode_gerenciar_usuarios()) não
+-- conseguiam ver o NOME do vendedor em orçamentos/clientes que já podiam
+-- ver: a RLS de "perfis" só liberava o próprio perfil, então o join
+-- perfis!orcamentos_vendedor_id_fkey(nome) voltava null mesmo com o
+-- vendedor_id gravado certo. Libera o nome (e demais colunas) de um
+-- perfil quando ele é o vendedor de um orçamento ou cliente que o usuário
+-- já enxerga — as subconsultas abaixo continuam respeitando a RLS de
+-- orcamentos/clientes, então não abre visibilidade nova.
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+drop policy if exists "ve nome do vendedor de pedidos e clientes visiveis" on perfis;
+create policy "ve nome do vendedor de pedidos e clientes visiveis"
+  on perfis for select
+  using (
+    exists (select 1 from orcamentos o where o.vendedor_id = perfis.id)
+    or exists (select 1 from clientes c where c.vendedor_id = perfis.id)
+  );
+-- ================================================================
+-- CORREÇÃO — Timeout ao carregar Base Peças pra quem não é Administrador
+-- ("Falha ao ler lotes existentes: canceling statement due to statement
+-- timeout"). A RLS de lotes_pecas ("estoque le lotes") checa, linha a
+-- linha, se o usuário tem vínculo com a unidade daquele lote — sem índice
+-- por unidade/asc_cod_origem, isso varre a tabela inteira e estoura o
+-- tempo limite quando ela cresce (só o Administrador escapa, porque tem
+-- uma policy própria sem essa checagem). O app/configuracoes/carregar-bases
+-- passou a filtrar essas leituras pela unidade ativa (nunca precisava de
+-- outra unidade mesmo); estes índices tornam esse filtro — e a própria
+-- checagem da RLS — rápidos independente do tamanho da tabela.
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+create index if not exists idx_lotes_pecas_asc_cod_origem on lotes_pecas (asc_cod_origem);
+create index if not exists idx_lotes_pecas_unidade_id on lotes_pecas (unidade_id);
+create index if not exists idx_pecas_precos_asc_cod_origem on pecas_precos (asc_cod_origem);
