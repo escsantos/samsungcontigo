@@ -328,12 +328,40 @@ export default function FinanceiroDashboardPage() {
 
   return (
     <AppShell titulo="Dashboard Financeiro">
-      <div className="flex items-center gap-2 flex-wrap mb-2">
-        {FILTROS.map((f) => (
-          <button key={f.id} onClick={() => setFiltro(f.id)} className={`chip ${filtro === f.id ? "chip-active" : ""}`}>
-            {f.label}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {FILTROS.map((f) => (
+            <button key={f.id} onClick={() => setFiltro(f.id)} className={`chip ${filtro === f.id ? "chip-active" : ""}`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => router.push("/financeiro/recebimentos")}
+            className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg border border-line hover:bg-canvas transition"
+          >
+            <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(63,167,150,0.14)", color: "#2C7C6E" }}>
+              <ClipboardCheck size={14} />
+            </span>
+            <span className="text-left leading-tight">
+              <span className="block text-xs font-semibold">Confirmar Recebimentos</span>
+              <span className="block text-[10.5px] text-muted">{pendentesRecebimento} pendente(s)</span>
+            </span>
           </button>
-        ))}
+          <button
+            onClick={() => router.push("/financeiro/fornecedor")}
+            className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg border border-line hover:bg-canvas transition"
+          >
+            <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(225,97,79,0.14)", color: "#E1614F" }}>
+              <Truck size={14} />
+            </span>
+            <span className="text-left leading-tight">
+              <span className="block text-xs font-semibold">Pagamento ao Fabricante</span>
+              <span className="block text-[10.5px] text-muted">{pendentesFabricante} pendente(s)</span>
+            </span>
+          </button>
+        </div>
       </div>
 
       {filtro === "personalizado" && (
@@ -478,39 +506,6 @@ export default function FinanceiroDashboardPage() {
               </div>
             </div>
           )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <button
-              onClick={() => router.push("/financeiro/recebimentos")}
-              className="card p-5 text-left hover:-translate-y-0.5 transition flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(63,167,150,0.14)", color: "#2C7C6E" }}>
-                  <ClipboardCheck size={19} />
-                </div>
-                <div>
-                  <p className="font-display font-semibold text-sm">Confirmar Recebimentos</p>
-                  <p className="text-xs text-muted mt-0.5">{pendentesRecebimento} pedido(s) aguardando confirmação</p>
-                </div>
-              </div>
-              <ChevronRight size={18} className="text-muted" />
-            </button>
-            <button
-              onClick={() => router.push("/financeiro/fornecedor")}
-              className="card p-5 text-left hover:-translate-y-0.5 transition flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(225,97,79,0.14)", color: "#E1614F" }}>
-                  <Truck size={19} />
-                </div>
-                <div>
-                  <p className="font-display font-semibold text-sm">Pagamento ao Fabricante</p>
-                  <p className="text-xs text-muted mt-0.5">{pendentesFabricante} peça(s) aguardando confirmação</p>
-                </div>
-              </div>
-              <ChevronRight size={18} className="text-muted" />
-            </button>
-          </div>
         </>
       )}
     </AppShell>
