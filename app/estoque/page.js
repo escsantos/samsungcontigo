@@ -84,7 +84,7 @@ export default function EstoquePage() {
     return <AppShell titulo="Estoque"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Estoque">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">

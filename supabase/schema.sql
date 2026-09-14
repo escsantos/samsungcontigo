@@ -1868,3 +1868,32 @@ create policy "ve nome do vendedor de pedidos e clientes visiveis"
 create index if not exists idx_lotes_pecas_asc_cod_origem on lotes_pecas (asc_cod_origem);
 create index if not exists idx_lotes_pecas_unidade_id on lotes_pecas (unidade_id);
 create index if not exists idx_pecas_precos_asc_cod_origem on pecas_precos (asc_cod_origem);
+-- ================================================================
+-- Novo cargo "JM3 Cliente": mesmas atribuições de Gerente (vê e gerencia
+-- clientes, orçamentos de todas as unidades vinculadas e estoque), mas o
+-- menu (components/AppShell.js) e as páginas só liberam pra esse cargo os
+-- módulos Consulta de Peças, Vendas e Estoque — Financeiro, Fiscal,
+-- Relatórios e Sistema continuam fora do alcance dele.
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+alter table perfis drop constraint if exists perfis_cargo_check;
+alter table perfis add constraint perfis_cargo_check
+  check (cargo in ('Administrador','Diretor','Gerente','Supervisor','JM3 Cliente','Vendedor','Estoque','Financeiro','Cliente'));
+
+create or replace function pode_gerenciar_clientes()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (
+    select 1 from perfis
+    where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor','JM3 Cliente','Vendedor')
+  );
+$$;
+
+create or replace function pode_ver_todos_orcamentos()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor','JM3 Cliente'));
+$$;
+
+create or replace function pode_gerenciar_estoque()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor','JM3 Cliente','Estoque'));
+$$;
