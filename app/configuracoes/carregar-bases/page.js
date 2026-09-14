@@ -227,7 +227,12 @@ export default function CarregarBasesPage() {
         }
       }
 
-      // preços já cadastrados de QUALQUER unidade (agora comparamos por código + código-da-unidade)
+      // preços já cadastrados — só da unidade ativa: todo registro novo deste
+      // upload sempre nasce com asc_cod_origem = unidadeAtiva.asc_cod, então
+      // comparar com outras unidades é desnecessário (nunca dá match) e, pior,
+      // força a RLS a varrer a tabela inteira checando vínculo de unidade
+      // linha a linha — lento (e sujeito a timeout) pra quem não é
+      // Administrador, já que só o Administrador tem um bypass direto na RLS.
       const precosExistentes = new Map(); // codigo||ascCod -> { valor_unitario, ts, data_referencia }
       {
         const PAGINA = 1000;
@@ -237,6 +242,7 @@ export default function CarregarBasesPage() {
           const { data, error } = await supabase
             .from("pecas_precos")
             .select("id, codigo, valor_unitario, data_referencia, asc_cod_origem, atualizado_em")
+            .eq("asc_cod_origem", unidadeAtiva.asc_cod)
             .gt("id", cursor)
             .order("id", { ascending: true })
             .limit(PAGINA);
@@ -259,7 +265,9 @@ export default function CarregarBasesPage() {
 
       // lotes já cadastrados (por unidade + código + nº de Delivery) — usado pra nunca
       // regredir a data de um lote se a mesma Delivery aparecer de novo numa base
-      // reprocessada com uma data mais antiga.
+      // reprocessada com uma data mais antiga. Só da unidade ativa, pelo mesmo
+      // motivo do bloco de preços acima (evita timeout de RLS pra quem não é
+      // Administrador e nunca precisaria de dado de outra unidade mesmo).
       const lotesExistentes = new Map(); // ascCod||codigo||entrega -> { data_nf, ts }
       if (arquivoPecas && lotes.length > 0) {
         const PAGINA = 1000;
@@ -269,6 +277,7 @@ export default function CarregarBasesPage() {
           const { data, error } = await supabase
             .from("lotes_pecas")
             .select("id, asc_cod_origem, codigo, no_entrega, data_nf")
+            .eq("asc_cod_origem", unidadeAtiva.asc_cod)
             .gt("id", cursor)
             .order("id", { ascending: true })
             .limit(PAGINA);
