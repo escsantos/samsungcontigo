@@ -72,6 +72,14 @@ function EstoquePedidoPageInner() {
   // OS Interna — nº da ordem de serviço do sistema interno da loja
   const [editandoOS, setEditandoOS] = useState(false);
   const [osInternaEdit, setOsInternaEdit] = useState("");
+
+  // trocar o Part Number de um item ainda sem Delivery confirmada (ex:
+  // Samsung manda um código substituto do que foi pedido originalmente)
+  const [trocandoPeca, setTrocandoPeca] = useState(null); // item sendo editado, ou null
+  const [termoTrocaPeca, setTermoTrocaPeca] = useState("");
+  const [resultadosTrocaPeca, setResultadosTrocaPeca] = useState([]);
+  const [buscandoTrocaPeca, setBuscandoTrocaPeca] = useState(false);
+  const [salvandoTrocaPeca, setSalvandoTrocaPeca] = useState(false);
   const [processandoOS, setProcessandoOS] = useState(false);
 
   // etapa "Em Estoque - Aguardando Faturamento"
@@ -119,6 +127,79 @@ function EstoquePedidoPageInner() {
     }
   }, [orcamento, searchParams]);
 
+  useEffect(() => {
+    if (!trocandoPeca) return;
+    const termo = termoTrocaPeca.trim();
+    if (!termo) {
+      setResultadosTrocaPeca([]);
+      return;
+    }
+    const unidadeAtiva = getUnidadeAtiva();
+    if (!unidadeAtiva) return;
+    setBuscandoTrocaPeca(true);
+    const t = setTimeout(async () => {
+      const like = `%${termo}%`;
+      const { data } = await supabase
+        .rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id })
+        .or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`)
+        .limit(30);
+      setResultadosTrocaPeca(data || []);
+      setBuscandoTrocaPeca(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [termoTrocaPeca, trocandoPeca]);
+
+  function abrirTrocaPeca(item) {
+    setTrocandoPeca(item);
+    setTermoTrocaPeca("");
+    setResultadosTrocaPeca([]);
+  }
+
+  function fecharTrocaPeca() {
+    setTrocandoPeca(null);
+    setTermoTrocaPeca("");
+    setResultadosTrocaPeca([]);
+  }
+
+  async function confirmarTrocaPeca(peca) {
+    if (!trocandoPeca) return;
+    setSalvandoTrocaPeca(true);
+    const codigoAnterior = trocandoPeca.codigo;
+    const { error } = await supabase
+      .from("orcamento_itens")
+      .update({
+        // peças "Não Classificado" (só existem em lotes_pecas, sem entrada no
+        // catálogo GSPN) chegam com um id sintético negativo — não é um id
+        // real de pecas_catalogo, então não pode ir na FK peca_id.
+        peca_id: peca.id > 0 ? peca.id : null,
+        modelo: peca.modelo,
+        categoria: peca.categoria,
+        codigo: peca.codigo,
+        descricao_resumida: peca.descricao_resumida,
+        descricao_peca: peca.descricao_peca
+      })
+      .eq("id", trocandoPeca.id);
+    setSalvandoTrocaPeca(false);
+    if (error) {
+      setErro("Falha ao trocar o Part Number: " + error.message);
+      return;
+    }
+    setItens((atual) =>
+      atual.map((i) =>
+        i.id === trocandoPeca.id
+          ? { ...i, peca_id: peca.id > 0 ? peca.id : null, modelo: peca.modelo, categoria: peca.categoria, codigo: peca.codigo, descricao_resumida: peca.descricao_resumida, descricao_peca: peca.descricao_peca }
+          : i
+      )
+    );
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Part Number trocado no pedido #${orcamento.numero_unidade}: ${codigoAnterior} → ${peca.codigo}.`
+    });
+    fecharTrocaPeca();
+  }
+
   async function carregar() {
     setPerfil(await getPerfilAtual());
     const { data: orc } = await supabase
@@ -157,7 +238,7 @@ function EstoquePedidoPageInner() {
   }
 
   const podeAcessarEstoquePedido =
-    ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque", "Financeiro"].includes(perfil?.cargo) ||
+    ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque", "Financeiro"].includes(perfil?.cargo) ||
     (perfil?.cargo === "Vendedor" && !!orcamento && perfil.id === orcamento.vendedor_id);
 
   if (perfil && !podeAcessarEstoquePedido) {
@@ -193,12 +274,16 @@ function EstoquePedidoPageInner() {
   const entregaAutorizadaSemPagamento = aindaSemPagamento && !!orcamento.liberado_sem_pagamento_por;
   const entregaBloqueadaPorPagamento = aindaSemPagamento && !orcamento.liberado_sem_pagamento_por;
   const podeLiberarSemPagamento =
-    ["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo) ||
+    ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(perfil?.cargo) ||
     (perfil?.cargo === "Vendedor" && perfil?.id === orcamento?.vendedor_id);
   const rotuloSemPagamento = rotuloPagamentoPendente(totalPagoGeral);
   const IconeAtual = ICONES_STATUS[orcamento.status];
   const podeInformarDelivery = ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status);
   const todosLiberados = itens.length > 0 && itens.every((i) => i.liberado);
+  // Part Number só pode ser trocado enquanto o item ainda não tem Delivery
+  // confirmada — depois disso o custo/Delivery já estão amarrados àquele
+  // código, então trocar deixaria de bater com o que foi comprado.
+  const podeTrocarPeca = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"].includes(perfil?.cargo);
 
   function copiarCodigo(codigo) {
     navigator.clipboard.writeText(codigo);
@@ -1097,6 +1182,15 @@ function EstoquePedidoPageInner() {
                       >
                         {codigoCopiado === i.codigo ? <Check size={11} style={{ color: "#2C7C6E" }} /> : <Copy size={11} />}
                       </button>
+                      {podeTrocarPeca && podeInformarDelivery && !i.liberado && (
+                        <button
+                          onClick={() => abrirTrocaPeca(i)}
+                          title="Trocar Part Number (só antes de confirmar a Delivery)"
+                          className="text-muted hover:text-ink"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                      )}
                     </span>
                     <p className="text-muted text-xs truncate">{i.descricao_resumida}</p>
                   </td>
@@ -1252,6 +1346,20 @@ function EstoquePedidoPageInner() {
               Liberar Parcialmente
             </button>
           )}
+        </div>
+      )}
+
+      {podeInformarDelivery && todosLiberados && (
+        <div className="flex items-center justify-between flex-wrap gap-3 -mt-2 mb-4 px-4 py-3 rounded-lg" style={{ background: "var(--accent-soft)" }}>
+          <p className="text-xs" style={{ color: "var(--accent)" }}>
+            Todas as peças já têm Delivery confirmada — falta só confirmar o avanço pro Faturamento.
+          </p>
+          <button
+            className="btn-primary text-xs py-2"
+            onClick={() => setConfirmarAvanco({ de: orcamento.status, para: "Em Estoque - Aguardando Faturamento" })}
+          >
+            Confirmar avanço
+          </button>
         </div>
       )}
 
@@ -1650,6 +1758,62 @@ function EstoquePedidoPageInner() {
             <p className="text-sm text-muted">
               Todas as peças do pedido #{orcamento.numero_unidade} já têm Delivery confirmada. Confirma o avanço pra próxima etapa?
             </p>
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!trocandoPeca}
+        onClose={fecharTrocaPeca}
+        title="Trocar Part Number"
+      >
+        {trocandoPeca && (
+          <>
+            <p className="text-sm text-muted mb-3">
+              Peça atual: <span className="font-mono font-medium" style={{ color: "var(--accent)" }}>{trocandoPeca.codigo}</span> — {trocandoPeca.descricao_resumida}.
+              Busque o código que a Samsung realmente enviou/vai enviar (ex: quando manda um substituto do que foi pedido).
+            </p>
+            <div className="relative mb-3">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <input
+                autoFocus
+                className="field-input pl-9"
+                placeholder="Buscar por modelo, código ou descrição..."
+                value={termoTrocaPeca}
+                onChange={(e) => setTermoTrocaPeca(e.target.value)}
+              />
+            </div>
+            <div className="max-h-72 overflow-auto space-y-1.5">
+              {buscandoTrocaPeca ? (
+                <p className="text-sm text-muted px-2 py-3">Buscando...</p>
+              ) : resultadosTrocaPeca.length === 0 ? (
+                <p className="text-sm text-muted px-2 py-3">{termoTrocaPeca.trim() ? "Nenhuma peça encontrada." : "Digite para buscar."}</p>
+              ) : (
+                resultadosTrocaPeca.map((p) => {
+                  const cor = corCategoria(p.categoria);
+                  const Icone = iconeCategoria(p.categoria);
+                  return (
+                    <button
+                      key={p.id}
+                      disabled={salvandoTrocaPeca}
+                      onClick={() => confirmarTrocaPeca(p)}
+                      className="w-full text-left flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-canvas border border-line disabled:opacity-60"
+                    >
+                      <span className="min-w-0">
+                        <span className="flex items-center gap-1.5 font-mono text-xs" style={{ color: "var(--accent)" }}>
+                          <Icone size={11} style={{ color: cor.fg }} />
+                          {p.codigo}
+                        </span>
+                        <span className="block text-xs text-muted truncate">{p.modelo} — {p.descricao_resumida}</span>
+                      </span>
+                      <span className="text-[10.5px] font-mono font-semibold px-2 py-1 rounded-md shrink-0" style={{ background: "rgba(63,167,150,0.14)", color: "#2C7C6E" }}>
+                        Usar
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </>
         )}
       </Modal>

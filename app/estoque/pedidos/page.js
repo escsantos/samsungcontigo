@@ -37,7 +37,7 @@ export default function RelatorioPedidosPage() {
     (async () => {
       const p = await getPerfilAtual();
       setPerfil(p);
-      if (["Administrador", "Diretor", "Gerente", "Supervisor"].includes(p?.cargo)) {
+      if (["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(p?.cargo)) {
         const { data } = await supabase.from("perfis").select("id, nome").eq("cargo", "Vendedor").order("nome");
         setVendedores(data || []);
       }
@@ -46,7 +46,7 @@ export default function RelatorioPedidosPage() {
 
   useEffect(() => {
     if (perfil === undefined) return;
-    if (!["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil?.cargo)) return;
+    if (!["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"].includes(perfil?.cargo)) return;
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perfil]);
@@ -126,7 +126,7 @@ export default function RelatorioPedidosPage() {
     return <AppShell titulo="Relatório de Pedidos"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Relatório de Pedidos">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
@@ -138,7 +138,7 @@ export default function RelatorioPedidosPage() {
     );
   }
 
-  const ehGestor = ["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil.cargo);
+  const ehGestor = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(perfil.cargo);
 
   return (
     <AppShell titulo="Relatório de Pedidos">

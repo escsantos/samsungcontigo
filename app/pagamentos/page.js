@@ -54,7 +54,7 @@ export default function PagamentosPage() {
   // carregarPedidoPorNumero, via RPC.
   useEffect(() => {
     if (perfil === undefined) return;
-    if (!["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Estoque"].includes(perfil?.cargo)) return;
+    if (!["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Estoque"].includes(perfil?.cargo)) return;
     (async () => {
       const unidadeAtiva = getUnidadeAtiva();
       if (!unidadeAtiva) return;
@@ -250,7 +250,7 @@ export default function PagamentosPage() {
     return <AppShell titulo="Pagamentos"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Estoque"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Estoque"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Pagamentos">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
