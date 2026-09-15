@@ -275,17 +275,26 @@ function EstoquePedidoPageInner() {
   // não pede uma segunda autorização pra confirmar a entrega ao cliente.
   const entregaAutorizadaSemPagamento = aindaSemPagamento && !!orcamento.liberado_sem_pagamento_por;
   const entregaBloqueadaPorPagamento = aindaSemPagamento && !orcamento.liberado_sem_pagamento_por;
+  // Autorizar entrega sem pagamento total e trocar Part Number são decisões
+  // de gestão interna do estoque — JM3 Cliente só acompanha, não gerencia.
   const podeLiberarSemPagamento =
-    ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(perfil?.cargo) ||
+    ["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo) ||
     (perfil?.cargo === "Vendedor" && perfil?.id === orcamento?.vendedor_id);
   const rotuloSemPagamento = rotuloPagamentoPendente(totalPagoGeral);
   const IconeAtual = ICONES_STATUS[orcamento.status];
-  const podeInformarDelivery = ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status);
+  // JM3 Cliente só acompanha o estoque, não informa Delivery nem pedido de
+  // compra — sem isso a UI de edição apareceria pra ele e falharia na RLS.
+  const podeInformarDelivery =
+    ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status) &&
+    perfil?.cargo !== "JM3 Cliente";
   const todosLiberados = itens.length > 0 && itens.every((i) => i.liberado);
   // Part Number só pode ser trocado enquanto o item ainda não tem Delivery
   // confirmada — depois disso o custo/Delivery já estão amarrados àquele
   // código, então trocar deixaria de bater com o que foi comprado.
-  const podeTrocarPeca = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"].includes(perfil?.cargo);
+  const podeTrocarPeca = ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil?.cargo);
+  // Custo real (nosso preço de compra) não aparece pro JM3 Cliente — mesma
+  // regra de "mostraCusto" usada em Peças/Carrinho/Orçamento.
+  const mostraCusto = perfil?.cargo !== "JM3 Cliente";
 
   function copiarCodigo(codigo) {
     navigator.clipboard.writeText(codigo);
@@ -1156,7 +1165,7 @@ function EstoquePedidoPageInner() {
         )}
       </div>
 
-      {orcamento.status === "Aguardando Separação/Compra" && (
+      {orcamento.status === "Aguardando Separação/Compra" && perfil?.cargo !== "JM3 Cliente" && (
         <div className="card p-5 mb-4">
           <p className="font-display font-semibold text-sm mb-1 flex items-center gap-2">
             <Package size={16} style={{ color: "var(--accent)" }} />
@@ -1176,11 +1185,11 @@ function EstoquePedidoPageInner() {
         <table className="w-full text-sm table-fixed">
           <thead>
             <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
-              <th className="text-left px-3 py-2.5" style={{ width: "28%" }}>Peça</th>
+              <th className="text-left px-3 py-2.5" style={{ width: mostraCusto ? "28%" : "34%" }}>Peça</th>
               <th className="text-center px-3 py-2.5" style={{ width: "8%" }}>Qtd</th>
-              <th className="text-left px-3 py-2.5" style={{ width: "20%" }}>Delivery</th>
-              <th className="text-right px-3 py-2.5" style={{ width: "18%" }}>Custo</th>
-              <th className="text-right px-3 py-2.5" style={{ width: "16%" }}>Venda</th>
+              <th className="text-left px-3 py-2.5" style={{ width: mostraCusto ? "20%" : "24%" }}>Delivery</th>
+              {mostraCusto && <th className="text-right px-3 py-2.5" style={{ width: "18%" }}>Custo</th>}
+              <th className="text-right px-3 py-2.5" style={{ width: mostraCusto ? "16%" : "24%" }}>Venda</th>
               <th className="text-center px-3 py-2.5" style={{ width: "10%" }}>Status</th>
             </tr>
           </thead>
@@ -1334,10 +1343,12 @@ function EstoquePedidoPageInner() {
                       <p className="text-[10px] text-danger mt-1 leading-snug">{erroItem[i.id]}</p>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-xs">
-                    <p>{fmtBRL(i.custo_real)} un.</p>
-                    <p className="font-semibold">{fmtBRL(custoTotalItem)}</p>
-                  </td>
+                  {mostraCusto && (
+                    <td className="px-3 py-2.5 text-right font-mono text-xs">
+                      <p>{fmtBRL(i.custo_real)} un.</p>
+                      <p className="font-semibold">{fmtBRL(custoTotalItem)}</p>
+                    </td>
+                  )}
                   <td className="px-3 py-2.5 text-right font-mono font-semibold text-sm" style={{ color: "#2C7C6E" }}>{fmtBRL(i.venda_total)}</td>
                   <td className="px-3 py-2.5 text-center">
                     {i.liberado ? <Check size={16} style={{ color: "#2C7C6E" }} className="inline" /> : <AlertTriangle size={16} className="text-muted inline" />}
@@ -1349,7 +1360,9 @@ function EstoquePedidoPageInner() {
           <tfoot>
             <tr className="border-t-2 border-line bg-canvas font-semibold">
               <td className="px-3 py-2.5" colSpan={3}>Total</td>
-              <td className="px-3 py-2.5 text-right font-mono text-xs">{fmtBRL(itens.reduce((s, i) => s + Number(i.custo_real || 0) * i.qtd, 0))}</td>
+              {mostraCusto && (
+                <td className="px-3 py-2.5 text-right font-mono text-xs">{fmtBRL(itens.reduce((s, i) => s + Number(i.custo_real || 0) * i.qtd, 0))}</td>
+              )}
               <td className="px-3 py-2.5 text-right font-mono text-sm" style={{ color: "#2C7C6E" }}>{fmtBRL(itens.reduce((s, i) => s + Number(i.venda_total || 0), 0))}</td>
               <td></td>
             </tr>

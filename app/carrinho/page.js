@@ -37,8 +37,8 @@ export default function CarrinhoPage() {
     })();
   }, []);
 
-  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : margem;
-  const mostraCusto = perfil?.cargo !== "Cliente";
+  const margemEfetiva = ["Cliente", "JM3 Cliente"].includes(perfil?.cargo) ? 30 : margem;
+  const mostraCusto = !["Cliente", "JM3 Cliente"].includes(perfil?.cargo);
 
   const itensCalculados = useMemo(() => {
     return (carrinho?.itens || []).map((i) => {
@@ -143,7 +143,7 @@ export default function CarrinhoPage() {
           <ShoppingCart size={32} className="mx-auto mb-3 text-muted" />
           <p className="font-display font-semibold mb-1">Seu carrinho está vazio</p>
           <p className="text-sm text-muted mb-5">
-            {perfil?.cargo === "Cliente"
+            {["Cliente", "JM3 Cliente"].includes(perfil?.cargo)
               ? "Vá até a Consulta de Peças e adicione itens ao carrinho."
               : "Selecione um cliente na Consulta de Peças e adicione peças ao carrinho."}
           </p>

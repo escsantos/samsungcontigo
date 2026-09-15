@@ -1903,3 +1903,142 @@ $$;
 -- pagamento.
 alter table pagamentos_orcamento add column if not exists bandeira_cartao text;
 alter table pagamentos_orcamento add column if not exists parcelas integer;
+
+-- ================================================================
+-- JM3 Cliente deixa de ter acesso "nível Gerente" a todos os clientes/
+-- pedidos/estoque e passa a enxergar só o cliente J MACEDO ELETRONICA LTDA
+-- (CNPJ 01.405.991/0003-17) — mesmo mecanismo já usado pro cargo "Cliente"
+-- (perfis.cliente_id + meu_cliente_id()), só que fixo pra esse cliente em
+-- vez de um por usuário. Rode este arquivo inteiro no SQL Editor do Supabase.
+-- ================================================================
+
+-- 1. Tira "JM3 Cliente" das funções que davam bypass de nível Gerente —
+--    volta a ser só Administrador/Diretor/Gerente/Supervisor(/Estoque).
+--    A visibilidade de JM3 Cliente passa a vir só de cliente_id = meu_cliente_id().
+create or replace function pode_gerenciar_clientes()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (
+    select 1 from perfis
+    where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor','Vendedor')
+  );
+$$;
+
+create or replace function pode_ver_todos_orcamentos()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor'));
+$$;
+
+create or replace function pode_gerenciar_estoque()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor','Estoque'));
+$$;
+
+-- 2. Helper pra identificar especificamente o cargo JM3 Cliente
+create or replace function eh_jm3_cliente()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo = 'JM3 Cliente');
+$$;
+
+-- 3. "criar pagamentos" não tinha fallback por cliente_id (só por
+--    pode_gerenciar_clientes()/pode_gerenciar_estoque()) — sem isso, JM3
+--    Cliente perderia a permissão de registrar pagamento dos próprios
+--    pedidos ao sair do bypass acima. Adiciona o fallback específico.
+drop policy if exists "criar pagamentos" on pagamentos_orcamento;
+create policy "criar pagamentos"
+  on pagamentos_orcamento for insert
+  with check (
+    exists (
+      select 1 from orcamentos o where o.id = orcamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+      and (pode_gerenciar_clientes() or pode_gerenciar_estoque() or (eh_jm3_cliente() and o.cliente_id = meu_cliente_id()))
+    )
+  );
+
+-- 4. As RPCs de busca da tela Pagamentos são SECURITY DEFINER e checavam só
+--    pode_gerenciar_clientes()/pode_gerenciar_estoque() (sem fallback por
+--    cliente_id) — sem o ajuste, a tela Pagamentos ficaria vazia pro JM3
+--    Cliente mesmo com a RLS de pagamentos_orcamento já liberando.
+drop function if exists buscar_orcamento_pagamento(integer, bigint);
+create or replace function buscar_orcamento_pagamento(p_numero integer, p_unidade_id bigint)
+returns setof orcamentos
+language sql security definer set search_path = public stable as $$
+  select o.* from orcamentos o
+  where o.numero_unidade = p_numero
+  and o.unidade_id = p_unidade_id
+  and (pode_gerenciar_clientes() or pode_gerenciar_estoque() or o.cliente_id = meu_cliente_id())
+  and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid());
+$$;
+
+drop function if exists buscar_pagamentos_pagamento(bigint);
+create or replace function buscar_pagamentos_pagamento(pid bigint)
+returns setof pagamentos_orcamento
+language sql security definer set search_path = public stable as $$
+  select po.* from pagamentos_orcamento po
+  where po.orcamento_id = pid
+  and exists (
+    select 1 from orcamentos o where o.id = pid
+    and (pode_gerenciar_clientes() or pode_gerenciar_estoque() or o.cliente_id = meu_cliente_id())
+    and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+  )
+  order by po.registrado_em;
+$$;
+
+drop function if exists buscar_orcamentos_pagamento_lista(bigint);
+create or replace function buscar_orcamentos_pagamento_lista(p_unidade_id bigint)
+returns table(
+  id bigint,
+  numero_unidade integer,
+  cliente_id bigint,
+  cliente_nome text,
+  cliente_nome_fantasia text,
+  os_interna text,
+  valor_total numeric,
+  status text,
+  entregue boolean
+)
+language sql security definer set search_path = public stable as $$
+  select o.id, o.numero_unidade, o.cliente_id, c.nome, c.nome_fantasia, o.os_interna, o.valor_total, o.status, o.entregue
+  from orcamentos o
+  join clientes c on c.id = o.cliente_id
+  where o.unidade_id = p_unidade_id
+    and (pode_gerenciar_clientes() or pode_gerenciar_estoque() or o.cliente_id = meu_cliente_id())
+    and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+  order by o.criado_em desc;
+$$;
+
+-- 5. Vincula todo usuário já cadastrado com cargo JM3 Cliente ao cadastro
+--    do cliente J MACEDO ELETRONICA LTDA (acha pelo CNPJ, ignorando pontuação).
+--    Se o cadastro desse cliente ainda não existir em "clientes", isso deixa
+--    cliente_id nulo (o usuário fica sem acesso a nada até o cadastro existir
+--    e este UPDATE rodar de novo) — falha fechada, não abre acesso indevido.
+update perfis
+set cliente_id = (
+  select id from clientes
+  where regexp_replace(coalesce(cnpj, ''), '[^0-9]', '', 'g') = '01405991000317'
+  limit 1
+)
+where cargo = 'JM3 Cliente';
+
+-- 6. Trava no banco (não só na UI): sempre que um perfil for salvo com cargo
+--    JM3 Cliente, cliente_id é forçado pro cliente fixo (J MACEDO ELETRONICA
+--    LTDA), não importa o que a tela mande. Cobre tanto a criação de usuário
+--    (que hoje não manda cliente_id nenhum) quanto uma futura tentativa de
+--    vincular esse cargo a outro cliente.
+create or replace function fixar_cliente_jm3()
+returns trigger language plpgsql as $$
+begin
+  if new.cargo = 'JM3 Cliente' then
+    new.cliente_id := (
+      select id from clientes
+      where regexp_replace(coalesce(cnpj, ''), '[^0-9]', '', 'g') = '01405991000317'
+      limit 1
+    );
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_fixar_cliente_jm3 on perfis;
+create trigger trg_fixar_cliente_jm3
+  before insert or update of cargo on perfis
+  for each row execute function fixar_cliente_jm3();

@@ -58,7 +58,7 @@ export default function DetalheUsuarioPage() {
       setCargoEditado(data?.cargo || "");
       setClienteIdEditado(data?.cliente_id || "");
       setComissaoEditada(data?.comissao_percentual === null || data?.comissao_percentual === undefined ? "" : String(data.comissao_percentual));
-      const { data: clientes } = await supabase.from("clientes").select("id, nome").order("nome");
+      const { data: clientes } = await supabase.from("clientes").select("id, nome, cnpj").order("nome");
       setClientesDisponiveis(clientes || []);
 
       const { data: unidades } = await supabase.from("unidades").select("id, nome").eq("ativo", true).order("nome");
@@ -69,6 +69,19 @@ export default function DetalheUsuarioPage() {
       setUnidadesOriginais(idsVinculados);
     })();
   }, [id]);
+
+  // O cargo JM3 Cliente é sempre vinculado ao mesmo cliente (J MACEDO
+  // ELETRONICA LTDA, CNPJ 01.405.991/0003-17) — não dá pra escolher outro na
+  // tela; o banco também trava isso via trigger, isso aqui é só reflexo na UI.
+  const clienteJM3 = clientesDisponiveis.find(
+    (c) => String(c.cnpj || "").replace(/\D/g, "") === "01405991000317"
+  );
+
+  useEffect(() => {
+    if (cargoEditado === "JM3 Cliente" && clienteJM3 && String(clienteIdEditado) !== String(clienteJM3.id)) {
+      setClienteIdEditado(String(clienteJM3.id));
+    }
+  }, [cargoEditado, clienteJM3, clienteIdEditado]);
 
   function alternarUnidade(unidadeId) {
     setUnidadesVinculadas((atual) => (atual.includes(unidadeId) ? atual.filter((x) => x !== unidadeId) : [...atual, unidadeId]));
@@ -242,6 +255,18 @@ export default function DetalheUsuarioPage() {
                   {clientesDisponiveis.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
                 <p className="text-[11px] text-muted mt-1">Necessário para esse login conseguir montar carrinho e ver seus próprios orçamentos.</p>
+              </div>
+            )}
+            {cargoEditado === "JM3 Cliente" && (
+              <div className="col-span-2">
+                <label className="field-label">Cliente vinculado</label>
+                <div className="field-input flex items-center gap-2 text-muted" style={{ cursor: "not-allowed" }}>
+                  <Building2 size={14} className="shrink-0" />
+                  {clienteJM3 ? clienteJM3.nome : "J MACEDO ELETRONICA LTDA — cadastro não encontrado (confira o CNPJ em Clientes)"}
+                </div>
+                <p className="text-[11px] text-muted mt-1">
+                  Todo login com o cargo JM3 Cliente é vinculado automaticamente só a esse cliente — não dá pra trocar (nem editar o cadastro dele por aqui).
+                </p>
               </div>
             )}
             {cargoEditado === "Vendedor" && (

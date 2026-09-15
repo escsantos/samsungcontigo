@@ -29,8 +29,10 @@ function fmtBRLAppShell(v) {
 }
 
 // Quem vê o balão de "novo pedido" e o de "pendência no estoque" (com bip).
-const CARGOS_TOAST_PEDIDO = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Estoque", "Financeiro"];
-const CARGOS_TOAST_ESTOQUE = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"];
+// JM3 Cliente fica de fora: o balão avisa de QUALQUER pedido novo da unidade
+// (de outros clientes também), o que vazaria atividade de outros clientes.
+const CARGOS_TOAST_PEDIDO = ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Estoque", "Financeiro"];
+const CARGOS_TOAST_ESTOQUE = ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"];
 // Status que representam uma pendência pro time de Estoque (tudo além de
 // "Pendente de Análise" — e "Produto Entregue" não conta, já foi concluído).
 const STATUS_PENDENCIA_ESTOQUE = ORDEM_STATUS.filter((s) => s !== "Pendente de Análise" && s !== "Produto Entregue");
@@ -77,7 +79,7 @@ export const GRUPOS_MENU = [
     href: "/menu/vendas",
     itens: [
       { href: "/dashboard", label: "Dashboard de Vendas", icone: LayoutDashboard, cor: "#3FA796", descricao: "Cards, gráficos e ranking de vendas por período.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"] },
-      { href: "/clientes", label: "Clientes", icone: Contact, cor: "#8B5CF6", descricao: "Cadastre e gerencie os clientes da loja.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"] },
+      { href: "/clientes", label: "Clientes", icone: Contact, cor: "#8B5CF6", descricao: "Cadastre e gerencie os clientes da loja.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"] },
       { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cor: "#4A90D9", descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Cliente"] },
       { href: "/pagamentos", label: "Pagamentos", icone: Receipt, cor: "#E1614F", descricao: "Busque um pedido pelo número e registre ou ajuste o pagamento.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Estoque"] }
     ]
@@ -90,7 +92,7 @@ export const GRUPOS_MENU = [
     itens: [
       { href: "/estoque", label: "Painel de Estoque", icone: Warehouse, cor: "#2E7F97", descricao: "Acompanhe a linha do tempo dos pedidos e libere peças por Delivery.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"] },
       { href: "/estoque/pedidos", label: "Relatório de Pedidos", icone: ClipboardList, cor: "#7A4FB0", descricao: "Todos os pedidos com filtros completos, exporta para Excel.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"] },
-      { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cor: "#4338CA", descricao: "Custo real, imposto e lucro líquido das peças já liberadas.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"] }
+      { href: "/estoque/relatorio", label: "Relatório de Custo", icone: FileBarChart, cor: "#4338CA", descricao: "Custo real, imposto e lucro líquido das peças já liberadas.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor"] }
     ]
   },
   {

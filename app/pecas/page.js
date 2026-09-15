@@ -74,6 +74,17 @@ export default function ConsultaPecasPage() {
     if (perfil?.cargo === "Cliente" && perfil.cliente_id && carrinho && carrinho.clienteId !== perfil.cliente_id) {
       carrinho.selecionarCliente(perfil.cliente_id, perfil.nome);
     }
+    // JM3 Cliente também é sempre o mesmo cliente fixo — só que ao contrário
+    // do login "Cliente" comum, o nome do perfil aqui é do usuário (pessoa),
+    // não do cliente, então busca o nome do cadastro pra exibir certo.
+    if (perfil?.cargo === "JM3 Cliente" && perfil.cliente_id && carrinho && carrinho.clienteId !== perfil.cliente_id) {
+      supabase
+        .from("clientes")
+        .select("nome")
+        .eq("id", perfil.cliente_id)
+        .single()
+        .then(({ data }) => carrinho.selecionarCliente(perfil.cliente_id, data?.nome || "Cliente"));
+    }
   }, [perfil, carrinho]);
 
   // Só clientes da unidade ativa (vinculados a um vendedor da mesma unidade,
@@ -152,7 +163,7 @@ export default function ConsultaPecasPage() {
     return () => clearTimeout(timer);
   }, [termo, categoriaAtiva, unidadeAtiva]);
 
-  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : margem;
+  const margemEfetiva = ["Cliente", "JM3 Cliente"].includes(perfil?.cargo) ? 30 : margem;
 
   const linhas = useMemo(() => {
     return resultados.map((r) => {
@@ -194,14 +205,17 @@ export default function ConsultaPecasPage() {
     setTimeout(() => setItemAdicionado(null), 1200);
   }
 
-  const staffPodeEscolherCliente = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil?.cargo);
-  const podeComprar = staffPodeEscolherCliente || perfil?.cargo === "Cliente";
+  // JM3 Cliente fica de fora daqui: é sempre o mesmo cliente fixo (ver efeito
+  // acima), então não faz sentido mostrar o seletor "Selecionar cliente" —
+  // ele já vem preso ao carrinho, igual ao login "Cliente" comum.
+  const staffPodeEscolherCliente = ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo);
+  const podeComprar = staffPodeEscolherCliente || ["Cliente", "JM3 Cliente"].includes(perfil?.cargo);
   const carrinhoPronto = podeComprar && !!carrinho?.clienteId;
 
   const temFiltro = termo || categoriaAtiva;
   const statusMargem = corMargem(margemEfetiva);
   const margemBaixa = margemEfetiva < 20;
-  const mostraCusto = perfil?.cargo !== "Cliente";
+  const mostraCusto = !["Cliente", "JM3 Cliente"].includes(perfil?.cargo);
 
   return (
     <AppShell titulo="Consulta de Peças">

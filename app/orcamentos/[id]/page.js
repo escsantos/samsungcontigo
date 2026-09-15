@@ -71,7 +71,7 @@ export default function DetalheOrcamentoPage() {
     setPerfil(p);
     const { data: orc } = await supabase.from("orcamentos").select("*, clientes(nome, celular, email)").eq("id", id).single();
     const unidadeAtiva = getUnidadeAtiva();
-    if (orc && p?.cargo !== "Cliente" && unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
+    if (orc && !["Cliente", "JM3 Cliente"].includes(p?.cargo) && unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
       setOrcamento(null);
       setForaDaUnidade(true);
       return;
@@ -500,10 +500,12 @@ export default function DetalheOrcamentoPage() {
     );
   }
 
-  const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil?.cargo);
+  // Aprovar/Rejeitar/Ajustar preço é revisão interna do pedido — JM3 Cliente
+  // fica de fora (ele só cria e acompanha, não revisa/aprova).
+  const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo);
   const cor = CORES_STATUS[orcamento.status] || CORES_STATUS_FALLBACK;
   const IconeStatusAtual = ICONES_STATUS[orcamento.status];
-  const mostraCusto = perfil?.cargo !== "Cliente";
+  const mostraCusto = !["Cliente", "JM3 Cliente"].includes(perfil?.cargo);
 
   return (
     <AppShell titulo={`Orçamento #${orcamento.numero_unidade}`}>
@@ -523,7 +525,7 @@ export default function DetalheOrcamentoPage() {
             {orcamento.status}
           </span>
         </div>
-        {perfil?.cargo !== "Cliente" && (
+        {!["Cliente", "JM3 Cliente"].includes(perfil?.cargo) && (
           <div className="flex items-center gap-2 mt-3">
             <p className="text-xs text-muted">OS Interna:</p>
             {editandoOS ? (
@@ -545,7 +547,7 @@ export default function DetalheOrcamentoPage() {
             ) : (
               <>
                 <span className="font-mono text-xs font-semibold">{orcamento.os_interna || "—"}</span>
-                {["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil?.cargo) && (
+                {["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo) && (
                   <button
                     className="text-muted hover:text-ink"
                     onClick={() => { setOsInternaEdit(orcamento.os_interna || ""); setEditandoOS(true); }}
@@ -592,7 +594,7 @@ export default function DetalheOrcamentoPage() {
             </div>
           );
         })()}
-        {!["Pendente de Análise", "Rejeitado", "Cancelado"].includes(orcamento.status) && !orcamento.entregue && ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil?.cargo) && (
+        {!["Pendente de Análise", "Rejeitado", "Cancelado"].includes(orcamento.status) && !orcamento.entregue && ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo) && (
           <button
             onClick={() => setCancelandoPedido(true)}
             className="text-sm mt-4 hover:underline flex items-center gap-1.5"
