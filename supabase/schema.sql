@@ -1905,16 +1905,47 @@ alter table pagamentos_orcamento add column if not exists bandeira_cartao text;
 alter table pagamentos_orcamento add column if not exists parcelas integer;
 
 -- ================================================================
--- JM3 Cliente deixa de ter acesso "nível Gerente" a todos os clientes/
--- pedidos/estoque e passa a enxergar só o cliente J MACEDO ELETRONICA LTDA
--- (CNPJ 01.405.991/0003-17) — mesmo mecanismo já usado pro cargo "Cliente"
--- (perfis.cliente_id + meu_cliente_id()), só que fixo pra esse cliente em
--- vez de um por usuário. Rode este arquivo inteiro no SQL Editor do Supabase.
+-- CORREÇÃO — a versão anterior deste bloco (commit e7b480d) tinha
+-- interpretado errado o pedido: reduziu o JM3 Cliente a um papel bem
+-- limitado (só cria/acompanha pedido, sem aprovar/rejeitar, sem OS Interna,
+-- sem custo/margem, sem liberar sem pagamento, sem trocar Part Number, sem
+-- módulo Clientes/Relatório de Custo). O pedido real era outro: JM3 Cliente
+-- deve ter nível de gerente (todas essas ações), só que restrito ao cliente
+-- J MACEDO ELETRONICA LTDA (CNPJ 01.405.991/0003-17) — nunca enxerga nem
+-- mexe em pedido/cliente de mais ninguém. Esse bloco SUBSTITUI o anterior
+-- (nunca foi rodado em produção). Mesmo mecanismo já usado pro cargo
+-- "Cliente" (perfis.cliente_id + meu_cliente_id()), só que fixo pra esse
+-- cliente em vez de um por usuário.
+--
+-- Estratégia: 1) tira "JM3 Cliente" das funções de bypass "nível Gerente"
+-- (pode_gerenciar_clientes/pode_ver_todos_orcamentos/pode_gerenciar_estoque)
+-- — incluir ele lá de novo abriria acesso a TODOS os clientes, não só J
+-- Macedo. 2) em vez de reescrever cada policy existente (arriscado, muitas
+-- já têm lógica fina de unidade), cria uma policy ADICIONAL pra cada ação
+-- de gerente que faltava — o Postgres combina múltiplas policies
+-- permissivas da mesma tabela/comando com OR, então isso só soma
+-- permissão, nunca tira nada de mais ninguém.
+--
+-- Ficam de fora (decisão de negócio, não limitação técnica):
+-- - Editar o cadastro do cliente (só leitura — já funciona hoje via a
+--   policy "cliente le seu proprio cadastro", sem precisar de nada novo).
+-- - "Registrar pedido de compra" / gerenciar lotes de estoque — reposição
+--   interna, não tem a ver com pedido de cliente.
+-- - Financeiro e Fiscal continuam fora (o menu já não libera esses módulos
+--   pra esse cargo).
+--
+-- Testado numa instância Postgres local antes de entregar: pedido do
+-- próprio cliente pode ser aprovado/editado/cancelado/pago normalmente;
+-- pedido de OUTRO cliente continua inacessível em todas as operações
+-- (select/insert/update/delete, RPCs da tela Pagamentos e comprovantes no
+-- Storage); cadastro do cliente continua só leitura; Vendedor/Gerente/
+-- Estoque comuns não perdem nada.
+--
+-- Rode este arquivo inteiro no SQL Editor do Supabase.
 -- ================================================================
 
--- 1. Tira "JM3 Cliente" das funções que davam bypass de nível Gerente —
---    volta a ser só Administrador/Diretor/Gerente/Supervisor(/Estoque).
---    A visibilidade de JM3 Cliente passa a vir só de cliente_id = meu_cliente_id().
+-- 1. Tira "JM3 Cliente" das funções de bypass "nível Gerente" — volta a ser
+--    só Administrador/Diretor/Gerente/Supervisor(/Vendedor/Estoque).
 create or replace function pode_gerenciar_clientes()
 returns boolean language sql security definer set search_path = public stable as $$
   select exists (
@@ -1939,10 +1970,36 @@ returns boolean language sql security definer set search_path = public stable as
   select exists (select 1 from perfis where id = auth.uid() and cargo = 'JM3 Cliente');
 $$;
 
--- 3. "criar pagamentos" não tinha fallback por cliente_id (só por
---    pode_gerenciar_clientes()/pode_gerenciar_estoque()) — sem isso, JM3
---    Cliente perderia a permissão de registrar pagamento dos próprios
---    pedidos ao sair do bypass acima. Adiciona o fallback específico.
+-- 3. orcamentos: aprovar/rejeitar/ajustar preço, editar OS Interna, liberar
+--    sem pagamento, avançar status no Estoque — é tudo UPDATE em
+--    orcamentos, uma única policy cobre o fluxo inteiro.
+drop policy if exists "jm3 cliente gerencia proprio pedido" on orcamentos;
+create policy "jm3 cliente gerencia proprio pedido"
+  on orcamentos for update
+  using (eh_jm3_cliente() and cliente_id = meu_cliente_id())
+  with check (eh_jm3_cliente() and cliente_id = meu_cliente_id());
+
+-- 4. orcamento_itens: ajustar itens do pedido e fluxo de liberação parcial
+--    (mover peça pendente pra um pedido novo).
+drop policy if exists "jm3 cliente insere itens do proprio pedido" on orcamento_itens;
+create policy "jm3 cliente insere itens do proprio pedido"
+  on orcamento_itens for insert
+  with check (exists (select 1 from orcamentos o where o.id = orcamento_id and eh_jm3_cliente() and o.cliente_id = meu_cliente_id()));
+
+drop policy if exists "jm3 cliente edita itens do proprio pedido" on orcamento_itens;
+create policy "jm3 cliente edita itens do proprio pedido"
+  on orcamento_itens for update
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and eh_jm3_cliente() and o.cliente_id = meu_cliente_id()))
+  with check (exists (select 1 from orcamentos o where o.id = orcamento_id and eh_jm3_cliente() and o.cliente_id = meu_cliente_id()));
+
+drop policy if exists "jm3 cliente exclui itens do proprio pedido" on orcamento_itens;
+create policy "jm3 cliente exclui itens do proprio pedido"
+  on orcamento_itens for delete
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and eh_jm3_cliente() and o.cliente_id = meu_cliente_id()));
+
+-- 5. pagamentos_orcamento: registrar/editar/excluir pagamento do próprio
+--    pedido (a tela de Pagamentos já cobria "criar" numa correção anterior;
+--    esta troca isso por uma policy própria e soma editar/excluir).
 drop policy if exists "criar pagamentos" on pagamentos_orcamento;
 create policy "criar pagamentos"
   on pagamentos_orcamento for insert
@@ -1950,14 +2007,96 @@ create policy "criar pagamentos"
     exists (
       select 1 from orcamentos o where o.id = orcamento_id
       and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
-      and (pode_gerenciar_clientes() or pode_gerenciar_estoque() or (eh_jm3_cliente() and o.cliente_id = meu_cliente_id()))
+      and (pode_gerenciar_clientes() or pode_gerenciar_estoque())
     )
   );
 
--- 4. As RPCs de busca da tela Pagamentos são SECURITY DEFINER e checavam só
---    pode_gerenciar_clientes()/pode_gerenciar_estoque() (sem fallback por
---    cliente_id) — sem o ajuste, a tela Pagamentos ficaria vazia pro JM3
---    Cliente mesmo com a RLS de pagamentos_orcamento já liberando.
+drop policy if exists "jm3 cliente registra pagamento do proprio pedido" on pagamentos_orcamento;
+create policy "jm3 cliente registra pagamento do proprio pedido"
+  on pagamentos_orcamento for insert
+  with check (exists (select 1 from orcamentos o where o.id = orcamento_id and eh_jm3_cliente() and o.cliente_id = meu_cliente_id()));
+
+drop policy if exists "jm3 cliente edita pagamento do proprio pedido" on pagamentos_orcamento;
+create policy "jm3 cliente edita pagamento do proprio pedido"
+  on pagamentos_orcamento for update
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and eh_jm3_cliente() and o.cliente_id = meu_cliente_id()))
+  with check (exists (select 1 from orcamentos o where o.id = orcamento_id and eh_jm3_cliente() and o.cliente_id = meu_cliente_id()));
+
+drop policy if exists "jm3 cliente exclui pagamento do proprio pedido" on pagamentos_orcamento;
+create policy "jm3 cliente exclui pagamento do proprio pedido"
+  on pagamentos_orcamento for delete
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and eh_jm3_cliente() and o.cliente_id = meu_cliente_id()));
+
+-- 6. estornos: cancelar pedido / registrar desistência, e ver o status do
+--    estorno já solicitado.
+drop policy if exists "jm3 cliente cria estorno ao cancelar proprio pedido" on estornos;
+create policy "jm3 cliente cria estorno ao cancelar proprio pedido"
+  on estornos for insert
+  with check (
+    solicitado_por = auth.uid()
+    and exists (select 1 from orcamentos o where o.id = orcamento_id and eh_jm3_cliente() and o.cliente_id = meu_cliente_id())
+  );
+
+drop policy if exists "jm3 cliente ve estornos do proprio pedido" on estornos;
+create policy "jm3 cliente ve estornos do proprio pedido"
+  on estornos for select
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and eh_jm3_cliente() and o.cliente_id = meu_cliente_id()));
+
+-- 7. lotes_pecas: leitura pra achar/atribuir Delivery aos itens do próprio
+--    pedido. Não é dado de um cliente específico — é o custo/lote da peça
+--    em si, igual todo Gerente já enxerga. Gerenciar lotes (registrar
+--    pedido de compra) continua de fora — é operação interna de reposição.
+drop policy if exists "jm3 cliente le lotes pra informar delivery" on lotes_pecas;
+create policy "jm3 cliente le lotes pra informar delivery"
+  on lotes_pecas for select
+  using (
+    eh_jm3_cliente()
+    and (unidade_id is null or exists (select 1 from perfis_unidades pu where pu.unidade_id = lotes_pecas.unidade_id and pu.perfil_id = auth.uid()))
+  );
+
+-- 8. notificacoes: os dois avisos automáticos que a revisão/avanço de
+--    status do próprio pedido pode disparar (pendência resolvida / pedido
+--    aprovado com pagamento abaixo de 30%).
+drop policy if exists "jm3 cliente cria notificacao do proprio fluxo" on notificacoes;
+create policy "jm3 cliente cria notificacao do proprio fluxo"
+  on notificacoes for insert
+  with check (eh_jm3_cliente() and tipo in ('pedido_pendente_pronto', 'pedido_sem_pagamento'));
+
+-- 9. storage.objects (bucket comprovantes): ler/subir o comprovante do
+--    próprio pedido. O nome do arquivo é sempre "<orcamento_id>/...", então
+--    dá pra achar o pedido pelo primeiro pedaço do caminho e confirmar que
+--    é do cliente certo (o CASE evita erro de conversão se algum dia
+--    aparecer um caminho fora desse padrão nesse bucket).
+drop policy if exists "jm3 cliente le comprovante do proprio pedido" on storage.objects;
+create policy "jm3 cliente le comprovante do proprio pedido"
+  on storage.objects for select
+  using (
+    bucket_id = 'comprovantes'
+    and eh_jm3_cliente()
+    and exists (
+      select 1 from orcamentos o
+      where o.id = (case when (storage.foldername(name))[1] ~ '^[0-9]+$' then ((storage.foldername(name))[1])::bigint else null end)
+      and o.cliente_id = meu_cliente_id()
+    )
+  );
+
+drop policy if exists "jm3 cliente sobe comprovante do proprio pedido" on storage.objects;
+create policy "jm3 cliente sobe comprovante do proprio pedido"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'comprovantes'
+    and eh_jm3_cliente()
+    and exists (
+      select 1 from orcamentos o
+      where o.id = (case when (storage.foldername(name))[1] ~ '^[0-9]+$' then ((storage.foldername(name))[1])::bigint else null end)
+      and o.cliente_id = meu_cliente_id()
+    )
+  );
+
+-- 10. As 3 RPCs SECURITY DEFINER da tela Pagamentos bypassam a RLS das
+--     tabelas e checavam só pode_gerenciar_clientes()/pode_gerenciar_estoque()
+--     (sem fallback por cliente_id) — sem o ajuste, a tela ficaria vazia
+--     pro JM3 Cliente mesmo com as policies acima já liberando.
 drop function if exists buscar_orcamento_pagamento(integer, bigint);
 create or replace function buscar_orcamento_pagamento(p_numero integer, p_unidade_id bigint)
 returns setof orcamentos
@@ -2006,11 +2145,12 @@ language sql security definer set search_path = public stable as $$
   order by o.criado_em desc;
 $$;
 
--- 5. Vincula todo usuário já cadastrado com cargo JM3 Cliente ao cadastro
---    do cliente J MACEDO ELETRONICA LTDA (acha pelo CNPJ, ignorando pontuação).
---    Se o cadastro desse cliente ainda não existir em "clientes", isso deixa
---    cliente_id nulo (o usuário fica sem acesso a nada até o cadastro existir
---    e este UPDATE rodar de novo) — falha fechada, não abre acesso indevido.
+-- 11. Vincula todo usuário já cadastrado com cargo JM3 Cliente ao cadastro
+--     do cliente J MACEDO ELETRONICA LTDA (acha pelo CNPJ, ignorando
+--     pontuação). Se o cadastro desse cliente ainda não existir em
+--     "clientes", isso deixa cliente_id nulo (o usuário fica sem acesso a
+--     nada até o cadastro existir e este UPDATE rodar de novo) — falha
+--     fechada, não abre acesso indevido.
 update perfis
 set cliente_id = (
   select id from clientes
@@ -2019,11 +2159,11 @@ set cliente_id = (
 )
 where cargo = 'JM3 Cliente';
 
--- 6. Trava no banco (não só na UI): sempre que um perfil for salvo com cargo
---    JM3 Cliente, cliente_id é forçado pro cliente fixo (J MACEDO ELETRONICA
---    LTDA), não importa o que a tela mande. Cobre tanto a criação de usuário
---    (que hoje não manda cliente_id nenhum) quanto uma futura tentativa de
---    vincular esse cargo a outro cliente.
+-- 12. Trava no banco (não só na UI): sempre que um perfil for salvo com
+--     cargo JM3 Cliente, cliente_id é forçado pro cliente fixo (J MACEDO
+--     ELETRONICA LTDA), não importa o que a tela mande. Cobre tanto a
+--     criação de usuário (que hoje não manda cliente_id nenhum) quanto uma
+--     futura tentativa de vincular esse cargo a outro cliente.
 create or replace function fixar_cliente_jm3()
 returns trigger language plpgsql as $$
 begin

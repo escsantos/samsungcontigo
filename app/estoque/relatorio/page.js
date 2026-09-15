@@ -165,7 +165,7 @@ export default function RelatorioCustoPage() {
     return <AppShell titulo="Relatório de Custo"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Relatório de Custo">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">

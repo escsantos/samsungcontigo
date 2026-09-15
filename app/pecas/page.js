@@ -163,7 +163,7 @@ export default function ConsultaPecasPage() {
     return () => clearTimeout(timer);
   }, [termo, categoriaAtiva, unidadeAtiva]);
 
-  const margemEfetiva = ["Cliente", "JM3 Cliente"].includes(perfil?.cargo) ? 30 : margem;
+  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : margem;
 
   const linhas = useMemo(() => {
     return resultados.map((r) => {
@@ -215,7 +215,7 @@ export default function ConsultaPecasPage() {
   const temFiltro = termo || categoriaAtiva;
   const statusMargem = corMargem(margemEfetiva);
   const margemBaixa = margemEfetiva < 20;
-  const mostraCusto = !["Cliente", "JM3 Cliente"].includes(perfil?.cargo);
+  const mostraCusto = perfil?.cargo !== "Cliente";
 
   return (
     <AppShell titulo="Consulta de Peças">

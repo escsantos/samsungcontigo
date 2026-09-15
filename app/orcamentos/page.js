@@ -80,9 +80,9 @@ export default function OrcamentosPage() {
     setBuscando(false);
   }
 
-  // JM3 Cliente também só vê pedidos de um único cliente, então a coluna
-  // "Cliente"/OS Interna e a busca por cliente ficam redundantes pra ele também.
-  const ehCliente = ["Cliente", "JM3 Cliente"].includes(perfil?.cargo);
+  // JM3 Cliente tem nível de gerente (vê coluna Cliente/OS Interna, busca por
+  // cliente etc.) — só o cargo "Cliente" (autoatendimento) tem essa UI reduzida.
+  const ehCliente = perfil?.cargo === "Cliente";
 
   const termoClienteNorm = normKey(buscaCliente);
   const termoOSNorm = normKey(buscaOS);

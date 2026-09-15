@@ -19,13 +19,17 @@ export default function ClientesPage() {
 
   useEffect(() => {
     (async () => {
-      setPerfil(await getPerfilAtual());
+      const p = await getPerfilAtual();
+      setPerfil(p);
       const unidadeAtiva = getUnidadeAtiva();
       let query = supabase
         .from("clientes")
         .select("*, perfis!clientes_vendedor_id_fkey(nome)")
         .order("nome");
-      if (unidadeAtiva) {
+      // JM3 Cliente é sempre preso a um único cliente (a RLS já garante
+      // isso sozinha) — o filtro de vendedor/unidade abaixo é só pra
+      // reduzir a lista pros outros cargos, não faz sentido pra ele.
+      if (unidadeAtiva && p?.cargo !== "JM3 Cliente") {
         const { data: vinculos } = await supabase.from("perfis_unidades").select("perfil_id").eq("unidade_id", unidadeAtiva.id);
         const idsDaUnidade = (vinculos || []).map((v) => v.perfil_id);
         if (idsDaUnidade.length > 0) {
@@ -44,7 +48,7 @@ export default function ClientesPage() {
     return <AppShell titulo="Clientes"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Clientes">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
@@ -81,10 +85,12 @@ export default function ClientesPage() {
             onChange={(e) => setTermo(e.target.value)}
           />
         </div>
-        <button className="btn-primary" onClick={() => router.push("/clientes/novo")}>
-          <UserPlus size={16} />
-          Novo cliente
-        </button>
+        {perfil?.cargo !== "JM3 Cliente" && (
+          <button className="btn-primary" onClick={() => router.push("/clientes/novo")}>
+            <UserPlus size={16} />
+            Novo cliente
+          </button>
+        )}
       </div>
 
       <p className="text-sm text-muted mb-3">{filtrados.length} cliente(s)</p>

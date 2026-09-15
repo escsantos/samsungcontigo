@@ -71,7 +71,7 @@ export default function EditarClientePage() {
     return <AppShell titulo="Cliente"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Cliente">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
@@ -91,20 +91,29 @@ export default function EditarClientePage() {
     );
   }
 
+  const somenteLeitura = perfil?.cargo === "JM3 Cliente";
+
   return (
-    <AppShell titulo="Editar Cliente">
+    <AppShell titulo={somenteLeitura ? "Cliente" : "Editar Cliente"}>
       <div className="flex justify-between items-center mb-4">
         <button onClick={() => router.push("/clientes")} className="flex items-center gap-1.5 text-sm text-muted hover:text-ink">
           <ArrowLeft size={15} />
           Voltar para Clientes
         </button>
-        <button onClick={() => setConfirmarExcluir(true)} className="flex items-center gap-1.5 text-sm text-danger hover:opacity-80">
-          <Trash2 size={15} />
-          Excluir cliente
-        </button>
+        {!somenteLeitura && (
+          <button onClick={() => setConfirmarExcluir(true)} className="flex items-center gap-1.5 text-sm text-danger hover:opacity-80">
+            <Trash2 size={15} />
+            Excluir cliente
+          </button>
+        )}
       </div>
+      {somenteLeitura && (
+        <p className="text-xs text-muted mb-3">Você tem acesso somente para visualização a este cadastro.</p>
+      )}
       <div className="max-w-3xl">
-        <ClienteForm inicial={cliente} vendedores={vendedores} onSalvar={salvar} salvando={salvando} onErro={setErro} />
+        <fieldset disabled={somenteLeitura} className={somenteLeitura ? "opacity-80" : undefined}>
+          <ClienteForm inicial={cliente} vendedores={vendedores} onSalvar={salvar} salvando={salvando} onErro={setErro} />
+        </fieldset>
       </div>
 
       <Modal

@@ -275,26 +275,22 @@ function EstoquePedidoPageInner() {
   // não pede uma segunda autorização pra confirmar a entrega ao cliente.
   const entregaAutorizadaSemPagamento = aindaSemPagamento && !!orcamento.liberado_sem_pagamento_por;
   const entregaBloqueadaPorPagamento = aindaSemPagamento && !orcamento.liberado_sem_pagamento_por;
-  // Autorizar entrega sem pagamento total e trocar Part Number são decisões
-  // de gestão interna do estoque — JM3 Cliente só acompanha, não gerencia.
+  // JM3 Cliente tem nível de gerente aqui também (restrito ao próprio
+  // pedido via RLS) — autorizar entrega sem pagamento e trocar Part Number
+  // ficam liberados pra ele igual pra Administrador/Diretor/Gerente/Supervisor.
   const podeLiberarSemPagamento =
-    ["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo) ||
+    ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(perfil?.cargo) ||
     (perfil?.cargo === "Vendedor" && perfil?.id === orcamento?.vendedor_id);
   const rotuloSemPagamento = rotuloPagamentoPendente(totalPagoGeral);
   const IconeAtual = ICONES_STATUS[orcamento.status];
-  // JM3 Cliente só acompanha o estoque, não informa Delivery nem pedido de
-  // compra — sem isso a UI de edição apareceria pra ele e falharia na RLS.
   const podeInformarDelivery =
-    ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status) &&
-    perfil?.cargo !== "JM3 Cliente";
+    ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status);
   const todosLiberados = itens.length > 0 && itens.every((i) => i.liberado);
   // Part Number só pode ser trocado enquanto o item ainda não tem Delivery
   // confirmada — depois disso o custo/Delivery já estão amarrados àquele
   // código, então trocar deixaria de bater com o que foi comprado.
-  const podeTrocarPeca = ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil?.cargo);
-  // Custo real (nosso preço de compra) não aparece pro JM3 Cliente — mesma
-  // regra de "mostraCusto" usada em Peças/Carrinho/Orçamento.
-  const mostraCusto = perfil?.cargo !== "JM3 Cliente";
+  const podeTrocarPeca = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"].includes(perfil?.cargo);
+  const mostraCusto = true;
 
   function copiarCodigo(codigo) {
     navigator.clipboard.writeText(codigo);
@@ -1165,6 +1161,9 @@ function EstoquePedidoPageInner() {
         )}
       </div>
 
+      {/* "Registrar pedido de compra" é reposição interna de estoque — fica de
+          fora pro JM3 Cliente por decisão de negócio, mesmo tendo nível de
+          gerente nas outras ações desta tela. */}
       {orcamento.status === "Aguardando Separação/Compra" && perfil?.cargo !== "JM3 Cliente" && (
         <div className="card p-5 mb-4">
           <p className="font-display font-semibold text-sm mb-1 flex items-center gap-2">

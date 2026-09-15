@@ -37,8 +37,8 @@ export default function CarrinhoPage() {
     })();
   }, []);
 
-  const margemEfetiva = ["Cliente", "JM3 Cliente"].includes(perfil?.cargo) ? 30 : margem;
-  const mostraCusto = !["Cliente", "JM3 Cliente"].includes(perfil?.cargo);
+  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : margem;
+  const mostraCusto = perfil?.cargo !== "Cliente";
 
   const itensCalculados = useMemo(() => {
     return (carrinho?.itens || []).map((i) => {
