@@ -29,6 +29,8 @@ function fmtBRLAppShell(v) {
 }
 
 // Quem vê o balão de "novo pedido" e o de "pendência no estoque" (com bip).
+// JM3 Cliente também vê, mas o handler abaixo filtra pra só disparar quando
+// o pedido é do cliente J Macedo (senão vazaria atividade de outros clientes).
 const CARGOS_TOAST_PEDIDO = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Estoque", "Financeiro"];
 const CARGOS_TOAST_ESTOQUE = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"];
 // Status que representam uma pendência pro time de Estoque (tudo além de
@@ -181,6 +183,18 @@ export default function AppShell({ titulo, children }) {
         return;
       }
 
+      // Sessão expira 8h depois do login (mesmo que o token do Supabase
+      // ainda seja válido) — força um novo login.
+      if (p?.ultimo_login_em) {
+        const horasLogado = (Date.now() - new Date(p.ultimo_login_em).getTime()) / 3600000;
+        if (horasLogado > 8) {
+          await supabase.auth.signOut();
+          limparUnidadeAtiva();
+          router.replace("/login?sessaoExpirada=1");
+          return;
+        }
+      }
+
       const unidades = await buscarUnidadesDoUsuario(supabase, p.id);
       let ativa = getUnidadeAtiva();
       if (ativa && !unidades.some((u) => u.id === ativa.id)) ativa = null;
@@ -217,6 +231,18 @@ export default function AppShell({ titulo, children }) {
       }
 
       async function marcarPresenca() {
+        // Mesma regra de expiração de 8h, verificada a cada tick do
+        // heartbeat — pega quem deixa a aba aberta sem navegar.
+        if (p?.ultimo_login_em) {
+          const horasLogado = (Date.now() - new Date(p.ultimo_login_em).getTime()) / 3600000;
+          if (horasLogado > 8) {
+            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+            await supabase.auth.signOut();
+            limparUnidadeAtiva();
+            router.replace("/login?sessaoExpirada=1");
+            return;
+          }
+        }
         const { error } = await supabase
           .from("perfis")
           .update({ visto_em: new Date().toISOString() })
@@ -267,6 +293,10 @@ export default function AppShell({ titulo, children }) {
         async (payload) => {
           if (!vePedido) return;
           const o = payload.new;
+          // JM3 Cliente só pode ver pedido de outro cliente aqui se o Realtime
+          // não filtrar por RLS por algum motivo — camada extra de segurança
+          // pra nunca vazar atividade de outro cliente nesse balão.
+          if (perfil.cargo === "JM3 Cliente" && o.cliente_id !== perfil.cliente_id) return;
           const [{ data: cliente }, { data: vendedor }] = await Promise.all([
             supabase.from("clientes").select("nome").eq("id", o.cliente_id).maybeSingle(),
             o.vendedor_id
@@ -291,6 +321,7 @@ export default function AppShell({ titulo, children }) {
           if (!vePendenciaEstoque) return;
           const antes = payload.old;
           const depois = payload.new;
+          if (perfil.cargo === "JM3 Cliente" && depois.cliente_id !== perfil.cliente_id) return;
           if (antes?.status !== depois.status && STATUS_PENDENCIA_ESTOQUE.includes(depois.status)) {
             adicionarToast({
               tipo: "pendencia_estoque",

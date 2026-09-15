@@ -41,8 +41,9 @@ export default function OrcamentosPage() {
         .from("orcamentos")
         .select("*, clientes(nome, nome_fantasia), perfis!orcamentos_vendedor_id_fkey(nome)")
         .order("criado_em", { ascending: false });
-      // cliente vê tudo que é dele, independente de unidade; equipe só vê a unidade ativa
-      if (p?.cargo !== "Cliente" && unidadeAtiva) {
+      // cliente (e JM3 Cliente, que também é preso a um único cliente) vê
+      // tudo que é dele, independente de unidade; equipe só vê a unidade ativa
+      if (!["Cliente", "JM3 Cliente"].includes(p?.cargo) && unidadeAtiva) {
         query = query.eq("unidade_id", unidadeAtiva.id);
       }
       const { data } = await query;
@@ -69,7 +70,7 @@ export default function OrcamentosPage() {
     let query = supabase
       .from("orcamentos")
       .select("*, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome)");
-    if (perfil?.cargo !== "Cliente" && unidadeAtiva) {
+    if (!["Cliente", "JM3 Cliente"].includes(perfil?.cargo) && unidadeAtiva) {
       query = query.eq("numero_unidade", n).eq("unidade_id", unidadeAtiva.id);
     } else {
       query = query.eq("id", n);
@@ -79,6 +80,8 @@ export default function OrcamentosPage() {
     setBuscando(false);
   }
 
+  // JM3 Cliente tem nível de gerente (vê coluna Cliente/OS Interna, busca por
+  // cliente etc.) — só o cargo "Cliente" (autoatendimento) tem essa UI reduzida.
   const ehCliente = perfil?.cargo === "Cliente";
 
   const termoClienteNorm = normKey(buscaCliente);

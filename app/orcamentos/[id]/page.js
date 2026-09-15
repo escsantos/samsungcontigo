@@ -71,7 +71,7 @@ export default function DetalheOrcamentoPage() {
     setPerfil(p);
     const { data: orc } = await supabase.from("orcamentos").select("*, clientes(nome, celular, email)").eq("id", id).single();
     const unidadeAtiva = getUnidadeAtiva();
-    if (orc && p?.cargo !== "Cliente" && unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
+    if (orc && !["Cliente", "JM3 Cliente"].includes(p?.cargo) && unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
       setOrcamento(null);
       setForaDaUnidade(true);
       return;
@@ -500,6 +500,9 @@ export default function DetalheOrcamentoPage() {
     );
   }
 
+  // Aprovar/Rejeitar/Ajustar preço é nível de gerente — JM3 Cliente tem
+  // esse nível (restrito ao próprio pedido via RLS); só o "Cliente"
+  // (autoatendimento) fica de fora, esse só cria e acompanha.
   const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil?.cargo);
   const cor = CORES_STATUS[orcamento.status] || CORES_STATUS_FALLBACK;
   const IconeStatusAtual = ICONES_STATUS[orcamento.status];
