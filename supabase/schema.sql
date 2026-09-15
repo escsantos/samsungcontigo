@@ -1897,3 +1897,9 @@ create or replace function pode_gerenciar_estoque()
 returns boolean language sql security definer set search_path = public stable as $$
   select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor','JM3 Cliente','Estoque'));
 $$;
+
+-- Pagamento em Cartão de Crédito: registra bandeira e número de parcelas
+-- (1x a 10x) junto com o pagamento. Colunas nulas para as demais formas de
+-- pagamento.
+alter table pagamentos_orcamento add column if not exists bandeira_cartao text;
+alter table pagamentos_orcamento add column if not exists parcelas integer;
