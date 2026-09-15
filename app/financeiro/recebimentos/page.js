@@ -319,7 +319,12 @@ export default function RecebimentosPage() {
                     <tbody>
                       {pagamentosDetalhe.map((p) => (
                         <tr key={p.id} className="border-b border-line last:border-0">
-                          <td className="px-3 py-2 font-medium">{p.forma_pagamento || "—"}</td>
+                          <td className="px-3 py-2 font-medium">
+                            {p.forma_pagamento || "—"}
+                            {p.bandeira_cartao && (
+                              <span className="block text-[10.5px] text-muted font-normal">{p.bandeira_cartao} — {p.parcelas || 1}x</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-muted">
                             {p.data_pagamento ? new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR") : "—"}
                           </td>

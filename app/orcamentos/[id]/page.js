@@ -10,7 +10,7 @@ import LinhaDoTempo from "../../../components/LinhaDoTempo";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { getUnidadeAtiva } from "../../../lib/unidade";
 import { registrarAuditoria } from "../../../lib/auditoria";
-import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, rotuloPagamentoPendente } from "../../../lib/estoque";
+import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, BANDEIRAS_CARTAO, PARCELAS_CARTAO, rotuloPagamentoPendente } from "../../../lib/estoque";
 import { STATUS_ELEGIVEIS_NF, statusNotaFiscal, RESUMO_STATUS_NF } from "../../../lib/fiscal";
 import { calcularPreco } from "../../../lib/precos";
 
@@ -58,6 +58,8 @@ export default function DetalheOrcamentoPage() {
   const [valorPagamento, setValorPagamento] = useState("");
   const [dataPagamento, setDataPagamento] = useState(hoje());
   const [arquivoAnexo, setArquivoAnexo] = useState(null);
+  const [bandeiraCartao, setBandeiraCartao] = useState(BANDEIRAS_CARTAO[0]);
+  const [parcelasCartao, setParcelasCartao] = useState(1);
   const [processandoPagamento, setProcessandoPagamento] = useState(false);
 
   useEffect(() => {
@@ -300,21 +302,23 @@ export default function DetalheOrcamentoPage() {
       setErro(`O valor não pode ser maior que o restante do pedido (${fmtBRL(faltandoAgora)}).`);
       return;
     }
+    if (!arquivoAnexo) {
+      setErro("Anexe o comprovante de pagamento pra concluir o registro.");
+      return;
+    }
     setProcessandoPagamento(true);
     setErro("");
 
-    let anexoPath = null;
-    if (arquivoAnexo) {
-      const nomeArquivo = `${id}/${Date.now()}-${arquivoAnexo.name}`;
-      const { error: errUpload } = await supabase.storage.from("comprovantes").upload(nomeArquivo, arquivoAnexo);
-      if (errUpload) {
-        setProcessandoPagamento(false);
-        setErro("Falha ao subir o anexo: " + errUpload.message);
-        return;
-      }
-      anexoPath = nomeArquivo;
+    const nomeArquivo = `${id}/${Date.now()}-${arquivoAnexo.name}`;
+    const { error: errUpload } = await supabase.storage.from("comprovantes").upload(nomeArquivo, arquivoAnexo);
+    if (errUpload) {
+      setProcessandoPagamento(false);
+      setErro("Falha ao subir o anexo: " + errUpload.message);
+      return;
     }
+    const anexoPath = nomeArquivo;
 
+    const ehCartaoCredito = formaPagamento === "Cartão de Crédito";
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase.from("pagamentos_orcamento").insert({
       orcamento_id: id,
@@ -322,6 +326,8 @@ export default function DetalheOrcamentoPage() {
       valor,
       data_pagamento: dataPagamento,
       anexo_url: anexoPath,
+      bandeira_cartao: ehCartaoCredito ? bandeiraCartao : null,
+      parcelas: ehCartaoCredito ? parcelasCartao : null,
       registrado_por: user.id
     });
 
@@ -345,6 +351,8 @@ export default function DetalheOrcamentoPage() {
     });
 
     setArquivoAnexo(null);
+    setBandeiraCartao(BANDEIRAS_CARTAO[0]);
+    setParcelasCartao(1);
     setProcessandoPagamento(false);
     setPagamentoModalAberto(false);
     carregar();
@@ -368,16 +376,29 @@ export default function DetalheOrcamentoPage() {
 
   function iniciarEdicaoPagamento(p) {
     setEditandoPagamento(p.id);
-    setEdicaoPagamento({ forma_pagamento: p.forma_pagamento, valor: String(p.valor), data_pagamento: p.data_pagamento });
+    setEdicaoPagamento({
+      forma_pagamento: p.forma_pagamento,
+      valor: String(p.valor),
+      data_pagamento: p.data_pagamento,
+      bandeira_cartao: p.bandeira_cartao || BANDEIRAS_CARTAO[0],
+      parcelas: p.parcelas || 1
+    });
   }
 
   async function salvarEdicaoPagamento(pagamentoId) {
     const valor = parseFloat(edicaoPagamento.valor);
     if (!valor || valor <= 0 || !edicaoPagamento.data_pagamento) return;
     setProcessando(true);
+    const ehCartaoCredito = edicaoPagamento.forma_pagamento === "Cartão de Crédito";
     await supabase
       .from("pagamentos_orcamento")
-      .update({ forma_pagamento: edicaoPagamento.forma_pagamento, valor, data_pagamento: edicaoPagamento.data_pagamento })
+      .update({
+        forma_pagamento: edicaoPagamento.forma_pagamento,
+        valor,
+        data_pagamento: edicaoPagamento.data_pagamento,
+        bandeira_cartao: ehCartaoCredito ? edicaoPagamento.bandeira_cartao : null,
+        parcelas: ehCartaoCredito ? edicaoPagamento.parcelas : null
+      })
       .eq("id", pagamentoId);
     await registrarAuditoria({
       tipoEvento: "edicao",
@@ -859,6 +880,7 @@ export default function DetalheOrcamentoPage() {
               <thead>
                 <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
                   <th className="text-left px-3 py-2">Forma</th>
+                  <th className="text-left px-3 py-2">Cartão</th>
                   <th className="text-left px-3 py-2">Data</th>
                   <th className="text-right px-3 py-2">Valor</th>
                   <th className="px-3 py-2"></th>
@@ -867,6 +889,7 @@ export default function DetalheOrcamentoPage() {
               <tbody>
                 {pagamentos.map((p) => {
                   const emEdicao = editandoPagamento === p.id;
+                  const emEdicaoEhCartao = emEdicao && edicaoPagamento.forma_pagamento === "Cartão de Crédito";
                   return (
                     <tr key={p.id} className="border-b border-line last:border-0">
                       <td className="px-3 py-2">
@@ -876,6 +899,22 @@ export default function DetalheOrcamentoPage() {
                           </select>
                         ) : (
                           p.forma_pagamento
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-muted">
+                        {emEdicaoEhCartao ? (
+                          <div className="flex items-center gap-1">
+                            <select className="field-input py-1 text-xs w-24" value={edicaoPagamento.bandeira_cartao} onChange={(e) => setEdicaoPagamento((a) => ({ ...a, bandeira_cartao: e.target.value }))}>
+                              {BANDEIRAS_CARTAO.map((b) => <option key={b} value={b}>{b}</option>)}
+                            </select>
+                            <select className="field-input py-1 text-xs w-14" value={edicaoPagamento.parcelas} onChange={(e) => setEdicaoPagamento((a) => ({ ...a, parcelas: Number(e.target.value) }))}>
+                              {PARCELAS_CARTAO.map((n) => <option key={n} value={n}>{n}x</option>)}
+                            </select>
+                          </div>
+                        ) : p.bandeira_cartao ? (
+                          `${p.bandeira_cartao} ${p.parcelas || 1}x`
+                        ) : (
+                          "—"
                         )}
                       </td>
                       <td className="px-3 py-2 text-muted">
@@ -949,17 +988,33 @@ export default function DetalheOrcamentoPage() {
                 <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
               </div>
               <div>
-                <label className="field-label">Anexo (opcional)</label>
-                <label className="flex items-center gap-2 border border-line rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm text-muted hover:border-brand-400 truncate">
+                <label className="field-label">Anexo *</label>
+                <label className={`flex items-center gap-2 border rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm truncate ${arquivoAnexo ? "border-line text-muted hover:border-brand-400" : "border-danger text-danger"}`}>
                   <Paperclip size={14} className="shrink-0" />
-                  <span className="truncate">{arquivoAnexo ? arquivoAnexo.name : "Escolher arquivo"}</span>
+                  <span className="truncate">{arquivoAnexo ? arquivoAnexo.name : "Escolher (obrigatório)"}</span>
                   <input type="file" className="hidden" onChange={(e) => setArquivoAnexo(e.target.files[0] || null)} />
                 </label>
               </div>
+              {formaPagamento === "Cartão de Crédito" && (
+                <>
+                  <div>
+                    <label className="field-label">Bandeira</label>
+                    <select className="field-input" value={bandeiraCartao} onChange={(e) => setBandeiraCartao(e.target.value)}>
+                      {BANDEIRAS_CARTAO.map((b) => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label">Parcelamento</label>
+                    <select className="field-input" value={parcelasCartao} onChange={(e) => setParcelasCartao(Number(e.target.value))}>
+                      {PARCELAS_CARTAO.map((n) => <option key={n} value={n}>{n}x</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
             <button
               className="btn-primary mt-5"
-              disabled={processandoPagamento || !valorPagamento || !dataPagamento}
+              disabled={processandoPagamento || !valorPagamento || !dataPagamento || !arquivoAnexo}
               onClick={adicionarPagamentoRevisao}
             >
               <Plus size={15} />
