@@ -181,6 +181,18 @@ export default function AppShell({ titulo, children }) {
         return;
       }
 
+      // Sessão expira 8h depois do login (mesmo que o token do Supabase
+      // ainda seja válido) — força um novo login.
+      if (p?.ultimo_login_em) {
+        const horasLogado = (Date.now() - new Date(p.ultimo_login_em).getTime()) / 3600000;
+        if (horasLogado > 8) {
+          await supabase.auth.signOut();
+          limparUnidadeAtiva();
+          router.replace("/login?sessaoExpirada=1");
+          return;
+        }
+      }
+
       const unidades = await buscarUnidadesDoUsuario(supabase, p.id);
       let ativa = getUnidadeAtiva();
       if (ativa && !unidades.some((u) => u.id === ativa.id)) ativa = null;
@@ -217,6 +229,18 @@ export default function AppShell({ titulo, children }) {
       }
 
       async function marcarPresenca() {
+        // Mesma regra de expiração de 8h, verificada a cada tick do
+        // heartbeat — pega quem deixa a aba aberta sem navegar.
+        if (p?.ultimo_login_em) {
+          const horasLogado = (Date.now() - new Date(p.ultimo_login_em).getTime()) / 3600000;
+          if (horasLogado > 8) {
+            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+            await supabase.auth.signOut();
+            limparUnidadeAtiva();
+            router.replace("/login?sessaoExpirada=1");
+            return;
+          }
+        }
         const { error } = await supabase
           .from("perfis")
           .update({ visto_em: new Date().toISOString() })

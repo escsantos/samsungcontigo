@@ -30,6 +30,9 @@ function LoginForm() {
     if (params.get("semunidade") === "1") {
       setErro("Seu usuário ainda não tem nenhuma unidade vinculada. Fale com o Administrador do sistema.");
     }
+    if (params.get("sessaoExpirada") === "1") {
+      setErro("Sua sessão expirou após 8 horas de uso. Faça login novamente.");
+    }
   }, [params]);
 
   async function entrar(e) {
