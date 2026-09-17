@@ -2217,3 +2217,40 @@ drop policy if exists "jm3 cliente cria notificacao do proprio fluxo" on notific
 -- upload de comprovante fazia parte de registrar pagamento; a leitura de um
 -- comprovante já existente continua liberada.
 drop policy if exists "jm3 cliente sobe comprovante do proprio pedido" on storage.objects;
+
+-- ================================================================
+-- CORREÇÃO — Só cargo "Vendedor" pode ter comissão. Trocar o cargo de
+-- alguém que já foi Vendedor (ex: pra JM3 Cliente) pela tela de Usuários
+-- salvava a comissão antiga escondida (o campo some da tela, mas o valor
+-- ficava na memória do componente e ia junto no save) — foi assim que um
+-- login JM3 Cliente acabou com comissão cadastrada e os relatórios
+-- (Resumo, Comissões, Financeiro, Visão 360) passaram a calcular em cima
+-- dele. Corrigido também na tela (app/configuracoes/usuarios/[id]/page.js).
+-- Aqui é o reforço no banco: zera comissao_percentual pra qualquer cargo
+-- que não seja Vendedor, tanto pra já existente quanto daqui pra frente.
+-- Rode este arquivo inteiro no SQL Editor do Supabase.
+-- ================================================================
+
+update perfis set comissao_percentual = null where cargo <> 'Vendedor' and comissao_percentual is not null;
+
+create or replace function fixar_cliente_jm3()
+returns trigger language plpgsql as $$
+begin
+  if new.cargo = 'JM3 Cliente' then
+    new.cliente_id := (
+      select id from clientes
+      where regexp_replace(coalesce(cnpj, ''), '[^0-9]', '', 'g') = '01405991000317'
+      limit 1
+    );
+  end if;
+  if new.cargo <> 'Vendedor' then
+    new.comissao_percentual := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_fixar_cliente_jm3 on perfis;
+create trigger trg_fixar_cliente_jm3
+  before insert or update of cargo, comissao_percentual on perfis
+  for each row execute function fixar_cliente_jm3();

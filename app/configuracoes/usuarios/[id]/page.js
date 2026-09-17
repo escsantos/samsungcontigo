@@ -108,7 +108,13 @@ export default function DetalheUsuarioPage() {
     setTimeout(() => setUnidadesSalvas(false), 2500);
   }
 
-  const comissaoNormalizada = comissaoEditada.trim() === "" ? null : Number(comissaoEditada.replace(",", "."));
+  // CORREÇÃO — só cargo "Vendedor" pode ter comissão. Sem isso, trocar o
+  // cargo de alguém que já foi Vendedor (ex: pra JM3 Cliente) salvava a
+  // comissão antiga escondida (o campo não aparece mais na tela, mas o
+  // valor ficava na memória do componente) — foi assim que um login JM3
+  // Cliente acabou com 2% de comissão e o Resumo passou a calcular em cima
+  // dele, mesmo esse cargo nunca devendo ter comissão.
+  const comissaoNormalizada = cargoEditado !== "Vendedor" ? null : (comissaoEditada.trim() === "" ? null : Number(comissaoEditada.replace(",", ".")));
   const comissaoOriginal = usuario?.comissao_percentual === null || usuario?.comissao_percentual === undefined ? null : Number(usuario.comissao_percentual);
 
   const houveMudanca =
