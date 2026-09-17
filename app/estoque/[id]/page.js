@@ -124,10 +124,10 @@ function EstoquePedidoPageInner() {
   }, [id]);
 
   useEffect(() => {
-    if (orcamento && searchParams.get("pagamento") === "1") {
+    if (orcamento && perfil?.cargo !== "JM3 Cliente" && searchParams.get("pagamento") === "1") {
       setPagamentoModalAberto(true);
     }
-  }, [orcamento, searchParams]);
+  }, [orcamento, perfil, searchParams]);
 
   useEffect(() => {
     if (!trocandoPeca) return;
@@ -283,6 +283,11 @@ function EstoquePedidoPageInner() {
     (perfil?.cargo === "Vendedor" && perfil?.id === orcamento?.vendedor_id);
   const rotuloSemPagamento = rotuloPagamentoPendente(totalPagoGeral);
   const IconeAtual = ICONES_STATUS[orcamento.status];
+  // CORREÇÃO — todo o resto desta tela (Faturamento, separar peças, Nota
+  // Fiscal, gerar romaneio/confirmar entrega, editar/excluir pagamento)
+  // também é operação interna de estoque, igual as outras já tiradas do
+  // JM3 Cliente acima — ele só acompanha, nunca é quem confirma.
+  const somenteLeitura = perfil?.cargo === "JM3 Cliente";
   // Separação/Compra (informar Delivery, liberar parcialmente, confirmar
   // avanço pro Faturamento) é operação interna de estoque — igual
   // "Registrar pedido de compra" acima, fica de fora pro JM3 Cliente por
@@ -1135,14 +1140,16 @@ function EstoquePedidoPageInner() {
                 ? ` Liberado para entrega mesmo assim por ${orcamento.perfis?.nome ?? "usuário"}.`
                 : " Precisa quitar antes de liberar a entrega."}
             </span>
-            <button
-              className="btn-secondary py-1.5 px-3 text-xs shrink-0"
-              style={{ background: "#fff" }}
-              onClick={() => setPagamentoModalAberto(true)}
-            >
-              <Receipt size={13} />
-              Registrar pagamento
-            </button>
+            {!somenteLeitura && (
+              <button
+                className="btn-secondary py-1.5 px-3 text-xs shrink-0"
+                style={{ background: "#fff" }}
+                onClick={() => setPagamentoModalAberto(true)}
+              >
+                <Receipt size={13} />
+                Registrar pagamento
+              </button>
+            )}
           </div>
         )}
         {orcamento.pedido_pai_id && (
@@ -1430,32 +1437,34 @@ function EstoquePedidoPageInner() {
                   )}
                 </p>
               </div>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                {faltando > 0.004 && podeLiberarSemPagamento && (
-                  <button
-                    className="btn-secondary"
-                    style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
-                    onClick={() => setModalSemPagamentoAberto(true)}
-                    disabled={processandoSemPagamento}
-                  >
-                    <AlertTriangle size={15} />
-                    Liberar sem pagamento
-                  </button>
-                )}
-                <button className="btn-primary" onClick={faltando <= 0.004 ? confirmarFaturamentoJaPago : () => setPagamentoModalAberto(true)} disabled={processandoPagamento}>
-                  {faltando <= 0.004 ? (
-                    <>
-                      <Check size={15} />
-                      {processandoPagamento ? "Confirmando..." : "Confirmar Faturamento (já pago)"}
-                    </>
-                  ) : (
-                    <>
-                      <Plus size={15} />
-                      Inserir Pagamento
-                    </>
+              {!somenteLeitura && (
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {faltando > 0.004 && podeLiberarSemPagamento && (
+                    <button
+                      className="btn-secondary"
+                      style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                      onClick={() => setModalSemPagamentoAberto(true)}
+                      disabled={processandoSemPagamento}
+                    >
+                      <AlertTriangle size={15} />
+                      Liberar sem pagamento
+                    </button>
                   )}
-                </button>
-              </div>
+                  <button className="btn-primary" onClick={faltando <= 0.004 ? confirmarFaturamentoJaPago : () => setPagamentoModalAberto(true)} disabled={processandoPagamento}>
+                    {faltando <= 0.004 ? (
+                      <>
+                        <Check size={15} />
+                        {processandoPagamento ? "Confirmando..." : "Confirmar Faturamento (já pago)"}
+                      </>
+                    ) : (
+                      <>
+                        <Plus size={15} />
+                        Inserir Pagamento
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -1677,7 +1686,7 @@ function EstoquePedidoPageInner() {
         })()}
       </Modal>
 
-      {orcamento.status === "Faturamento Efetuado" && (
+      {orcamento.status === "Faturamento Efetuado" && !somenteLeitura && (
         <div className="card p-5 mb-4 flex items-center justify-between">
           <div>
             <p className="font-display font-semibold text-sm">Separar peças</p>
@@ -1719,19 +1728,21 @@ function EstoquePedidoPageInner() {
                 : "Nenhuma OS Interna registrada ainda — informe no topo do pedido antes de abrir o chamado da Nota Fiscal."}
             </div>
 
-            {statusNF === "emitida" && !editandoNF ? (
+            {statusNF === "emitida" ? (
               <div className="flex items-center justify-between flex-wrap gap-2 mt-2">
                 <p className="text-xs text-muted">
                   Nº <span className="font-mono font-semibold text-ink">{orcamento.nota_fiscal_numero}</span>
                   {orcamento.nota_fiscal_emitida_em && <> — emitida em {new Date(orcamento.nota_fiscal_emitida_em).toLocaleString("pt-BR")}</>}
                 </p>
-                <button
-                  className="text-xs text-muted hover:text-ink flex items-center gap-1"
-                  onClick={() => { setNumeroNF(orcamento.nota_fiscal_numero || ""); setEditandoNF(true); }}
-                >
-                  <Pencil size={12} />
-                  Corrigir número
-                </button>
+                {!somenteLeitura && !editandoNF && (
+                  <button
+                    className="text-xs text-muted hover:text-ink flex items-center gap-1"
+                    onClick={() => { setNumeroNF(orcamento.nota_fiscal_numero || ""); setEditandoNF(true); }}
+                  >
+                    <Pencil size={12} />
+                    Corrigir número
+                  </button>
+                )}
               </div>
             ) : (
               <>
@@ -1741,29 +1752,33 @@ function EstoquePedidoPageInner() {
                     Marcado pra emitir depois{orcamento.nota_fiscal_observacao ? ` — ${orcamento.nota_fiscal_observacao}` : ""}. Registre o número assim que a NF sair.
                   </p>
                 )}
-                <div className="flex items-center gap-2 mt-2 max-w-md">
-                  <input
-                    className="field-input font-mono"
-                    placeholder="Nº da Nota Fiscal"
-                    inputMode="numeric"
-                    value={numeroNF}
-                    onChange={(e) => setNumeroNF(e.target.value.replace(/\D/g, "").slice(0, 12))}
-                  />
-                  <button className="btn-primary shrink-0" disabled={processandoNF || !numeroNF.trim()} onClick={registrarNotaFiscal}>
-                    <Check size={15} />
-                    Registrar
-                  </button>
-                </div>
-                {statusNF === "pendente" && (
-                  <button className="text-xs text-muted hover:text-ink mt-2 flex items-center gap-1.5" disabled={processandoNF} onClick={() => { setMotivoDepois(""); setMarcandoDepoisModal(true); }}>
-                    <Clock size={13} />
-                    Ainda não saiu — marcar pra emitir depois
-                  </button>
-                )}
-                {editandoNF && (
-                  <button className="text-xs text-muted hover:text-ink mt-2 ml-3" onClick={() => { setEditandoNF(false); setNumeroNF(""); }}>
-                    Cancelar
-                  </button>
+                {!somenteLeitura && (
+                  <>
+                    <div className="flex items-center gap-2 mt-2 max-w-md">
+                      <input
+                        className="field-input font-mono"
+                        placeholder="Nº da Nota Fiscal"
+                        inputMode="numeric"
+                        value={numeroNF}
+                        onChange={(e) => setNumeroNF(e.target.value.replace(/\D/g, "").slice(0, 12))}
+                      />
+                      <button className="btn-primary shrink-0" disabled={processandoNF || !numeroNF.trim()} onClick={registrarNotaFiscal}>
+                        <Check size={15} />
+                        Registrar
+                      </button>
+                    </div>
+                    {statusNF === "pendente" && (
+                      <button className="text-xs text-muted hover:text-ink mt-2 flex items-center gap-1.5" disabled={processandoNF} onClick={() => { setMotivoDepois(""); setMarcandoDepoisModal(true); }}>
+                        <Clock size={13} />
+                        Ainda não saiu — marcar pra emitir depois
+                      </button>
+                    )}
+                    {editandoNF && (
+                      <button className="text-xs text-muted hover:text-ink mt-2 ml-3" onClick={() => { setEditandoNF(false); setNumeroNF(""); }}>
+                        Cancelar
+                      </button>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -1784,18 +1799,20 @@ function EstoquePedidoPageInner() {
                   : "Gere o romaneio e confirme a entrega ao cliente."}
               </p>
             </div>
-            <div className="flex gap-2">
-              {aindaSemPagamento && (
-                <button className="btn-secondary" onClick={() => setPagamentoModalAberto(true)}>
-                  <Receipt size={15} />
-                  Registrar pagamento
+            {!somenteLeitura && (
+              <div className="flex gap-2">
+                {aindaSemPagamento && (
+                  <button className="btn-secondary" onClick={() => setPagamentoModalAberto(true)}>
+                    <Receipt size={15} />
+                    Registrar pagamento
+                  </button>
+                )}
+                <button className="btn-primary" disabled={entregaBloqueadaPorPagamento} onClick={abrirRomaneio} title={entregaBloqueadaPorPagamento ? "Quite o pagamento antes de liberar a entrega" : ""}>
+                  <Send size={15} />
+                  Confirmar Entrega
                 </button>
-              )}
-              <button className="btn-primary" disabled={entregaBloqueadaPorPagamento} onClick={abrirRomaneio} title={entregaBloqueadaPorPagamento ? "Quite o pagamento antes de liberar a entrega" : ""}>
-                <Send size={15} />
-                Confirmar Entrega
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}
