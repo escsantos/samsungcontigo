@@ -283,13 +283,21 @@ function EstoquePedidoPageInner() {
     (perfil?.cargo === "Vendedor" && perfil?.id === orcamento?.vendedor_id);
   const rotuloSemPagamento = rotuloPagamentoPendente(totalPagoGeral);
   const IconeAtual = ICONES_STATUS[orcamento.status];
+  // Separação/Compra (informar Delivery, liberar parcialmente, confirmar
+  // avanço pro Faturamento) é operação interna de estoque — igual
+  // "Registrar pedido de compra" acima, fica de fora pro JM3 Cliente por
+  // decisão de negócio, mesmo tendo nível de gerente nas outras ações desta
+  // tela. Ele ainda enxerga o andamento (linha de cada peça, status), só não
+  // interage com essa etapa.
   const podeInformarDelivery =
-    ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status);
+    ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status) &&
+    perfil?.cargo !== "JM3 Cliente";
   const todosLiberados = itens.length > 0 && itens.every((i) => i.liberado);
   // Part Number só pode ser trocado enquanto o item ainda não tem Delivery
   // confirmada — depois disso o custo/Delivery já estão amarrados àquele
-  // código, então trocar deixaria de bater com o que foi comprado.
-  const podeTrocarPeca = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Estoque"].includes(perfil?.cargo);
+  // código, então trocar deixaria de bater com o que foi comprado. Combinado
+  // com podeInformarDelivery, que já tira o JM3 Cliente (ver acima).
+  const podeTrocarPeca = ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil?.cargo);
   const mostraCusto = true;
 
   function copiarCodigo(codigo) {
