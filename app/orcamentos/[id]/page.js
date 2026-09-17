@@ -13,6 +13,7 @@ import { registrarAuditoria } from "../../../lib/auditoria";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, BANDEIRAS_CARTAO, PARCELAS_CARTAO, rotuloPagamentoPendente } from "../../../lib/estoque";
 import { STATUS_ELEGIVEIS_NF, statusNotaFiscal, RESUMO_STATUS_NF } from "../../../lib/fiscal";
 import { calcularPreco } from "../../../lib/precos";
+import { ehClienteCustoZero } from "../../../lib/clientes";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -69,7 +70,7 @@ export default function DetalheOrcamentoPage() {
   async function carregar() {
     const p = await getPerfilAtual();
     setPerfil(p);
-    const { data: orc } = await supabase.from("orcamentos").select("*, clientes(nome, celular, email)").eq("id", id).single();
+    const { data: orc } = await supabase.from("orcamentos").select("*, clientes(nome, celular, email, cnpj)").eq("id", id).single();
     const unidadeAtiva = getUnidadeAtiva();
     if (orc && !["Cliente", "JM3 Cliente"].includes(p?.cargo) && unidadeAtiva && orc.unidade_id !== unidadeAtiva.id) {
       setOrcamento(null);
@@ -105,8 +106,12 @@ export default function DetalheOrcamentoPage() {
     carregar();
   }
 
+  // Cliente J Macedo vende sempre pelo valor de custo — não existe desconto
+  // a aplicar (já não tem margem pra descontar) nem exigência de pagamento
+  // antecipado (paga no fechamento da semana).
+  const ehCustoZero = ehClienteCustoZero(orcamento?.clientes?.cnpj);
   const subtotalItens = itens.reduce((s, i) => s + Number(i.venda_total || 0), 0);
-  const descontoNum = Math.min(Math.max(parseFloat(desconto) || 0, 0), subtotalItens);
+  const descontoNum = ehCustoZero ? 0 : Math.min(Math.max(parseFloat(desconto) || 0, 0), subtotalItens);
   const totalComDesconto = subtotalItens - descontoNum;
   const custoTotalGeral = itens.reduce((s, i) => s + Number(i.custo_unitario || 0) * i.qtd, 0);
   const impostoPct = Number(orcamento?.imposto_total || 0);
@@ -293,7 +298,9 @@ export default function DetalheOrcamentoPage() {
   const pagamentoCompleto = faltandoAgora <= 0.004;
   const percentualPagoAgora = Number(orcamento?.valor_total || 0) > 0 ? (totalPagoAgora / Number(orcamento.valor_total)) * 100 : 0;
   const atingiu30Porcento = percentualPagoAgora >= 30;
-  const podeAprovar = atingiu30Porcento || seguirSemPagamento;
+  // Cliente J Macedo paga no fechamento da semana — não exige pagamento
+  // antecipado pra aprovar.
+  const podeAprovar = ehCustoZero || atingiu30Porcento || seguirSemPagamento;
 
   async function adicionarPagamentoRevisao() {
     const valor = parseFloat(valorPagamento);
@@ -439,7 +446,9 @@ export default function DetalheOrcamentoPage() {
         status: "Aguardando Separação/Compra",
         revisado_por: user.id,
         revisado_em: new Date().toISOString(),
-        sem_pagamento: !pagamentoCompleto
+        // Cliente J Macedo paga no fechamento da semana — não é uma
+        // pendência de pagamento (não bloqueia liberar entrega no Estoque).
+        sem_pagamento: ehCustoZero ? false : !pagamentoCompleto
       })
       .eq("id", id);
     setProcessando(false);
@@ -734,11 +743,15 @@ export default function DetalheOrcamentoPage() {
               type="number"
               step="0.01"
               min="0"
-              className="field-input"
-              value={desconto}
+              className="field-input disabled:opacity-60"
+              value={ehCustoZero ? 0 : desconto}
+              disabled={ehCustoZero}
               onChange={(e) => setDesconto(e.target.value)}
             />
           </div>
+          {ehCustoZero && (
+            <p className="text-xs text-muted -mt-2 mb-4">Não há desconto pra esse cliente — o pedido já é vendido pelo valor de custo.</p>
+          )}
 
           <p className="text-xs font-semibold text-muted mb-2">Resumo da negociação</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -785,7 +798,9 @@ export default function DetalheOrcamentoPage() {
               <p className="text-xs text-muted">
                 Total pago: <b className="font-mono text-ink">{fmtBRL(totalPagoAgora)}</b>
                 {" ("}{percentualPagoAgora.toFixed(0)}%{") · "}
-                {pagamentoCompleto ? (
+                {ehCustoZero ? (
+                  <span className="font-semibold" style={{ color: "var(--accent)" }}>Pagamento no fechamento da semana</span>
+                ) : pagamentoCompleto ? (
                   <span className="font-semibold" style={{ color: "#2C7C6E" }}>Completo ✓</span>
                 ) : atingiu30Porcento ? (
                   <span className="font-semibold" style={{ color: "#2C7C6E" }}>≥ 30% recebido — pode aprovar ✓</span>
@@ -800,21 +815,32 @@ export default function DetalheOrcamentoPage() {
             </button>
           </div>
 
-          {!atingiu30Porcento && (
-            <label className="flex items-start gap-2.5 mt-4 p-3 rounded-lg border border-line cursor-pointer">
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={seguirSemPagamento}
-                onChange={(e) => setSeguirSemPagamento(e.target.checked)}
-              />
+          {ehCustoZero ? (
+            <div className="flex items-start gap-2.5 mt-4 p-3 rounded-lg border border-line" style={{ background: "var(--accent-soft)" }}>
               <span className="text-xs">
-                <span className="font-medium">Concordo em seguir com pagamento inferior a 30%</span>
+                <span className="font-medium">Esse cliente não precisa de pagamento antecipado.</span>
                 <span className="block text-muted mt-0.5">
-                  O pedido segue o fluxo mesmo abaixo dos 30%. O gerente é avisado, e o pedido fica marcado até o pagamento ser concluído.
+                  O pagamento é feito no fechamento da semana — o pedido pode ser aprovado normalmente sem receber nada adiantado.
                 </span>
               </span>
-            </label>
+            </div>
+          ) : (
+            !atingiu30Porcento && (
+              <label className="flex items-start gap-2.5 mt-4 p-3 rounded-lg border border-line cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={seguirSemPagamento}
+                  onChange={(e) => setSeguirSemPagamento(e.target.checked)}
+                />
+                <span className="text-xs">
+                  <span className="font-medium">Concordo em seguir com pagamento inferior a 30%</span>
+                  <span className="block text-muted mt-0.5">
+                    O pedido segue o fluxo mesmo abaixo dos 30%. O gerente é avisado, e o pedido fica marcado até o pagamento ser concluído.
+                  </span>
+                </span>
+              </label>
+            )
           )}
         </div>
       )}

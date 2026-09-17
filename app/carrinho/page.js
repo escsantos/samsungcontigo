@@ -7,6 +7,7 @@ import AppShell from "../../components/AppShell";
 import Modal from "../../components/Modal";
 import { useCarrinho } from "../../contexts/CarrinhoContext";
 import { calcularPreco } from "../../lib/precos";
+import { ehClienteCustoZero } from "../../lib/clientes";
 import { corCategoria, iconeCategoria } from "../../lib/categorias";
 import { getUnidadeAtiva } from "../../lib/unidade";
 import { registrarAuditoria } from "../../lib/auditoria";
@@ -22,6 +23,7 @@ export default function CarrinhoPage() {
   const [perfil, setPerfil] = useState(undefined);
   const [margem, setMargem] = useState(30);
   const [impostoTotal, setImpostoTotal] = useState(0);
+  const [clienteCustoZero, setClienteCustoZero] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState(false);
@@ -37,12 +39,28 @@ export default function CarrinhoPage() {
     })();
   }, []);
 
-  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : margem;
+  // Cliente J MACEDO ELETRONICA LTDA vende sempre pelo valor de custo (sem
+  // margem, sem imposto), não importa quem esteja atendendo.
+  useEffect(() => {
+    if (!carrinho?.clienteId) {
+      setClienteCustoZero(false);
+      return;
+    }
+    supabase
+      .from("clientes")
+      .select("cnpj")
+      .eq("id", carrinho.clienteId)
+      .single()
+      .then(({ data }) => setClienteCustoZero(ehClienteCustoZero(data?.cnpj)));
+  }, [carrinho?.clienteId]);
+
+  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : clienteCustoZero ? 0 : margem;
+  const impostoEfetivo = clienteCustoZero ? 0 : impostoTotal;
   const mostraCusto = perfil?.cargo !== "Cliente";
 
   const itensCalculados = useMemo(() => {
     return (carrinho?.itens || []).map((i) => {
-      const { venda, imposto, lucroLiquido } = calcularPreco(i.custoUnitario, margemEfetiva, impostoTotal);
+      const { venda, imposto, lucroLiquido } = calcularPreco(i.custoUnitario, margemEfetiva, impostoEfetivo);
       return {
         ...i,
         vendaUnit: venda,
@@ -50,7 +68,7 @@ export default function CarrinhoPage() {
         vendaTotal: venda !== null ? venda * i.qtd : null
       };
     });
-  }, [carrinho?.itens, margemEfetiva, impostoTotal]);
+  }, [carrinho?.itens, margemEfetiva, impostoEfetivo]);
 
   const totalGeral = itensCalculados.reduce((s, i) => s + (i.vendaTotal || 0), 0);
 
@@ -84,7 +102,7 @@ export default function CarrinhoPage() {
         status: "Pendente de Análise",
         valor_total: totalGeral,
         margem: margemEfetiva,
-        imposto_total: impostoTotal,
+        imposto_total: impostoEfetivo,
         unidade_id: unidadeAtiva.id,
         numero_unidade: numeroReservado
       })
