@@ -1,4 +1,12 @@
 @echo off
+rem Se a janela fechar sozinha (ou "piscar") em algum erro que a gente nao
+rem previu, essa parte relanca o script dentro de um cmd que fica aberto
+rem depois de terminar (cmd /k), entao da sempre pra ler o que aconteceu.
+if /I not "%~1"=="__run__" (
+    cmd /k ""%~f0" __run__"
+    exit /b
+)
+
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
