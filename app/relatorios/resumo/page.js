@@ -68,7 +68,10 @@ export default function RelatorioResumoPage() {
       const { data: vinculos } = await supabase.from("perfis_unidades").select("perfil_id").eq("unidade_id", unidadeAtiva.id);
       const ids = (vinculos || []).map((v) => v.perfil_id);
       if (ids.length === 0) { setVendedores([]); return; }
-      const { data: vends } = await supabase.from("perfis").select("id, nome").eq("cargo", "Vendedor").in("id", ids).order("nome");
+      // Inclui os logins JM3 Cliente na lista também — cada um vira o
+      // vendedor_id do próprio pedido que cria, então dá pra filtrar o
+      // Resumo por um login específico igual se filtra por um Vendedor.
+      const { data: vends } = await supabase.from("perfis").select("id, nome").in("cargo", ["Vendedor", "JM3 Cliente"]).in("id", ids).order("nome");
       setVendedores(vends || []);
     })();
   }, [podeEscolherVendedor]);

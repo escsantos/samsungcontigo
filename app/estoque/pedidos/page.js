@@ -38,7 +38,10 @@ export default function RelatorioPedidosPage() {
       const p = await getPerfilAtual();
       setPerfil(p);
       if (["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(p?.cargo)) {
-        const { data } = await supabase.from("perfis").select("id, nome").eq("cargo", "Vendedor").order("nome");
+        // Inclui os logins JM3 Cliente na lista também — desde que cada um
+        // vira o vendedor_id do próprio pedido que cria, dá pra filtrar por
+        // um login específico igual se filtra por um Vendedor.
+        const { data } = await supabase.from("perfis").select("id, nome").in("cargo", ["Vendedor", "JM3 Cliente"]).order("nome");
         setVendedores(data || []);
       }
     })();
