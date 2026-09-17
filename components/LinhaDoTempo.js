@@ -1,5 +1,5 @@
 "use client";
-import { FileText, Send, Clock, CheckCircle2, XCircle, Receipt, PackageCheck, PackageOpen, DollarSign, AlertTriangle, Wrench } from "lucide-react";
+import { FileText, Send, Clock, CheckCircle2, XCircle, Receipt, PackageCheck, PackageOpen, DollarSign, AlertTriangle, Wrench, Ban } from "lucide-react";
 
 function fmtDataHora(iso) {
   if (!iso) return "";
@@ -67,6 +67,41 @@ export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [], n
       cor: "#5D6572",
       titulo: `OS Interna registrada: ${orcamento.os_interna}` + porNome(orcamento.informanteOS?.nome),
       data: orcamento.os_interna_em
+    });
+  }
+
+  const itensIndisponiveis = itens.filter((i) => i.indisponivel_em);
+  if (itensIndisponiveis.length > 0) {
+    const ultimaMarcacao = itensIndisponiveis.reduce((max, i) => (!max || i.indisponivel_em > max ? i.indisponivel_em : max), null);
+    const itemDaUltimaMarcacao = itensIndisponiveis.find((i) => i.indisponivel_em === ultimaMarcacao);
+    const codigos = itensIndisponiveis.map((i) => i.codigo).join(", ");
+    eventos.push({
+      icone: Ban,
+      cor: "#D6336C",
+      titulo: `Peça(s) marcada(s) indisponível na Samsung: ${codigos}` + porNome(itemDaUltimaMarcacao?.indisponivelPor?.nome),
+      data: ultimaMarcacao
+    });
+  }
+
+  const itensComAlternativa = itens.filter((i) => i.pn_alternativo_em);
+  if (itensComAlternativa.length > 0) {
+    const ultimaTroca = itensComAlternativa.reduce((max, i) => (!max || i.pn_alternativo_em > max ? i.pn_alternativo_em : max), null);
+    const itemDaUltimaTroca = itensComAlternativa.find((i) => i.pn_alternativo_em === ultimaTroca);
+    eventos.push({
+      icone: Wrench,
+      cor: "#7A4FB0",
+      titulo: `Peça alternativa definida pela JM3: ${itemDaUltimaTroca?.codigo}` + porNome(itemDaUltimaTroca?.pnAlternativoPor?.nome),
+      data: ultimaTroca
+    });
+  }
+
+  if (orcamento.cancelado_em) {
+    eventos.push({
+      icone: XCircle,
+      cor: "#E1614F",
+      titulo: "Pedido cancelado" + porNome(orcamento.cancelador?.nome) +
+        (orcamento.motivo_cancelamento ? ` — Motivo: ${orcamento.motivo_cancelamento}` : ""),
+      data: orcamento.cancelado_em
     });
   }
 

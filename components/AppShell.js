@@ -531,7 +531,7 @@ export default function AppShell({ titulo, children }) {
             >
               <Menu size={17} />
             </button>
-            <SininhoNotificacoes visivel={["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo)} />
+            <SininhoNotificacoes visivel={["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(perfil?.cargo)} />
             <h1 className="font-display font-semibold text-[15px] text-ink truncate">{titulo}</h1>
             {unidadeAtiva && (
               <button

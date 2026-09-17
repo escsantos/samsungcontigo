@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2, Receipt, Paperclip, ExternalLink, AlertTriangle, XCircle, FileCheck2, Clock } from "lucide-react";
+import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2, Receipt, Paperclip, ExternalLink, AlertTriangle, XCircle, FileCheck2, Clock, Ban } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
@@ -37,6 +37,14 @@ export default function DetalheOrcamentoPage() {
   const [erro, setErro] = useState("");
   const [foraDaUnidade, setForaDaUnidade] = useState(false);
   const [cancelandoPedido, setCancelandoPedido] = useState(false);
+
+  // JM3 Cliente escolhe peça alternativa quando o Estoque marca uma peça indisponível na Samsung
+  const [trocandoIndisponivelJM3, setTrocandoIndisponivelJM3] = useState(null);
+  const [termoBuscaAlternativa, setTermoBuscaAlternativa] = useState("");
+  const [resultadosBuscaAlternativa, setResultadosBuscaAlternativa] = useState([]);
+  const [buscandoAlternativa, setBuscandoAlternativa] = useState(false);
+  const [salvandoAlternativa, setSalvandoAlternativa] = useState(false);
+  const [erroAlternativa, setErroAlternativa] = useState("");
 
   // OS Interna — nº da ordem de serviço do sistema interno da loja
   const [editandoOS, setEditandoOS] = useState(false);
@@ -80,7 +88,8 @@ export default function DetalheOrcamentoPage() {
         separador:perfis!orcamentos_separado_por_fkey(nome),
         entregador:perfis!orcamentos_entregue_por_fkey(nome),
         recebedor:perfis!orcamentos_recebimento_confirmado_por_fkey(nome),
-        informanteOS:perfis!orcamentos_os_interna_por_fkey(nome)`)
+        informanteOS:perfis!orcamentos_os_interna_por_fkey(nome),
+        cancelador:perfis!orcamentos_cancelado_por_fkey(nome)`)
       .eq("id", id)
       .single();
     const unidadeAtiva = getUnidadeAtiva();
@@ -93,7 +102,7 @@ export default function DetalheOrcamentoPage() {
     setDesconto(String(orc?.desconto || 0));
     const { data: its } = await supabase
       .from("orcamento_itens")
-      .select("*, liberador:perfis!orcamento_itens_liberado_por_fkey(nome)")
+      .select("*, liberador:perfis!orcamento_itens_liberado_por_fkey(nome), indisponivelPor:perfis!orcamento_itens_indisponivel_por_fkey(nome), pnAlternativoPor:perfis!orcamento_itens_pn_alternativo_por_fkey(nome)")
       .eq("orcamento_id", id)
       .order("id");
     setItens(its || []);
@@ -244,6 +253,72 @@ export default function DetalheOrcamentoPage() {
     };
     setItens((atual) => [...atual, novoItem]);
     setPecasAdicionadasAgora((atual) => [...atual, peca.id]);
+  }
+
+  // ---------- peça indisponível na Samsung — JM3 escolhe a peça alternativa ----------
+
+  useEffect(() => {
+    if (!trocandoIndisponivelJM3) return;
+    const termo = termoBuscaAlternativa.trim();
+    if (!termo) {
+      setResultadosBuscaAlternativa([]);
+      return;
+    }
+    const unidadeAtiva = getUnidadeAtiva();
+    if (!unidadeAtiva) return;
+    setBuscandoAlternativa(true);
+    const t = setTimeout(async () => {
+      const like = `%${termo}%`;
+      const { data } = await supabase
+        .rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id })
+        .or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`)
+        .limit(30);
+      setResultadosBuscaAlternativa(data || []);
+      setBuscandoAlternativa(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [termoBuscaAlternativa, trocandoIndisponivelJM3]);
+
+  function abrirAlternativa(item) {
+    setTrocandoIndisponivelJM3(item);
+    setTermoBuscaAlternativa("");
+    setResultadosBuscaAlternativa([]);
+    setErroAlternativa("");
+  }
+
+  function fecharAlternativa() {
+    setTrocandoIndisponivelJM3(null);
+    setTermoBuscaAlternativa("");
+    setResultadosBuscaAlternativa([]);
+    setErroAlternativa("");
+  }
+
+  async function confirmarAlternativa(peca) {
+    if (!trocandoIndisponivelJM3) return;
+    setSalvandoAlternativa(true);
+    setErroAlternativa("");
+    const { error } = await supabase.rpc("trocar_peca_indisponivel_jm3", {
+      p_item_id: trocandoIndisponivelJM3.id,
+      p_peca_id: peca.id > 0 ? peca.id : null,
+      p_modelo: peca.modelo,
+      p_categoria: peca.categoria,
+      p_codigo: peca.codigo,
+      p_descricao_resumida: peca.descricao_resumida,
+      p_descricao_peca: peca.descricao_peca
+    });
+    setSalvandoAlternativa(false);
+    if (error) {
+      setErroAlternativa("Falha ao trocar o Part Number: " + error.message);
+      return;
+    }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `JM3 escolheu peça alternativa para ${trocandoIndisponivelJM3.codigo} (indisponível na Samsung) no pedido #${orcamento.numero_unidade}: ${peca.codigo}.`
+    });
+    fecharAlternativa();
+    carregar();
   }
 
   async function salvarAjustes() {
@@ -630,7 +705,9 @@ export default function DetalheOrcamentoPage() {
             </div>
           );
         })()}
-        {!["Pendente de Análise", "Rejeitado", "Cancelado"].includes(orcamento.status) && !orcamento.entregue && ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo) && (
+        {!["Pendente de Análise", "Rejeitado", "Cancelado"].includes(orcamento.status) && !orcamento.entregue &&
+          (["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo) ||
+            (perfil?.cargo === "JM3 Cliente" && (orcamento.numero_pedido_compra == null || orcamento.status === "Peça Indisponível Samsung"))) && (
           <button
             onClick={() => setCancelandoPedido(true)}
             className="text-sm mt-4 hover:underline flex items-center gap-1.5"
@@ -695,6 +772,24 @@ export default function DetalheOrcamentoPage() {
                     </span>
                     <p className="font-mono text-xs truncate" style={{ color: "var(--accent)" }}>{i.codigo}</p>
                     <p className="text-muted text-xs truncate">{i.descricao_resumida}</p>
+                    {i.indisponivel && (
+                      <div className="mt-1.5 rounded-md px-2 py-1.5" style={{ background: "rgba(214,51,108,0.1)" }}>
+                        <p className="text-[10.5px] font-semibold flex items-center gap-1" style={{ color: "#D6336C" }}>
+                          <Ban size={11} />
+                          Indisponível na Samsung{i.indisponivelPor?.nome ? ` — ${i.indisponivelPor.nome}` : ""}
+                        </p>
+                        {i.indisponivel_motivo && <p className="text-[10.5px] text-muted mt-0.5">{i.indisponivel_motivo}</p>}
+                        {perfil?.cargo === "JM3 Cliente" && (
+                          <button
+                            onClick={() => abrirAlternativa(i)}
+                            className="text-[10.5px] font-semibold mt-1 hover:underline"
+                            style={{ color: "var(--accent)" }}
+                          >
+                            Escolher peça alternativa →
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-center">
                     {ajustando ? (
@@ -1176,9 +1271,68 @@ export default function DetalheOrcamentoPage() {
         open={cancelandoPedido}
         onClose={() => setCancelandoPedido(false)}
         orcamento={orcamento}
+        perfil={perfil}
         totalPago={totalPagoAgora}
         onCancelado={carregar}
       />
+
+      <Modal
+        open={!!trocandoIndisponivelJM3}
+        onClose={fecharAlternativa}
+        title="Escolher peça alternativa"
+        tamanho="xl"
+        footer={<button className="btn-secondary" onClick={fecharAlternativa} disabled={salvandoAlternativa}>Fechar</button>}
+      >
+        {trocandoIndisponivelJM3 && (
+          <p className="text-xs text-muted mb-3">
+            Peça indisponível: <span className="font-mono" style={{ color: "var(--accent)" }}>{trocandoIndisponivelJM3.codigo}</span> — {trocandoIndisponivelJM3.descricao_resumida}
+          </p>
+        )}
+        <div className="relative mb-3">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            className="field-input pl-9"
+            placeholder="Buscar por código, modelo ou descrição..."
+            value={termoBuscaAlternativa}
+            onChange={(e) => setTermoBuscaAlternativa(e.target.value)}
+            autoFocus
+          />
+        </div>
+        {erroAlternativa && <p className="text-xs text-danger mb-2">{erroAlternativa}</p>}
+        <div className="max-h-96 overflow-auto -mx-6 border-t border-line">
+          {buscandoAlternativa ? (
+            <p className="text-sm text-muted px-6 py-3">Buscando...</p>
+          ) : resultadosBuscaAlternativa.length === 0 ? (
+            <p className="text-sm text-muted px-6 py-3">{termoBuscaAlternativa ? "Nenhuma peça encontrada." : "Digite para buscar."}</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
+                  <th className="text-left px-3 py-2">Código</th>
+                  <th className="text-left px-3 py-2">Descrição</th>
+                  <th className="text-left px-3 py-2">Modelo</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultadosBuscaAlternativa.map((p) => (
+                  <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas">
+                    <td className="px-3 py-2 font-mono whitespace-nowrap" style={{ color: "var(--accent)" }}>{p.codigo}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{p.descricao_resumida}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-muted whitespace-nowrap">{p.modelo}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => confirmarAlternativa(p)} disabled={salvandoAlternativa} className="btn-secondary py-1.5 px-3 text-xs">
+                        <Check size={13} />
+                        Usar esta
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Modal>
     </AppShell>
   );
 }

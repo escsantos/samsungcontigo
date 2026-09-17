@@ -10,39 +10,52 @@ function fmtBRL(v) {
   return "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function CancelarPedidoModal({ open, onClose, orcamento, totalPago, onCancelado }) {
+export default function CancelarPedidoModal({ open, onClose, orcamento, perfil, totalPago, onCancelado }) {
   const [motivo, setMotivo] = useState("");
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState("");
 
   const temValorRecebido = totalPago > 0.004;
+  const ehJM3 = perfil?.cargo === "JM3 Cliente";
 
   async function confirmarCancelamento() {
+    if (ehJM3 && !motivo.trim()) {
+      setErro("Informe o motivo do cancelamento.");
+      return;
+    }
     setProcessando(true);
     setErro("");
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
-      const { error: errUpdate } = await supabase
-        .from("orcamentos")
-        .update({
-          status: "Cancelado",
-          motivo_cancelamento: motivo.trim() || null,
-          cancelado_por: user.id,
-          cancelado_em: new Date().toISOString()
-        })
-        .eq("id", orcamento.id);
-      if (errUpdate) throw new Error(errUpdate.message);
-
-      if (temValorRecebido) {
-        const { error: errEstorno } = await supabase.from("estornos").insert({
-          orcamento_id: orcamento.id,
-          unidade_id: orcamento.unidade_id,
-          valor: totalPago,
-          motivo: motivo.trim() || null,
-          solicitado_por: user.id
+      if (ehJM3) {
+        const { error: errRpc } = await supabase.rpc("cancelar_pedido_jm3", {
+          p_orcamento_id: orcamento.id,
+          p_motivo: motivo.trim() || null
         });
-        if (errEstorno) throw new Error("Pedido cancelado, mas falhou ao abrir a solicitação de estorno: " + errEstorno.message);
+        if (errRpc) throw new Error(errRpc.message);
+      } else {
+        const { error: errUpdate } = await supabase
+          .from("orcamentos")
+          .update({
+            status: "Cancelado",
+            motivo_cancelamento: motivo.trim() || null,
+            cancelado_por: user.id,
+            cancelado_em: new Date().toISOString()
+          })
+          .eq("id", orcamento.id);
+        if (errUpdate) throw new Error(errUpdate.message);
+
+        if (temValorRecebido) {
+          const { error: errEstorno } = await supabase.from("estornos").insert({
+            orcamento_id: orcamento.id,
+            unidade_id: orcamento.unidade_id,
+            valor: totalPago,
+            motivo: motivo.trim() || null,
+            solicitado_por: user.id
+          });
+          if (errEstorno) throw new Error("Pedido cancelado, mas falhou ao abrir a solicitação de estorno: " + errEstorno.message);
+        }
       }
 
       await registrarAuditoria({
@@ -88,7 +101,7 @@ export default function CancelarPedidoModal({ open, onClose, orcamento, totalPag
           <span>Esse pedido ainda não tem nenhum valor recebido — o cancelamento encerra ele direto, sem necessidade de estorno.</span>
         )}
       </div>
-      <label className="field-label">Motivo (opcional)</label>
+      <label className="field-label">Motivo{ehJM3 ? "" : " (opcional)"}</label>
       <textarea
         className="field-input"
         rows={3}

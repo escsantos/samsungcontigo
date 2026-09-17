@@ -2367,3 +2367,229 @@ create policy "ve nome de quem agiu em pedidos visiveis"
       where oi.liberado_por = perfis.id
     )
   );
+
+-- ================================================================
+-- CORREÇÃO — Peça Indisponível Samsung + notificação/balão em tempo real
+-- pra equipe JM3 Cliente + cancelamento pela JM3 com justificativa.
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+-- 1. Novo status, entre "Peças Compradas - Aguardando Chegada" e "Em
+--    Estoque - Aguardando Faturamento".
+alter table orcamentos drop constraint if exists orcamentos_status_check;
+alter table orcamentos add constraint orcamentos_status_check
+  check (status in (
+    'Pendente de Análise','Validado pelo Vendedor','Rejeitado',
+    'Aguardando Separação/Compra','Peças Compradas - Aguardando Chegada',
+    'Peça Indisponível Samsung',
+    'Em Estoque - Aguardando Faturamento','Faturamento Efetuado','Liberado para Retirada/Entrega',
+    'Produto Entregue',
+    'Cancelado'
+  ));
+
+-- 2. Flag de indisponibilidade por PEÇA (linha do pedido) — o Estoque marca,
+--    com motivo; a JM3 troca o Part Number (peça alternativa) depois.
+alter table orcamento_itens add column if not exists indisponivel boolean not null default false;
+alter table orcamento_itens add column if not exists indisponivel_motivo text;
+alter table orcamento_itens add column if not exists indisponivel_por uuid references perfis(id);
+alter table orcamento_itens add column if not exists indisponivel_em timestamptz;
+alter table orcamento_itens add column if not exists pn_alternativo_por uuid references perfis(id);
+alter table orcamento_itens add column if not exists pn_alternativo_em timestamptz;
+
+-- E o join perfis!orcamento_itens_indisponivel_por_fkey / pn_alternativo_por_fkey
+-- e perfis!orcamentos_cancelado_por_fkey usados pela linha do tempo precisam
+-- ficar cobertos na policy de nomes (substitui a versão anterior, que só
+-- cobria até os_interna_por):
+drop policy if exists "ve nome de quem agiu em pedidos visiveis" on perfis;
+create policy "ve nome de quem agiu em pedidos visiveis"
+  on perfis for select
+  using (
+    exists (
+      select 1 from orcamentos o
+      where o.criado_por = perfis.id
+         or o.revisado_por = perfis.id
+         or o.pagamento_validado_por = perfis.id
+         or o.liberado_sem_pagamento_por = perfis.id
+         or o.separado_por = perfis.id
+         or o.entregue_por = perfis.id
+         or o.recebimento_confirmado_por = perfis.id
+         or o.os_interna_por = perfis.id
+         or o.cancelado_por = perfis.id
+    )
+    or exists (
+      select 1 from pagamentos_orcamento p
+      where p.registrado_por = perfis.id
+    )
+    or exists (
+      select 1 from orcamento_itens oi
+      where oi.liberado_por = perfis.id
+         or oi.indisponivel_por = perfis.id
+         or oi.pn_alternativo_por = perfis.id
+    )
+  );
+
+-- 3. JM3 Cliente troca o Part Number de uma peça marcada indisponível
+--    (peça alternativa) — ela não tem UPDATE direto em orcamento_itens (foi
+--    fechado nas correções anteriores), então isso vai por função com
+--    permissão própria. Quando essa era a última peça indisponível do
+--    pedido, o pedido volta sozinho pro card "Aguardando Separação/Compra".
+create or replace function trocar_peca_indisponivel_jm3(
+  p_item_id bigint,
+  p_peca_id bigint,
+  p_modelo text,
+  p_categoria text,
+  p_codigo text,
+  p_descricao_resumida text,
+  p_descricao_peca text
+)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_orcamento_id bigint;
+  v_ainda_tem_indisponivel boolean;
+begin
+  select oi.orcamento_id into v_orcamento_id
+  from orcamento_itens oi
+  join orcamentos o on o.id = oi.orcamento_id
+  where oi.id = p_item_id
+    and oi.indisponivel = true
+    and eh_jm3_cliente()
+    and o.cliente_id = meu_cliente_id();
+
+  if v_orcamento_id is null then
+    raise exception 'Sem permissão para trocar o Part Number desta peça.';
+  end if;
+
+  update orcamento_itens
+  set peca_id = p_peca_id,
+      modelo = p_modelo,
+      categoria = p_categoria,
+      codigo = p_codigo,
+      descricao_resumida = p_descricao_resumida,
+      descricao_peca = p_descricao_peca,
+      indisponivel = false,
+      pn_alternativo_por = auth.uid(),
+      pn_alternativo_em = now()
+  where id = p_item_id;
+
+  select exists(select 1 from orcamento_itens where orcamento_id = v_orcamento_id and indisponivel = true)
+    into v_ainda_tem_indisponivel;
+
+  if not v_ainda_tem_indisponivel then
+    update orcamentos set status = 'Aguardando Separação/Compra' where id = v_orcamento_id;
+  end if;
+end;
+$$;
+
+grant execute on function trocar_peca_indisponivel_jm3(bigint, bigint, text, text, text, text, text) to authenticated;
+
+-- 4. JM3 Cliente cancela o pedido com justificativa — só antes do pedido de
+--    compra ser feito, ou enquanto o pedido estiver "Peça Indisponível
+--    Samsung". Reaproveita a mesma lógica do CancelarPedidoModal (estorno
+--    se já tiver valor recebido), mas com permissão própria porque a
+--    policy genérica de UPDATE em orcamentos (revisar orcamentos) só cobre
+--    o login que é vendedor_id daquele pedido específico — aqui vale pra
+--    qualquer login JM3 Cliente do mesmo cliente, igual o resto da tela.
+create or replace function cancelar_pedido_jm3(p_orcamento_id bigint, p_motivo text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  pode boolean;
+  v_unidade_id bigint;
+  v_total_pago numeric;
+begin
+  select
+    (eh_jm3_cliente() and cliente_id = meu_cliente_id() and status <> 'Cancelado'
+      and (numero_pedido_compra is null or status = 'Peça Indisponível Samsung')),
+    unidade_id
+  into pode, v_unidade_id
+  from orcamentos where id = p_orcamento_id;
+
+  if not pode then
+    raise exception 'Sem permissão para cancelar este pedido.';
+  end if;
+
+  select coalesce(sum(valor), 0) into v_total_pago from pagamentos_orcamento where orcamento_id = p_orcamento_id;
+
+  update orcamentos
+  set status = 'Cancelado', motivo_cancelamento = p_motivo, cancelado_por = auth.uid(), cancelado_em = now()
+  where id = p_orcamento_id;
+
+  if v_total_pago > 0.004 then
+    insert into estornos (orcamento_id, unidade_id, valor, motivo, solicitado_por)
+    values (p_orcamento_id, v_unidade_id, v_total_pago, p_motivo, auth.uid());
+  end if;
+end;
+$$;
+
+grant execute on function cancelar_pedido_jm3(bigint, text) to authenticated;
+
+-- 5. Notificações de movimentação pra equipe JM3 Cliente — alimenta tanto
+--    o balão em tempo real (AppShell já tem o mecanismo de toast via
+--    Realtime, só faltava JM3 receber o registro persistido) quanto o
+--    sininho/central de notificações.
+alter table notificacoes drop constraint if exists notificacoes_tipo_check;
+alter table notificacoes add constraint notificacoes_tipo_check
+  check (tipo in ('esqueci_senha', 'pedido_pendente_pronto', 'pedido_sem_pagamento', 'movimentacao_pedido'));
+
+alter table notificacoes add column if not exists orcamento_id bigint references orcamentos(id) on delete cascade;
+alter table notificacoes add column if not exists publico text;
+
+create or replace function notificar_jm3_movimentacao()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  tem_jm3 boolean;
+begin
+  if old.status is distinct from new.status
+     and new.status not in ('Pendente de Análise', 'Produto Entregue') then
+    select exists(select 1 from perfis where cargo = 'JM3 Cliente' and cliente_id = new.cliente_id) into tem_jm3;
+    if tem_jm3 then
+      insert into notificacoes (tipo, mensagem, publico, orcamento_id)
+      values ('movimentacao_pedido', 'Pedido #' || new.numero_unidade || ': ' || new.status, 'jm3_cliente', new.id);
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notificar_jm3_movimentacao on orcamentos;
+create trigger trg_notificar_jm3_movimentacao
+  after update of status on orcamentos
+  for each row execute function notificar_jm3_movimentacao();
+
+drop policy if exists "jm3 cliente le notificacoes do proprio fluxo" on notificacoes;
+create policy "jm3 cliente le notificacoes do proprio fluxo"
+  on notificacoes for select
+  using (
+    publico = 'jm3_cliente'
+    and eh_jm3_cliente()
+    and exists (select 1 from orcamentos o where o.id = notificacoes.orcamento_id and o.cliente_id = meu_cliente_id())
+  );
+
+drop policy if exists "jm3 cliente marca notificacao como lida" on notificacoes;
+create policy "jm3 cliente marca notificacao como lida"
+  on notificacoes for update
+  using (
+    publico = 'jm3_cliente'
+    and eh_jm3_cliente()
+    and exists (select 1 from orcamentos o where o.id = notificacoes.orcamento_id and o.cliente_id = meu_cliente_id())
+  )
+  with check (
+    publico = 'jm3_cliente'
+    and eh_jm3_cliente()
+    and exists (select 1 from orcamentos o where o.id = notificacoes.orcamento_id and o.cliente_id = meu_cliente_id())
+  );
+
+-- 6. Habilita Realtime na tabela notificacoes (o balão que já existe em
+--    cima de "orcamentos" não precisa de nada novo).
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'notificacoes'
+  ) then
+    alter publication supabase_realtime add table notificacoes;
+  end if;
+end $$;
+
+-- 7. Liberação parcial: o pedido "filho" (peça pendente) herda a OS Interna
+--    do pedido original — ver app/estoque/[id]/page.js, liberarParcialmente.
+--    (a coluna os_interna já existe; nada a alterar aqui além do código)

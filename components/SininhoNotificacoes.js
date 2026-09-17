@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, KeyRound } from "lucide-react";
+import { Bell, KeyRound, Package } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 export default function SininhoNotificacoes({ visivel }) {
@@ -41,6 +41,10 @@ export default function SininhoNotificacoes({ visivel }) {
   async function marcarComoLida(n) {
     await supabase.from("notificacoes").update({ lida: true }).eq("id", n.id);
     setNotificacoes((atual) => atual.map((x) => (x.id === n.id ? { ...x, lida: true } : x)));
+    if (n.orcamento_id) {
+      setAberto(false);
+      router.push(`/orcamentos/${n.orcamento_id}`);
+    }
   }
 
   return (
@@ -83,7 +87,11 @@ export default function SininhoNotificacoes({ visivel }) {
                   className="w-full text-left px-4 py-3 border-b border-line last:border-0 hover:bg-canvas flex gap-2.5"
                   style={{ opacity: n.lida ? 0.55 : 1 }}
                 >
-                  <KeyRound size={15} className="mt-0.5 shrink-0" style={{ color: "var(--accent)" }} />
+                  {n.tipo === "movimentacao_pedido" ? (
+                    <Package size={15} className="mt-0.5 shrink-0" style={{ color: "var(--accent)" }} />
+                  ) : (
+                    <KeyRound size={15} className="mt-0.5 shrink-0" style={{ color: "var(--accent)" }} />
+                  )}
                   <div>
                     <p className="text-xs">{n.mensagem}</p>
                     <p className="text-[10.5px] text-muted mt-0.5">

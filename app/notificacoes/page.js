@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import { KeyRound, Check, ShieldAlert } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { KeyRound, Check, ShieldAlert, Package } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 
 export default function NotificacoesPage() {
+  const router = useRouter();
   const [perfil, setPerfil] = useState(undefined);
   const [notificacoes, setNotificacoes] = useState([]);
   const [carregando, setCarregando] = useState(true);
@@ -28,6 +30,11 @@ export default function NotificacoesPage() {
     setNotificacoes((atual) => atual.map((x) => (x.id === n.id ? { ...x, lida: true } : x)));
   }
 
+  function abrirNotificacao(n) {
+    if (!n.lida) marcarComoLida(n);
+    if (n.orcamento_id) router.push(`/orcamentos/${n.orcamento_id}`);
+  }
+
   async function marcarTodasComoLidas() {
     const idsNaoLidas = notificacoes.filter((n) => !n.lida).map((n) => n.id);
     if (idsNaoLidas.length === 0) return;
@@ -39,13 +46,13 @@ export default function NotificacoesPage() {
     return <AppShell titulo="Notificações"><p className="text-muted text-sm">Carregando...</p></AppShell>;
   }
 
-  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil.cargo)) {
+  if (perfil && !["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(perfil.cargo)) {
     return (
       <AppShell titulo="Notificações">
         <div className="card p-8 text-center max-w-md mx-auto mt-10">
           <ShieldAlert className="mx-auto mb-3 text-danger" size={28} />
           <p className="font-display font-semibold mb-1">Acesso restrito</p>
-          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente e Supervisor veem notificações.</p>
+          <p className="text-sm text-muted">Só Administrador, Diretor, Gerente, Supervisor e JM3 Cliente veem notificações.</p>
         </div>
       </AppShell>
     );
@@ -78,9 +85,14 @@ export default function NotificacoesPage() {
             <div
               key={n.id}
               className="flex items-start gap-3 px-5 py-4 border-b border-line last:border-0"
-              style={{ background: n.lida ? "transparent" : "var(--accent-soft)" }}
+              style={{ background: n.lida ? "transparent" : "var(--accent-soft)", cursor: n.orcamento_id ? "pointer" : "default" }}
+              onClick={() => n.orcamento_id && abrirNotificacao(n)}
             >
-              <KeyRound size={17} className="mt-0.5 shrink-0" style={{ color: "var(--accent)" }} />
+              {n.tipo === "movimentacao_pedido" ? (
+                <Package size={17} className="mt-0.5 shrink-0" style={{ color: "var(--accent)" }} />
+              ) : (
+                <KeyRound size={17} className="mt-0.5 shrink-0" style={{ color: "var(--accent)" }} />
+              )}
               <div className="flex-1">
                 <p className="text-sm">{n.mensagem}</p>
                 <p className="text-xs text-muted mt-1">
@@ -89,7 +101,10 @@ export default function NotificacoesPage() {
                 </p>
               </div>
               {!n.lida && (
-                <button className="btn-secondary text-xs py-1.5 px-3 shrink-0" onClick={() => marcarComoLida(n)}>
+                <button
+                  className="btn-secondary text-xs py-1.5 px-3 shrink-0"
+                  onClick={(e) => { e.stopPropagation(); marcarComoLida(n); }}
+                >
                   Marcar como lida
                 </button>
               )}

@@ -4,7 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, ShieldAlert, Search, Check, AlertTriangle, Package,
   Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight, Pencil, Save, XCircle,
-  FileCheck2, Clock
+  FileCheck2, Clock, Ban, Printer
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { getUnidadeAtiva } from "../../../lib/unidade";
@@ -99,6 +99,11 @@ function EstoquePedidoPageInner() {
   const [processandoParcial, setProcessandoParcial] = useState(false);
   const [pedidoFilho, setPedidoFilho] = useState(null);
   const [pedidoPai, setPedidoPai] = useState(null);
+
+  // peça indisponível na Samsung (marcada pelo Estoque, com observação)
+  const [marcandoIndisponivel, setMarcandoIndisponivel] = useState(null); // item sendo marcado, ou null
+  const [motivoIndisponivel, setMotivoIndisponivel] = useState("");
+  const [processandoIndisponivel, setProcessandoIndisponivel] = useState(false);
 
   // romaneio
   const [romaneioAberto, setRomaneioAberto] = useState(false);
@@ -234,6 +239,55 @@ function EstoquePedidoPageInner() {
     fecharTrocaPeca();
   }
 
+  // ---------- peça indisponível na Samsung ----------
+
+  function abrirIndisponivel(item) {
+    setMarcandoIndisponivel(item);
+    setMotivoIndisponivel("");
+  }
+
+  function fecharIndisponivel() {
+    setMarcandoIndisponivel(null);
+    setMotivoIndisponivel("");
+  }
+
+  async function confirmarIndisponivel() {
+    if (!marcandoIndisponivel) return;
+    setProcessandoIndisponivel(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const agora = new Date().toISOString();
+
+    const { error: errItem } = await supabase
+      .from("orcamento_itens")
+      .update({
+        indisponivel: true,
+        indisponivel_motivo: motivoIndisponivel.trim() || null,
+        indisponivel_por: user.id,
+        indisponivel_em: agora
+      })
+      .eq("id", marcandoIndisponivel.id);
+    if (errItem) {
+      setProcessandoIndisponivel(false);
+      setErro("Falha ao marcar a peça como indisponível: " + errItem.message);
+      return;
+    }
+
+    if (orcamento.status !== "Peça Indisponível Samsung") {
+      await supabase.from("orcamentos").update({ status: "Peça Indisponível Samsung" }).eq("id", id);
+    }
+
+    await registrarAuditoria({
+      tipoEvento: "status",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Peça ${marcandoIndisponivel.codigo} do pedido #${orcamento.numero_unidade} marcada indisponível na Samsung.${motivoIndisponivel.trim() ? " Obs: " + motivoIndisponivel.trim() : ""}`
+    });
+
+    setProcessandoIndisponivel(false);
+    fecharIndisponivel();
+    carregar();
+  }
+
   async function carregar() {
     setPerfil(await getPerfilAtual());
     const { data: orc } = await supabase
@@ -246,7 +300,8 @@ function EstoquePedidoPageInner() {
         separador:perfis!orcamentos_separado_por_fkey(nome),
         entregador:perfis!orcamentos_entregue_por_fkey(nome),
         recebedor:perfis!orcamentos_recebimento_confirmado_por_fkey(nome),
-        informanteOS:perfis!orcamentos_os_interna_por_fkey(nome)`)
+        informanteOS:perfis!orcamentos_os_interna_por_fkey(nome),
+        cancelador:perfis!orcamentos_cancelado_por_fkey(nome)`)
       .eq("id", id)
       .single();
     const unidadeAtiva = getUnidadeAtiva();
@@ -258,7 +313,7 @@ function EstoquePedidoPageInner() {
     setOrcamento(orc);
     const { data: its } = await supabase
       .from("orcamento_itens")
-      .select("*, liberador:perfis!orcamento_itens_liberado_por_fkey(nome)")
+      .select("*, liberador:perfis!orcamento_itens_liberado_por_fkey(nome), indisponivelPor:perfis!orcamento_itens_indisponivel_por_fkey(nome), pnAlternativoPor:perfis!orcamento_itens_pn_alternativo_por_fkey(nome)")
       .eq("orcamento_id", id)
       .order("id");
     setItens(its || []);
@@ -689,7 +744,7 @@ function EstoquePedidoPageInner() {
 
     const { data: itsFrescos } = await supabase
       .from("orcamento_itens")
-      .select("*, liberador:perfis!orcamento_itens_liberado_por_fkey(nome)")
+      .select("*, liberador:perfis!orcamento_itens_liberado_por_fkey(nome), indisponivelPor:perfis!orcamento_itens_indisponivel_por_fkey(nome), pnAlternativoPor:perfis!orcamento_itens_pn_alternativo_por_fkey(nome)")
       .eq("orcamento_id", id)
       .order("id");
     setItens(itsFrescos || []);
@@ -759,7 +814,8 @@ function EstoquePedidoPageInner() {
         pedido_pai_id: id,
         valor_herdado_pai: herdadoParaFilho,
         unidade_id: orcamento.unidade_id,
-        numero_unidade: numeroReservado
+        numero_unidade: numeroReservado,
+        os_interna: orcamento.os_interna
       })
       .select()
       .single();
@@ -1208,7 +1264,8 @@ function EstoquePedidoPageInner() {
             {orcamento.motivo_cancelamento && <> Motivo: {orcamento.motivo_cancelamento}</>}
           </div>
         )}
-        {!orcamento.entregue && orcamento.status !== "Cancelado" && perfil?.cargo !== "JM3 Cliente" && (
+        {!orcamento.entregue && orcamento.status !== "Cancelado" &&
+          (perfil?.cargo !== "JM3 Cliente" || orcamento.numero_pedido_compra == null || orcamento.status === "Peça Indisponível Samsung") && (
           <button
             onClick={() => setCancelandoPedido(true)}
             className="text-sm mt-3 hover:underline flex items-center gap-1.5"
@@ -1229,7 +1286,7 @@ function EstoquePedidoPageInner() {
               {orcamento.entregue
                 ? " Pedido já entregue — pendência de pagamento em aberto."
                 : entregaAutorizadaSemPagamento
-                ? ` Liberado para entrega mesmo assim por ${orcamento.perfis?.nome ?? "usuário"}.`
+                ? ` Liberado para entrega mesmo assim por ${orcamento.liberador?.nome ?? "usuário"}.`
                 : " Precisa quitar antes de liberar a entrega."}
             </span>
             {!somenteLeitura && (
@@ -1329,12 +1386,30 @@ function EstoquePedidoPageInner() {
                           <Pencil size={11} />
                         </button>
                       )}
+                      {podeTrocarPeca && orcamento.status === "Peças Compradas - Aguardando Chegada" && !i.liberado && !i.indisponivel && (
+                        <button
+                          onClick={() => abrirIndisponivel(i)}
+                          title="Marcar peça indisponível na Samsung"
+                          className="text-muted hover:text-danger"
+                        >
+                          <Ban size={11} />
+                        </button>
+                      )}
                     </span>
                     <p className="text-muted text-xs truncate">{i.descricao_resumida}</p>
+                    {i.indisponivel && (
+                      <p className="text-[10px] font-mono mt-1" style={{ color: "#D6336C" }}>
+                        Indisponível{i.indisponivel_motivo ? ` — ${i.indisponivel_motivo}` : ""}
+                      </p>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-center">{i.qtd}</td>
                   <td className="px-3 py-2.5">
-                    {i.liberado ? (
+                    {i.indisponivel ? (
+                      <span className="text-[10.5px] font-mono font-semibold px-1.5 py-0.5 rounded" style={{ background: "rgba(214,51,108,0.14)", color: "#D6336C" }}>
+                        Aguardando peça alternativa
+                      </span>
+                    ) : i.liberado ? (
                       <span className="font-mono text-xs">{i.no_entrega}</span>
                     ) : !podeInformarDelivery ? (
                       <span className="text-xs text-muted">—</span>
@@ -1475,7 +1550,13 @@ function EstoquePedidoPageInner() {
                   )}
                   <td className="px-3 py-2.5 text-right font-mono font-semibold text-sm" style={{ color: "#2C7C6E" }}>{fmtBRL(i.venda_total)}</td>
                   <td className="px-3 py-2.5 text-center">
-                    {i.liberado ? <Check size={16} style={{ color: "#2C7C6E" }} className="inline" /> : <AlertTriangle size={16} className="text-muted inline" />}
+                    {i.indisponivel ? (
+                      <Ban size={16} style={{ color: "#D6336C" }} className="inline" />
+                    ) : i.liberado ? (
+                      <Check size={16} style={{ color: "#2C7C6E" }} className="inline" />
+                    ) : (
+                      <AlertTriangle size={16} className="text-muted inline" />
+                    )}
                   </td>
                 </tr>
               );
@@ -1921,6 +2002,14 @@ function EstoquePedidoPageInner() {
                 </button>
               </div>
             )}
+            {somenteLeitura && (
+              <div className="flex gap-2">
+                <button className="btn-secondary" onClick={() => window.open(`/estoque/romaneio?ids=${id}`, "_blank")}>
+                  <Printer size={15} />
+                  Ver / Imprimir Romaneio
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2030,6 +2119,38 @@ function EstoquePedidoPageInner() {
       </Modal>
 
       <Modal
+        open={!!marcandoIndisponivel}
+        onClose={fecharIndisponivel}
+        title="Marcar peça indisponível na Samsung"
+        footer={
+          <>
+            <button className="btn-secondary" disabled={processandoIndisponivel} onClick={fecharIndisponivel}>Voltar</button>
+            <button className="btn-primary" style={{ background: "var(--danger)" }} disabled={processandoIndisponivel} onClick={confirmarIndisponivel}>
+              <Ban size={15} />
+              {processandoIndisponivel ? "Marcando..." : "Confirmar indisponibilidade"}
+            </button>
+          </>
+        }
+      >
+        {marcandoIndisponivel && (
+          <>
+            <p className="text-sm text-muted mb-3">
+              Peça: <span className="font-mono font-medium" style={{ color: "var(--accent)" }}>{marcandoIndisponivel.codigo}</span> — {marcandoIndisponivel.descricao_resumida}.
+              O pedido vai pro card "Peça Indisponível Samsung" e a JM3 é avisada pra escolher uma peça alternativa.
+            </p>
+            <label className="field-label">Observação (opcional)</label>
+            <textarea
+              className="field-input"
+              rows={3}
+              value={motivoIndisponivel}
+              onChange={(e) => setMotivoIndisponivel(e.target.value)}
+              placeholder="Ex: Samsung informou descontinuação do código"
+            />
+          </>
+        )}
+      </Modal>
+
+      <Modal
         open={confirmarParcial}
         onClose={() => setConfirmarParcial(false)}
         title="Liberar parcialmente?"
@@ -2128,6 +2249,7 @@ function EstoquePedidoPageInner() {
         open={cancelandoPedido}
         onClose={() => setCancelandoPedido(false)}
         orcamento={orcamento}
+        perfil={perfil}
         totalPago={totalPagoGeral}
         onCancelado={carregar}
       />

@@ -30,7 +30,7 @@ function RomaneioConteudo() {
 
       const { data: orcs } = await supabase
         .from("orcamentos")
-        .select("*, clientes(nome, cpf, cnpj, celular, logradouro, numero, bairro, cidade, estado)")
+        .select("*, clientes(nome, cpf, cnpj, celular, logradouro, numero, bairro, cidade, estado), vendedor:perfis!orcamentos_vendedor_id_fkey(nome)")
         .in("id", ids)
         .order("id");
 
@@ -86,12 +86,15 @@ function RomaneioConteudo() {
         <div key={p.id} style={{ marginBottom: 20, breakInside: "avoid" }}>
           <p style={{ fontSize: 13, fontWeight: 700, background: "#F4F6F9", padding: "6px 10px", borderRadius: 4 }}>
             Pedido #{p.numero_unidade} — {new Date(p.criado_em).toLocaleDateString("pt-BR")}
+            {p.vendedor?.nome && <span style={{ fontWeight: 400 }}> — Vendedor(a): {p.vendedor.nome}</span>}
+            {p.os_interna && <span style={{ fontWeight: 400 }}> — OS Interna: {p.os_interna}</span>}
           </p>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 6 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid #ddd", textAlign: "left" }}>
                 <th style={{ padding: "4px 6px" }}>Código</th>
                 <th style={{ padding: "4px 6px" }}>Descrição</th>
+                <th style={{ padding: "4px 6px" }}>Delivery</th>
                 <th style={{ padding: "4px 6px", textAlign: "center" }}>Qtd</th>
                 <th style={{ padding: "4px 6px", textAlign: "right" }}>Valor</th>
               </tr>
@@ -101,6 +104,7 @@ function RomaneioConteudo() {
                 <tr key={i.id} style={{ borderBottom: "1px solid #eee" }}>
                   <td style={{ padding: "4px 6px", fontFamily: "monospace" }}>{i.codigo}</td>
                   <td style={{ padding: "4px 6px" }}>{i.descricao_resumida}</td>
+                  <td style={{ padding: "4px 6px", fontFamily: "monospace" }}>{i.no_entrega || "—"}</td>
                   <td style={{ padding: "4px 6px", textAlign: "center" }}>{i.qtd}</td>
                   <td style={{ padding: "4px 6px", textAlign: "right" }}>{fmtBRL(i.venda_total)}</td>
                 </tr>
