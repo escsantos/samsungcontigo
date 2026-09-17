@@ -76,6 +76,7 @@ function EstoquePedidoPageInner() {
   // trocar o Part Number de um item ainda sem Delivery confirmada (ex:
   // Samsung manda um código substituto do que foi pedido originalmente)
   const [trocandoPeca, setTrocandoPeca] = useState(null); // item sendo editado, ou null
+  const [divisaoIdxTroca, setDivisaoIdxTroca] = useState(null); // != null: troca é de UMA linha da divisão de delivery (estado local, só grava ao "Confirmar divisão")
   const [termoTrocaPeca, setTermoTrocaPeca] = useState("");
   const [resultadosTrocaPeca, setResultadosTrocaPeca] = useState([]);
   const [buscandoTrocaPeca, setBuscandoTrocaPeca] = useState(false);
@@ -151,20 +152,51 @@ function EstoquePedidoPageInner() {
     return () => clearTimeout(t);
   }, [termoTrocaPeca, trocandoPeca]);
 
-  function abrirTrocaPeca(item) {
+  function abrirTrocaPeca(item, divisaoIdx = null) {
     setTrocandoPeca(item);
+    setDivisaoIdxTroca(divisaoIdx);
     setTermoTrocaPeca("");
     setResultadosTrocaPeca([]);
   }
 
   function fecharTrocaPeca() {
     setTrocandoPeca(null);
+    setDivisaoIdxTroca(null);
     setTermoTrocaPeca("");
     setResultadosTrocaPeca([]);
   }
 
   async function confirmarTrocaPeca(peca) {
     if (!trocandoPeca) return;
+
+    // troca o Part Number de UMA linha da divisão de deliveries diferentes
+    // (chegou parte do pedido com um código diferente do que foi comprado) —
+    // fica só no estado local até "Confirmar divisão" gravar tudo de uma vez.
+    if (divisaoIdxTroca !== null) {
+      setLinhasDivisao((a) => ({
+        ...a,
+        [trocandoPeca.id]: (a[trocandoPeca.id] || []).map((l, i) =>
+          i === divisaoIdxTroca
+            ? {
+                ...l,
+                peca_id: peca.id > 0 ? peca.id : null,
+                modelo: peca.modelo,
+                categoria: peca.categoria,
+                codigo: peca.codigo,
+                descricao_resumida: peca.descricao_resumida,
+                descricao_peca: peca.descricao_peca,
+                delivery: "",
+                validado: false,
+                custoUnitario: null,
+                erro: ""
+              }
+            : l
+        )
+      }));
+      fecharTrocaPeca();
+      return;
+    }
+
     setSalvandoTrocaPeca(true);
     const codigoAnterior = trocandoPeca.codigo;
     const { error } = await supabase
@@ -440,10 +472,12 @@ function EstoquePedidoPageInner() {
   }
 
   function abrirSugestaoDivisao(item, idx, e) {
+    const linha = (linhasDivisao[item.id] || [])[idx];
+    const codigoLinha = linha?.codigo || item.codigo;
     const rect = e.currentTarget.getBoundingClientRect();
     setPopoverDelivery({
       chave: `div-${item.id}-${idx}`,
-      codigo: item.codigo,
+      codigo: codigoLinha,
       top: rect.bottom + 4,
       left: rect.left,
       width: Math.max(rect.width, 260),
@@ -452,7 +486,7 @@ function EstoquePedidoPageInner() {
         buscarLinhaDivisao(item, idx, noEntrega);
       }
     });
-    carregarSugestoesPorCodigo(item.codigo);
+    carregarSugestoesPorCodigo(codigoLinha);
   }
 
   function fecharPopoverDelivery(chave) {
@@ -473,11 +507,22 @@ function EstoquePedidoPageInner() {
 
   function iniciarDivisaoDelivery(item) {
     setEscolhaDivisao((a) => ({ ...a, [item.id]: "diferentes" }));
+    // cada linha guarda seu próprio Part Number (começa igual ao do item,
+    // mas pode ser trocado — ex: pediu 10 de um código, chegaram 5 dele e
+    // 5 de um substituto).
+    const basePeca = {
+      peca_id: item.peca_id,
+      modelo: item.modelo,
+      categoria: item.categoria,
+      codigo: item.codigo,
+      descricao_resumida: item.descricao_resumida,
+      descricao_peca: item.descricao_peca
+    };
     setLinhasDivisao((a) => ({
       ...a,
       [item.id]: [
-        { qtd: 1, delivery: "", validado: false, custoUnitario: null, buscando: false, erro: "" },
-        { qtd: item.qtd - 1, delivery: "", validado: false, custoUnitario: null, buscando: false, erro: "" }
+        { ...basePeca, qtd: 1, delivery: "", validado: false, custoUnitario: null, buscando: false, erro: "" },
+        { ...basePeca, qtd: item.qtd - 1, delivery: "", validado: false, custoUnitario: null, buscando: false, erro: "" }
       ]
     }));
   }
@@ -496,9 +541,26 @@ function EstoquePedidoPageInner() {
   }
 
   function adicionarLinhaDivisao(itemId) {
+    const item = itens.find((x) => x.id === itemId);
     setLinhasDivisao((a) => ({
       ...a,
-      [itemId]: [...(a[itemId] || []), { qtd: 1, delivery: "", validado: false, custoUnitario: null, buscando: false, erro: "" }]
+      [itemId]: [
+        ...(a[itemId] || []),
+        {
+          peca_id: item?.peca_id,
+          modelo: item?.modelo,
+          categoria: item?.categoria,
+          codigo: item?.codigo,
+          descricao_resumida: item?.descricao_resumida,
+          descricao_peca: item?.descricao_peca,
+          qtd: 1,
+          delivery: "",
+          validado: false,
+          custoUnitario: null,
+          buscando: false,
+          erro: ""
+        }
+      ]
     }));
   }
 
@@ -522,11 +584,12 @@ function EstoquePedidoPageInner() {
       [item.id]: a[item.id].map((l, i) => (i === idx ? { ...l, buscando: true, erro: "" } : l))
     }));
 
+    const codigoLinha = linha?.codigo || item.codigo;
     const unidadeAtiva = getUnidadeAtiva();
     const { data: lote } = await supabase
       .from("lotes_pecas")
       .select("*")
-      .eq("codigo", item.codigo)
+      .eq("codigo", codigoLinha)
       .eq("no_entrega", valor)
       .eq("asc_cod_origem", unidadeAtiva?.asc_cod)
       .maybeSingle();
@@ -537,7 +600,7 @@ function EstoquePedidoPageInner() {
         i === idx
           ? lote
             ? { ...l, buscando: false, validado: true, custoUnitario: lote.valor_unitario, erro: "" }
-            : { ...l, buscando: false, validado: false, custoUnitario: null, erro: `Delivery "${valor}" não encontrada pro código ${item.codigo} nesta unidade.` }
+            : { ...l, buscando: false, validado: false, custoUnitario: null, erro: `Delivery "${valor}" não encontrada pro código ${codigoLinha} nesta unidade.` }
           : l
       )
     }));
@@ -556,11 +619,20 @@ function EstoquePedidoPageInner() {
     const { data: { user } } = await supabase.auth.getUser();
     const agora = new Date().toISOString();
 
-    // primeira linha atualiza o item existente; as demais viram novas linhas
+    // primeira linha atualiza o item existente; as demais viram novas linhas.
+    // Cada linha pode ter recebido um Part Number diferente do item original
+    // (troca via lápis, pra quando chega um substituto pra parte da
+    // quantidade) — cai no do item quando a linha não foi trocada.
     const [primeira, ...restantes] = linhas;
     const { error: errUpdate } = await supabase
       .from("orcamento_itens")
       .update({
+        peca_id: primeira.peca_id ?? item.peca_id,
+        modelo: primeira.modelo ?? item.modelo,
+        categoria: primeira.categoria ?? item.categoria,
+        codigo: primeira.codigo ?? item.codigo,
+        descricao_resumida: primeira.descricao_resumida ?? item.descricao_resumida,
+        descricao_peca: primeira.descricao_peca ?? item.descricao_peca,
         qtd: primeira.qtd,
         no_entrega: primeira.delivery.trim(),
         custo_real: primeira.custoUnitario,
@@ -579,12 +651,12 @@ function EstoquePedidoPageInner() {
     if (restantes.length > 0) {
       const novasLinhas = restantes.map((l) => ({
         orcamento_id: orcamento.id,
-        peca_id: item.peca_id,
-        modelo: item.modelo,
-        categoria: item.categoria,
-        codigo: item.codigo,
-        descricao_resumida: item.descricao_resumida,
-        descricao_peca: item.descricao_peca,
+        peca_id: l.peca_id ?? item.peca_id,
+        modelo: l.modelo ?? item.modelo,
+        categoria: l.categoria ?? item.categoria,
+        codigo: l.codigo ?? item.codigo,
+        descricao_resumida: l.descricao_resumida ?? item.descricao_resumida,
+        descricao_peca: l.descricao_peca ?? item.descricao_peca,
         qtd: l.qtd,
         custo_unitario: item.custo_unitario,
         venda_unitario: item.venda_unitario,
@@ -607,13 +679,19 @@ function EstoquePedidoPageInner() {
       tipoEvento: "edicao",
       entidade: "orcamentos",
       entidadeId: id,
-      descricao: `Peça ${item.codigo} do pedido #${orcamento.numero_unidade} dividida em ${linhas.length} deliveries diferentes (${linhas.map((l) => `${l.qtd}un/${l.delivery}`).join(", ")}).`
+      descricao: `Peça ${item.codigo} do pedido #${orcamento.numero_unidade} dividida em ${linhas.length} deliveries diferentes (${linhas
+        .map((l) => `${l.qtd}un/${l.delivery}${l.codigo && l.codigo !== item.codigo ? ` [recebido como ${l.codigo}]` : ""}`)
+        .join(", ")}).`
     });
 
     cancelarDivisaoDelivery(item.id);
     setProcessandoDivisao((p) => ({ ...p, [item.id]: false }));
 
-    const { data: itsFrescos } = await supabase.from("orcamento_itens").select("*").eq("orcamento_id", id).order("id");
+    const { data: itsFrescos } = await supabase
+      .from("orcamento_itens")
+      .select("*, liberador:perfis!orcamento_itens_liberado_por_fkey(nome)")
+      .eq("orcamento_id", id)
+      .order("id");
     setItens(itsFrescos || []);
     if ((itsFrescos || []).length > 0 && itsFrescos.every((i) => i.liberado)) {
       setConfirmarAvanco({ de: orcamento.status, para: "Em Estoque - Aguardando Faturamento" });
@@ -1283,37 +1361,53 @@ function EstoquePedidoPageInner() {
                     ) : i.qtd > 1 && escolhaDivisao[i.id] === "diferentes" ? (
                       <div className="space-y-1.5">
                         {(linhasDivisao[i.id] || []).map((l, idx) => (
-                          <div key={idx} className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              min={1}
-                              className="field-input py-1 px-1 text-[11px] font-mono w-10 text-center shrink-0"
-                              value={l.qtd}
-                              onChange={(e) => mudarLinhaDivisao(i.id, idx, "qtd", Number(e.target.value))}
-                            />
-                            <input
-                              className="field-input py-1 px-1.5 text-[11px] w-full"
-                              placeholder="nº delivery"
-                              value={l.delivery}
-                              onChange={(e) => mudarLinhaDivisao(i.id, idx, "delivery", e.target.value)}
-                              onFocus={(e) => abrirSugestaoDivisao(i, idx, e)}
-                              onBlur={() => fecharPopoverDelivery(`div-${i.id}-${idx}`)}
-                            />
-                            {l.validado ? (
-                              <Check size={13} className="shrink-0" style={{ color: "#2C7C6E" }} />
-                            ) : (
-                              <button
-                                onClick={() => buscarLinhaDivisao(i, idx)}
-                                disabled={l.buscando || !l.delivery}
-                                className="w-6 h-6 flex items-center justify-center rounded-md text-muted hover:text-ink hover:bg-canvas shrink-0"
-                              >
-                                {l.buscando ? <RefreshCw size={12} className="animate-spin" /> : <Search size={12} />}
-                              </button>
-                            )}
-                            {(linhasDivisao[i.id] || []).length > 1 && (
-                              <button onClick={() => removerLinhaDivisao(i.id, idx)} className="text-muted hover:text-danger shrink-0">
-                                <Trash2 size={12} />
-                              </button>
+                          <div key={idx}>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min={1}
+                                className="field-input py-1 px-1 text-[11px] font-mono w-10 text-center shrink-0"
+                                value={l.qtd}
+                                onChange={(e) => mudarLinhaDivisao(i.id, idx, "qtd", Number(e.target.value))}
+                              />
+                              <input
+                                className="field-input py-1 px-1.5 text-[11px] w-full"
+                                placeholder="nº delivery"
+                                value={l.delivery}
+                                onChange={(e) => mudarLinhaDivisao(i.id, idx, "delivery", e.target.value)}
+                                onFocus={(e) => abrirSugestaoDivisao(i, idx, e)}
+                                onBlur={() => fecharPopoverDelivery(`div-${i.id}-${idx}`)}
+                              />
+                              {l.validado ? (
+                                <Check size={13} className="shrink-0" style={{ color: "#2C7C6E" }} />
+                              ) : (
+                                <button
+                                  onClick={() => buscarLinhaDivisao(i, idx)}
+                                  disabled={l.buscando || !l.delivery}
+                                  className="w-6 h-6 flex items-center justify-center rounded-md text-muted hover:text-ink hover:bg-canvas shrink-0"
+                                >
+                                  {l.buscando ? <RefreshCw size={12} className="animate-spin" /> : <Search size={12} />}
+                                </button>
+                              )}
+                              {podeTrocarPeca && (
+                                <button
+                                  onClick={() => abrirTrocaPeca(i, idx)}
+                                  title="Chegou com Part Number diferente do pedido"
+                                  className="text-muted hover:text-ink shrink-0"
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                              )}
+                              {(linhasDivisao[i.id] || []).length > 1 && (
+                                <button onClick={() => removerLinhaDivisao(i.id, idx)} className="text-muted hover:text-danger shrink-0">
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
+                            {l.codigo && l.codigo !== i.codigo && (
+                              <p className="text-[9.5px] font-mono pl-11" style={{ color: "#7A4FB0" }}>
+                                PN recebido: {l.codigo}
+                              </p>
                             )}
                           </div>
                         ))}
@@ -1878,8 +1972,17 @@ function EstoquePedidoPageInner() {
         {trocandoPeca && (
           <>
             <p className="text-sm text-muted mb-3">
-              Peça atual: <span className="font-mono font-medium" style={{ color: "var(--accent)" }}>{trocandoPeca.codigo}</span> — {trocandoPeca.descricao_resumida}.
-              Busque o código que a Samsung realmente enviou/vai enviar (ex: quando manda um substituto do que foi pedido).
+              {(() => {
+                const linhaAtual = divisaoIdxTroca !== null ? (linhasDivisao[trocandoPeca.id] || [])[divisaoIdxTroca] : null;
+                const codigoAtual = linhaAtual?.codigo || trocandoPeca.codigo;
+                const descricaoAtual = linhaAtual?.descricao_resumida || trocandoPeca.descricao_resumida;
+                return (
+                  <>
+                    Peça atual: <span className="font-mono font-medium" style={{ color: "var(--accent)" }}>{codigoAtual}</span> — {descricaoAtual}.{" "}
+                    Busque o código que a Samsung realmente enviou/vai enviar (ex: quando manda um substituto do que foi pedido, ou parte da quantidade chegou com outro código).
+                  </>
+                );
+              })()}
             </p>
             <div className="relative mb-3">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
