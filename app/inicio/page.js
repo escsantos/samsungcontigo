@@ -33,7 +33,7 @@ const CARDS = [
     icone: Contact,
     cor: "#8B5CF6",
     descricao: "Cadastre e gerencie os clientes da loja.",
-    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"]
   },
   {
     href: "/orcamentos",
@@ -41,7 +41,7 @@ const CARDS = [
     icone: ClipboardList,
     cor: "#3FA796",
     descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.",
-    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Cliente"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Cliente"]
   },
   {
     href: "/carrinho",

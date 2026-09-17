@@ -275,11 +275,11 @@ function EstoquePedidoPageInner() {
   // não pede uma segunda autorização pra confirmar a entrega ao cliente.
   const entregaAutorizadaSemPagamento = aindaSemPagamento && !!orcamento.liberado_sem_pagamento_por;
   const entregaBloqueadaPorPagamento = aindaSemPagamento && !orcamento.liberado_sem_pagamento_por;
-  // JM3 Cliente tem nível de gerente aqui também (restrito ao próprio
-  // pedido via RLS) — autorizar entrega sem pagamento e trocar Part Number
-  // ficam liberados pra ele igual pra Administrador/Diretor/Gerente/Supervisor.
+  // CORREÇÃO — JM3 Cliente deixou de ter nível de gerente: autorizar entrega
+  // sem pagamento agora é só da equipe (Administrador/Diretor/Gerente/
+  // Supervisor/Vendedor do próprio pedido).
   const podeLiberarSemPagamento =
-    ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(perfil?.cargo) ||
+    ["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo) ||
     (perfil?.cargo === "Vendedor" && perfil?.id === orcamento?.vendedor_id);
   const rotuloSemPagamento = rotuloPagamentoPendente(totalPagoGeral);
   const IconeAtual = ICONES_STATUS[orcamento.status];
@@ -1080,13 +1080,15 @@ function EstoquePedidoPageInner() {
           ) : (
             <>
               <span className="font-mono text-xs font-semibold">{orcamento.os_interna || "—"}</span>
-              <button
-                className="text-muted hover:text-ink"
-                onClick={() => { setOsInternaEdit(orcamento.os_interna || ""); setEditandoOS(true); }}
-                title="Editar OS Interna"
-              >
-                <Pencil size={12} />
-              </button>
+              {perfil?.cargo !== "JM3 Cliente" && (
+                <button
+                  className="text-muted hover:text-ink"
+                  onClick={() => { setOsInternaEdit(orcamento.os_interna || ""); setEditandoOS(true); }}
+                  title="Editar OS Interna"
+                >
+                  <Pencil size={12} />
+                </button>
+              )}
             </>
           )}
         </div>
@@ -1109,7 +1111,7 @@ function EstoquePedidoPageInner() {
             {orcamento.motivo_cancelamento && <> Motivo: {orcamento.motivo_cancelamento}</>}
           </div>
         )}
-        {!orcamento.entregue && orcamento.status !== "Cancelado" && (
+        {!orcamento.entregue && orcamento.status !== "Cancelado" && perfil?.cargo !== "JM3 Cliente" && (
           <button
             onClick={() => setCancelandoPedido(true)}
             className="text-sm mt-3 hover:underline flex items-center gap-1.5"

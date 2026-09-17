@@ -2182,3 +2182,38 @@ drop trigger if exists trg_fixar_cliente_jm3 on perfis;
 create trigger trg_fixar_cliente_jm3
   before insert or update of cargo on perfis
   for each row execute function fixar_cliente_jm3();
+
+-- ================================================================
+-- CORREÇÃO — JM3 Cliente deixa de ter "nível de gerente": agora é só
+-- leitura em tudo, com exceção de Consulta de Peças e do fluxo de criar o
+-- próprio pedido (Carrinho). Tira as policies de UPDATE/INSERT/DELETE
+-- criadas antes pra aprovar/rejeitar/ajustar orçamento, editar OS Interna,
+-- cancelar pedido, liberar entrega sem pagamento, registrar/editar/excluir
+-- pagamento e criar notificação — tudo isso volta a ser tarefa exclusiva da
+-- equipe (Administrador/Diretor/Gerente/Supervisor/Vendedor/Estoque). As
+-- policies de SELECT (ver o próprio pedido, itens, estornos, lotes,
+-- comprovante) continuam de pé — ele ainda acompanha tudo, só não age mais.
+-- Rode este arquivo inteiro no SQL Editor do Supabase.
+-- ================================================================
+
+drop policy if exists "jm3 cliente gerencia proprio pedido" on orcamentos;
+
+drop policy if exists "jm3 cliente insere itens do proprio pedido" on orcamento_itens;
+drop policy if exists "jm3 cliente edita itens do proprio pedido" on orcamento_itens;
+drop policy if exists "jm3 cliente exclui itens do proprio pedido" on orcamento_itens;
+
+drop policy if exists "jm3 cliente registra pagamento do proprio pedido" on pagamentos_orcamento;
+drop policy if exists "jm3 cliente edita pagamento do proprio pedido" on pagamentos_orcamento;
+drop policy if exists "jm3 cliente exclui pagamento do proprio pedido" on pagamentos_orcamento;
+
+-- cancelar pedido criava um estorno — sem poder mais cancelar, esse insert
+-- não é mais usado; a leitura dos estornos do próprio pedido continua liberada.
+drop policy if exists "jm3 cliente cria estorno ao cancelar proprio pedido" on estornos;
+
+-- os dois avisos automáticos (pendência resolvida / aprovado sem
+-- pagamento) só disparavam a partir de ações que o JM3 Cliente não faz mais.
+drop policy if exists "jm3 cliente cria notificacao do proprio fluxo" on notificacoes;
+
+-- upload de comprovante fazia parte de registrar pagamento; a leitura de um
+-- comprovante já existente continua liberada.
+drop policy if exists "jm3 cliente sobe comprovante do proprio pedido" on storage.objects;

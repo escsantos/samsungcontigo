@@ -78,10 +78,14 @@ export const GRUPOS_MENU = [
     icone: Briefcase,
     href: "/menu/vendas",
     itens: [
+      // JM3 Cliente só fica com o Dashboard aqui (visualização). Clientes,
+      // Orçamentos e Pagamentos ficam fora do menu pra esse cargo — ele é
+      // só leitura em tudo, com exceção de Consulta de Peças e do próprio
+      // fluxo de Vendas (Carrinho, que nem faz parte deste grupo de menu).
       { href: "/dashboard", label: "Dashboard de Vendas", icone: LayoutDashboard, cor: "#3FA796", descricao: "Cards, gráficos e ranking de vendas por período.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"] },
-      { href: "/clientes", label: "Clientes", icone: Contact, cor: "#8B5CF6", descricao: "Cadastre e gerencie os clientes da loja.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"] },
-      { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cor: "#4A90D9", descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Cliente"] },
-      { href: "/pagamentos", label: "Pagamentos", icone: Receipt, cor: "#E1614F", descricao: "Busque um pedido pelo número e registre ou ajuste o pagamento.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Estoque"] }
+      { href: "/clientes", label: "Clientes", icone: Contact, cor: "#8B5CF6", descricao: "Cadastre e gerencie os clientes da loja.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"] },
+      { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cor: "#4A90D9", descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Cliente"] },
+      { href: "/pagamentos", label: "Pagamentos", icone: Receipt, cor: "#E1614F", descricao: "Busque um pedido pelo número e registre ou ajuste o pagamento.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Estoque"] }
     ]
   },
   {

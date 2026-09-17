@@ -79,6 +79,12 @@ export default function CarrinhoPage() {
 
     const { data: cliente } = await supabase.from("clientes").select("vendedor_id").eq("id", carrinho.clienteId).single();
     const { data: { user } } = await supabase.auth.getUser();
+    // Cada login JM3 Cliente vira o "vendedor" registrado do pedido que ele
+    // mesmo cria — assim dá pra distinguir, nos relatórios, qual login fez
+    // qual pedido (em vez de sempre cair no vendedor fixo cadastrado no
+    // cliente). Pra todo o resto (Vendedor/Gerente escolhendo o cliente,
+    // etc.) continua vindo do cadastro do cliente, como sempre foi.
+    const vendedorId = perfil?.cargo === "JM3 Cliente" ? user.id : (cliente?.vendedor_id || null);
     const unidadeAtiva = getUnidadeAtiva();
     if (!unidadeAtiva) {
       setEnviando(false);
@@ -97,7 +103,7 @@ export default function CarrinhoPage() {
       .from("orcamentos")
       .insert({
         cliente_id: carrinho.clienteId,
-        vendedor_id: cliente?.vendedor_id || null,
+        vendedor_id: vendedorId,
         criado_por: user.id,
         status: "Pendente de Análise",
         valor_total: totalGeral,

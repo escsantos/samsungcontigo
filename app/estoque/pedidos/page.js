@@ -95,10 +95,16 @@ export default function RelatorioPedidosPage() {
     });
   }, [lista, intervalo, statusFiltro, vendedorFiltro, clienteBusca]);
 
-  const totalGeral = filtrados.reduce((s, o) => s + Number(o.valor_total || 0), 0);
-  const totalBruto = filtrados.reduce((s, o) => s + Number(o.valor_total || 0) + Number(o.desconto || 0), 0);
-  const totalDesconto = filtrados.reduce((s, o) => s + Number(o.desconto || 0), 0);
-  const totalPago = filtrados.reduce((s, o) => s + (pagosPorPedido[o.id] || 0), 0);
+  // Pedido cancelado não vira venda — os cards de totais (e a contagem de
+  // Pedidos) não devem somar ele, mesmo que "Cancelado" apareça listado na
+  // tabela abaixo (inclusive quando o filtro de Status é justamente
+  // "Cancelado", pra revisar o que foi cancelado sem inflar os totais).
+  const parasomar = filtrados.filter((o) => o.status !== "Cancelado");
+  const totalPedidos = parasomar.length;
+  const totalGeral = parasomar.reduce((s, o) => s + Number(o.valor_total || 0), 0);
+  const totalBruto = parasomar.reduce((s, o) => s + Number(o.valor_total || 0) + Number(o.desconto || 0), 0);
+  const totalDesconto = parasomar.reduce((s, o) => s + Number(o.desconto || 0), 0);
+  const totalPago = parasomar.reduce((s, o) => s + (pagosPorPedido[o.id] || 0), 0);
 
   function exportarExcel() {
     const linhas = filtrados.map((o) => ({
@@ -188,7 +194,7 @@ export default function RelatorioPedidosPage() {
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
         <div className="card p-4">
           <p className="text-xs text-muted mb-1">Pedidos</p>
-          <p className="font-mono font-bold text-lg">{filtrados.length}</p>
+          <p className="font-mono font-bold text-lg">{totalPedidos}</p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-muted mb-1">Valor bruto</p>

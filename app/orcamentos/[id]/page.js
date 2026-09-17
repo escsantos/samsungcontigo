@@ -509,10 +509,12 @@ export default function DetalheOrcamentoPage() {
     );
   }
 
-  // Aprovar/Rejeitar/Ajustar preço é nível de gerente — JM3 Cliente tem
-  // esse nível (restrito ao próprio pedido via RLS); só o "Cliente"
-  // (autoatendimento) fica de fora, esse só cria e acompanha.
-  const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil?.cargo);
+  // CORREÇÃO — JM3 Cliente deixou de ter nível de gerente aqui: agora é só
+  // leitura em tudo (acompanha status, item, etc.), com exceção só de
+  // Consulta de Peças e do próprio fluxo de criar o pedido no Carrinho.
+  // Aprovar/Rejeitar/Ajustar preço/editar OS Interna/cancelar viram tarefa
+  // exclusiva da equipe (igual pro "Cliente" de autoatendimento).
+  const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo);
   const cor = CORES_STATUS[orcamento.status] || CORES_STATUS_FALLBACK;
   const IconeStatusAtual = ICONES_STATUS[orcamento.status];
   const mostraCusto = perfil?.cargo !== "Cliente";
@@ -557,7 +559,7 @@ export default function DetalheOrcamentoPage() {
             ) : (
               <>
                 <span className="font-mono text-xs font-semibold">{orcamento.os_interna || "—"}</span>
-                {["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil?.cargo) && (
+                {["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo) && (
                   <button
                     className="text-muted hover:text-ink"
                     onClick={() => { setOsInternaEdit(orcamento.os_interna || ""); setEditandoOS(true); }}
@@ -604,7 +606,7 @@ export default function DetalheOrcamentoPage() {
             </div>
           );
         })()}
-        {!["Pendente de Análise", "Rejeitado", "Cancelado"].includes(orcamento.status) && !orcamento.entregue && ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil?.cargo) && (
+        {!["Pendente de Análise", "Rejeitado", "Cancelado"].includes(orcamento.status) && !orcamento.entregue && ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo) && (
           <button
             onClick={() => setCancelandoPedido(true)}
             className="text-sm mt-4 hover:underline flex items-center gap-1.5"
