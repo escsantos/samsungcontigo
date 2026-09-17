@@ -5,6 +5,7 @@ import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { corCategoria, iconeCategoria } from "../../lib/categorias";
 import { calcularPreco, corMargem } from "../../lib/precos";
+import { ehClienteCustoZero } from "../../lib/clientes";
 import DetalhePecaModal from "../../components/DetalhePecaModal";
 import Modal from "../../components/Modal";
 import { useCarrinho } from "../../contexts/CarrinhoContext";
@@ -63,6 +64,7 @@ export default function ConsultaPecasPage() {
   const [tooltipDesc, setTooltipDesc] = useState(null); // { texto, top, left }
   const [unidadeAtiva] = useState(() => getUnidadeAtiva());
   const [idsVendedoresUnidade, setIdsVendedoresUnidade] = useState(null); // null = ainda não carregou
+  const [clienteCustoZero, setClienteCustoZero] = useState(false);
   const carrinho = useCarrinho();
 
   useEffect(() => {
@@ -86,6 +88,23 @@ export default function ConsultaPecasPage() {
         .then(({ data }) => carrinho.selecionarCliente(perfil.cliente_id, data?.nome || "Cliente"));
     }
   }, [perfil, carrinho]);
+
+  // Cliente J MACEDO ELETRONICA LTDA vende sempre pelo valor de custo (sem
+  // margem, sem imposto) — vale pra qualquer um que atenda esse cliente
+  // (Vendedor/Gerente escolhendo ele no seletor, ou o login JM3 Cliente, que
+  // já é sempre esse cliente).
+  useEffect(() => {
+    if (!carrinho?.clienteId) {
+      setClienteCustoZero(false);
+      return;
+    }
+    supabase
+      .from("clientes")
+      .select("cnpj")
+      .eq("id", carrinho.clienteId)
+      .single()
+      .then(({ data }) => setClienteCustoZero(ehClienteCustoZero(data?.cnpj)));
+  }, [carrinho?.clienteId]);
 
   // Só clientes da unidade ativa (vinculados a um vendedor da mesma unidade,
   // ou sem vendedor ainda) — mesma regra da tela de Clientes.
@@ -163,13 +182,15 @@ export default function ConsultaPecasPage() {
     return () => clearTimeout(timer);
   }, [termo, categoriaAtiva, unidadeAtiva]);
 
-  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : margem;
+  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : clienteCustoZero ? 0 : margem;
+  // Cliente J Macedo: venda sempre pelo valor de custo — sem imposto no cálculo.
+  const impostoEfetivo = clienteCustoZero ? 0 : impostoTotal;
 
   const linhas = useMemo(() => {
     return resultados.map((r) => {
       const qtd = qtds[r.id] ?? 1;
       const custoUnit = custosEditados[r.id] !== undefined ? custosEditados[r.id] : r.valor_unitario;
-      const { venda, imposto, lucroLiquido } = calcularPreco(custoUnit, margemEfetiva, impostoTotal);
+      const { venda, imposto, lucroLiquido } = calcularPreco(custoUnit, margemEfetiva, impostoEfetivo);
       return {
         ...r,
         qtd,
@@ -181,7 +202,7 @@ export default function ConsultaPecasPage() {
         vendaTotal: venda !== null ? venda * qtd : null
       };
     });
-  }, [resultados, margemEfetiva, impostoTotal, qtds, custosEditados]);
+  }, [resultados, margemEfetiva, impostoEfetivo, qtds, custosEditados]);
 
   function mudarQtd(id, valor) {
     const n = Math.max(1, parseInt(valor, 10) || 1);
@@ -213,8 +234,10 @@ export default function ConsultaPecasPage() {
   const carrinhoPronto = podeComprar && !!carrinho?.clienteId;
 
   const temFiltro = termo || categoriaAtiva;
-  const statusMargem = corMargem(margemEfetiva);
-  const margemBaixa = margemEfetiva < 20;
+  // Cliente J Macedo vende sempre no custo — 0% de margem é o esperado pra
+  // ele, não uma margem "ruim": não usa a cor de alerta dos demais clientes.
+  const statusMargem = clienteCustoZero ? { cor: "#8B93A1", label: "Venda ao custo (sem margem)" } : corMargem(margemEfetiva);
+  const margemBaixa = !clienteCustoZero && margemEfetiva < 20;
   const mostraCusto = perfil?.cargo !== "Cliente";
 
   return (
@@ -293,9 +316,11 @@ export default function ConsultaPecasPage() {
               <label className="text-xs text-muted whitespace-nowrap">Margem</label>
               <input
                 type="number"
-                className="w-14 bg-transparent outline-none font-semibold text-right"
+                className="w-14 bg-transparent outline-none font-semibold text-right disabled:opacity-60"
                 style={{ color: "var(--accent)" }}
-                value={margem}
+                value={clienteCustoZero ? 0 : margem}
+                disabled={clienteCustoZero}
+                title={clienteCustoZero ? "Cliente J Macedo: venda sempre pelo valor de custo, sem margem." : undefined}
                 onChange={(e) => setMargem(parseFloat(e.target.value) || 0)}
               />
               <span className="text-xs text-muted">%</span>
@@ -311,7 +336,7 @@ export default function ConsultaPecasPage() {
             </span>
             <div className="tooltip-bubble">
               {totalGeral.toLocaleString("pt-BR")} peças cadastradas no total
-              {mostraCusto && <><br />Imposto aplicado no cálculo: {impostoTotal.toFixed(2)}%</>}
+              {mostraCusto && <><br />Imposto aplicado no cálculo: {impostoEfetivo.toFixed(2)}%</>}
               {ultimaAtualizacao && (
                 <>
                   <br />
