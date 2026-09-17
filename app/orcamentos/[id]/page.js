@@ -509,12 +509,16 @@ export default function DetalheOrcamentoPage() {
     );
   }
 
-  // CORREÇÃO — JM3 Cliente deixou de ter nível de gerente aqui: agora é só
-  // leitura em tudo (acompanha status, item, etc.), com exceção só de
-  // Consulta de Peças e do próprio fluxo de criar o pedido no Carrinho.
-  // Aprovar/Rejeitar/Ajustar preço/editar OS Interna/cancelar viram tarefa
-  // exclusiva da equipe (igual pro "Cliente" de autoatendimento).
-  const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"].includes(perfil?.cargo);
+  // CORREÇÃO — JM3 Cliente volta a poder ajustar/aprovar/rejeitar o próprio
+  // pedido, mas só enquanto "Pendente de Análise" (é a condição acima, no
+  // "orcamento.status ==="). Depois de confirmado (aprovado ou rejeitado) o
+  // status muda e essa mesma checagem já tira o botão — vira a equipe quem
+  // trata dali pra frente (editar OS Interna, cancelar etc. continuam só da
+  // equipe, ver mais abaixo). Não precisou mudar RLS: como cada login JM3
+  // Cliente já é o vendedor_id do próprio pedido (ver carrinho/page.js),
+  // as policies genéricas de "vendedor_id = auth.uid()" em orcamentos e
+  // orcamento_itens já cobrem esse update/insert/delete.
+  const podeRevisar = orcamento.status === "Pendente de Análise" && ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"].includes(perfil?.cargo);
   const cor = CORES_STATUS[orcamento.status] || CORES_STATUS_FALLBACK;
   const IconeStatusAtual = ICONES_STATUS[orcamento.status];
   const mostraCusto = perfil?.cargo !== "Cliente";

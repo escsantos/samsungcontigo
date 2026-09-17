@@ -41,7 +41,7 @@ const CARDS = [
     icone: ClipboardList,
     cor: "#3FA796",
     descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.",
-    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Cliente"]
+    cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Cliente"]
   },
   {
     href: "/carrinho",
