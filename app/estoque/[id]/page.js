@@ -380,9 +380,9 @@ function EstoquePedidoPageInner() {
   const entregaBloqueadaPorPagamento = aindaSemPagamento && !orcamento.liberado_sem_pagamento_por;
   // CORREÇÃO — JM3 Cliente deixou de ter nível de gerente: autorizar entrega
   // sem pagamento agora é só da equipe (Administrador/Diretor/Gerente/
-  // Supervisor/Vendedor do próprio pedido).
+  // Supervisor/Estoque/Vendedor do próprio pedido).
   const podeLiberarSemPagamento =
-    ["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo) ||
+    ["Administrador", "Diretor", "Gerente", "Supervisor", "Estoque"].includes(perfil?.cargo) ||
     (perfil?.cargo === "Vendedor" && perfil?.id === orcamento?.vendedor_id);
   const rotuloSemPagamento = rotuloPagamentoPendente(totalPagoGeral);
   const IconeAtual = ICONES_STATUS[orcamento.status];
