@@ -45,7 +45,6 @@ async function buscarColunaCompleta(tabela, coluna) {
 
 export default function ConsultaPecasPage() {
   const [termo, setTermo] = useState("");
-  const [margem, setMargem] = useState(30);
   const [impostoTotal, setImpostoTotal] = useState(0);
   const [categoriaAtiva, setCategoriaAtiva] = useState(null);
   const [resultados, setResultados] = useState([]);
@@ -66,6 +65,11 @@ export default function ConsultaPecasPage() {
   const [idsVendedoresUnidade, setIdsVendedoresUnidade] = useState(null); // null = ainda não carregou
   const [clienteCustoZero, setClienteCustoZero] = useState(false);
   const carrinho = useCarrinho();
+  // margem vive no carrinho (compartilhada com a tela do carrinho) — assim
+  // o valor escolhido aqui é o mesmo que aparece lá, em vez de resetar pro
+  // padrão de 30%.
+  const margem = carrinho?.margem ?? 30;
+  const setMargem = (v) => carrinho?.setMargem?.(v);
 
   useEffect(() => {
     getPerfilAtual().then(setPerfil);

@@ -21,7 +21,6 @@ export default function CarrinhoPage() {
   const router = useRouter();
   const carrinho = useCarrinho();
   const [perfil, setPerfil] = useState(undefined);
-  const [margem, setMargem] = useState(30);
   const [impostoTotal, setImpostoTotal] = useState(0);
   const [clienteCustoZero, setClienteCustoZero] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -54,7 +53,10 @@ export default function CarrinhoPage() {
       .then(({ data }) => setClienteCustoZero(ehClienteCustoZero(data?.cnpj)));
   }, [carrinho?.clienteId]);
 
-  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : clienteCustoZero ? 0 : margem;
+  // margem vem do carrinho (definida na Consulta de Peças) — não tem mais
+  // um valor independente aqui, senão essa tela ignorava o que foi
+  // escolhido lá e recalculava tudo com o padrão de 30%.
+  const margemEfetiva = perfil?.cargo === "Cliente" ? 30 : clienteCustoZero ? 0 : (carrinho?.margem ?? 30);
   const impostoEfetivo = clienteCustoZero ? 0 : impostoTotal;
   const mostraCusto = perfil?.cargo !== "Cliente";
 
@@ -235,7 +237,9 @@ export default function CarrinhoPage() {
 
           <div className="card p-5 flex items-center justify-between">
             <div>
-              <p className="text-xs text-muted">Total do pedido</p>
+              <p className="text-xs text-muted">
+                Total do pedido{mostraCusto && !clienteCustoZero ? ` · margem de ${margemEfetiva}% aplicada` : ""}
+              </p>
               <p className="font-display font-bold text-2xl" style={{ color: "var(--accent)" }}>{fmtBRL(totalGeral)}</p>
             </div>
             <button className="btn-primary" disabled={enviando} onClick={confirmarPedido}>
