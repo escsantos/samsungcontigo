@@ -2593,3 +2593,198 @@ end $$;
 -- 7. Liberação parcial: o pedido "filho" (peça pendente) herda a OS Interna
 --    do pedido original — ver app/estoque/[id]/page.js, liberarParcialmente.
 --    (a coluna os_interna já existe; nada a alterar aqui além do código)
+
+-- ================================================================
+-- CORREÇÃO — login Estoque não via o nome do cliente em nenhuma tela
+-- (Painel de Estoque, detalhe do pedido, romaneio etc.). O join
+-- "clientes(nome)" volta null nesses casos não porque falte algo no
+-- código das telas, mas porque a tabela "clientes" nunca teve uma
+-- policy de SELECT que cobrisse o cargo Estoque — só Administrador/
+-- Diretor/Gerente/Supervisor/Vendedor (pode_gerenciar_clientes()) e
+-- Financeiro. Mesmo pode_gerenciar_estoque() já incluindo "Estoque"
+-- há tempos, ele nunca foi usado numa policy da tabela clientes.
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+drop policy if exists "estoque le clientes" on clientes;
+create policy "estoque le clientes"
+  on clientes for select
+  using (pode_gerenciar_estoque());
+
+-- ================================================================
+-- Cadastro manual de peça — quando a Consulta de Peças não encontra
+-- nada, qualquer cargo (menos "Cliente") pode cadastrar a peça na hora:
+-- Part Number, modelo (opcional), categoria, descrições e custo. Fica
+-- disponível pra todas as unidades (o catálogo já é compartilhado; o
+-- preço usa o mesmo mecanismo de "cai pro preço mais recente de outra
+-- unidade" que buscar_pecas já tinha pra qualquer peça sem preço
+-- próprio) e fica registrado quem cadastrou e quando.
+--
+-- Vai por uma função com permissão própria (SECURITY DEFINER) em vez de
+-- abrir INSERT direto em pecas_catalogo/pecas_precos pra mais cargos —
+-- mesmo padrão já usado em salvar_os_interna, cancelar_pedido_jm3 etc.
+-- Rode este arquivo inteiro no SQL Editor do Supabase
+-- ================================================================
+
+alter table pecas_catalogo add column if not exists cadastro_manual boolean not null default false;
+alter table pecas_catalogo add column if not exists cadastrado_por uuid references perfis(id);
+alter table pecas_catalogo add column if not exists cadastrado_em timestamptz;
+
+create or replace function pode_cadastrar_peca()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo <> 'Cliente');
+$$;
+
+create or replace function cadastrar_peca_manual(
+  p_modelo text,
+  p_categoria text,
+  p_codigo text,
+  p_descricao_resumida text,
+  p_descricao_peca text,
+  p_custo numeric,
+  p_unidade_id bigint
+)
+returns bigint language plpgsql security definer set search_path = public as $$
+declare
+  v_modelo text;
+  v_codigo text;
+  v_asc_cod text;
+  v_peca_id bigint;
+begin
+  if not pode_cadastrar_peca() then
+    raise exception 'Sem permissão para cadastrar peça.';
+  end if;
+
+  v_codigo := nullif(trim(p_codigo), '');
+  if v_codigo is null then
+    raise exception 'Informe o Part Number da peça.';
+  end if;
+
+  v_modelo := nullif(trim(p_modelo), '');
+  if v_modelo is null then
+    v_modelo := 'Peça Avulsa';
+  end if;
+
+  select asc_cod into v_asc_cod from unidades where id = p_unidade_id;
+  if v_asc_cod is null then
+    raise exception 'Unidade inválida.';
+  end if;
+
+  insert into pecas_catalogo (modelo, categoria, codigo, descricao_resumida, descricao_peca, cadastro_manual, cadastrado_por, cadastrado_em)
+  values (
+    v_modelo,
+    coalesce(nullif(trim(p_categoria), ''), 'Outros'),
+    v_codigo,
+    nullif(trim(p_descricao_resumida), ''),
+    nullif(trim(p_descricao_peca), ''),
+    true,
+    auth.uid(),
+    now()
+  )
+  on conflict (modelo, codigo) do update
+    set categoria = coalesce(excluded.categoria, pecas_catalogo.categoria),
+        descricao_resumida = coalesce(excluded.descricao_resumida, pecas_catalogo.descricao_resumida),
+        descricao_peca = coalesce(excluded.descricao_peca, pecas_catalogo.descricao_peca)
+  returning id into v_peca_id;
+
+  if p_custo is not null then
+    insert into pecas_precos (unidade_id, codigo, asc_cod_origem, valor_unitario, data_referencia, atualizado_em)
+    values (p_unidade_id, v_codigo, v_asc_cod, p_custo, 'Cadastro manual', now())
+    on conflict (asc_cod_origem, codigo) do update
+      set valor_unitario = excluded.valor_unitario,
+          data_referencia = excluded.data_referencia,
+          atualizado_em = now(),
+          unidade_id = excluded.unidade_id;
+  end if;
+
+  return v_peca_id;
+end;
+$$;
+
+grant execute on function cadastrar_peca_manual(text, text, text, text, text, numeric, bigint) to authenticated;
+
+-- buscar_pecas passa a informar se a peça foi cadastrada manualmente (e por
+-- quem) — o join com perfis roda com o privilégio da própria função (já é
+-- security definer), não depende de RLS de "perfis" pro cargo que buscou.
+drop function if exists buscar_pecas(bigint);
+
+create function buscar_pecas(p_unidade_id bigint)
+returns table (
+  id bigint,
+  modelo text,
+  categoria text,
+  codigo text,
+  descricao_resumida text,
+  descricao_peca text,
+  valor_unitario numeric,
+  data_referencia text,
+  unidade_origem_id bigint,
+  unidade_origem_nome text,
+  asc_cod_origem text,
+  cadastro_manual boolean,
+  cadastrado_por_nome text,
+  cadastrado_em timestamptz
+)
+language sql security definer set search_path = public stable as $$
+  with unidade_atual as (select asc_cod from unidades where id = p_unidade_id),
+  catalogadas as (
+    select
+      c.id, c.modelo, c.categoria, c.codigo, c.descricao_resumida, c.descricao_peca,
+      coalesce(p_local.valor_unitario, p_fallback.valor_unitario) as valor_unitario,
+      coalesce(p_local.data_referencia, p_fallback.data_referencia) as data_referencia,
+      coalesce(p_local.unidade_id, p_fallback.unidade_id) as unidade_origem_id,
+      coalesce(u_local.nome, u_fallback.nome) as unidade_origem_nome,
+      coalesce(p_local.asc_cod_origem, p_fallback.asc_cod_origem) as asc_cod_origem,
+      c.cadastro_manual,
+      cad.nome as cadastrado_por_nome,
+      c.cadastrado_em
+    from pecas_catalogo c
+    left join pecas_precos p_local
+      on p_local.codigo = c.codigo
+      and p_local.asc_cod_origem = (select asc_cod from unidade_atual)
+      and p_local.valor_unitario is not null
+    left join unidades u_local on u_local.id = p_local.unidade_id
+    left join lateral (
+      select pp.unidade_id, pp.valor_unitario, pp.data_referencia, pp.asc_cod_origem
+      from pecas_precos pp
+      where pp.codigo = c.codigo
+        and pp.asc_cod_origem is distinct from (select asc_cod from unidade_atual)
+        and pp.valor_unitario is not null
+      order by pp.atualizado_em desc
+      limit 1
+    ) p_fallback on p_local.valor_unitario is null
+    left join unidades u_fallback on u_fallback.id = p_fallback.unidade_id
+    left join perfis cad on cad.id = c.cadastrado_por
+  ),
+  -- códigos que só existem em lotes_pecas (vieram da Base Peças, nunca
+  -- apareceram na Base GSPN) — mesmo sem modelo/descrição, já dá pra vender
+  -- e consultar usando o custo da Delivery mais recente daquele código
+  -- (preferindo a unidade ativa; sem isso, cai pra Delivery mais recente de
+  -- outra unidade).
+  nao_classificadas as (
+    select distinct on (l.codigo)
+      -l.id as id,
+      ''::text as modelo,
+      'Não Classificado'::text as categoria,
+      l.codigo,
+      'Sem classificação (Base GSPN) — custo da Base Peças'::text as descricao_resumida,
+      ''::text as descricao_peca,
+      l.valor_unitario,
+      l.data_nf as data_referencia,
+      l.unidade_id as unidade_origem_id,
+      u.nome as unidade_origem_nome,
+      l.asc_cod_origem,
+      false as cadastro_manual,
+      null::text as cadastrado_por_nome,
+      null::timestamptz as cadastrado_em
+    from lotes_pecas l
+    left join unidades u on u.id = l.unidade_id
+    where l.valor_unitario is not null
+      and not exists (select 1 from pecas_catalogo c where c.codigo = l.codigo)
+    order by l.codigo,
+      case when l.asc_cod_origem = (select asc_cod from unidade_atual) then 0 else 1 end,
+      l.criado_em desc
+  )
+  select * from catalogadas
+  union all
+  select * from nao_classificadas;
+$$;

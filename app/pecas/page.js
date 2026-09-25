@@ -1,15 +1,16 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Search, Info, X, ShoppingCart, User2, Check } from "lucide-react";
+import { Search, Info, X, ShoppingCart, User2, Check, Plus, PackagePlus } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
-import { corCategoria, iconeCategoria } from "../../lib/categorias";
+import { corCategoria, iconeCategoria, CORES_CATEGORIA } from "../../lib/categorias";
 import { calcularPreco, corMargem } from "../../lib/precos";
 import { ehClienteCustoZero } from "../../lib/clientes";
 import DetalhePecaModal from "../../components/DetalhePecaModal";
 import Modal from "../../components/Modal";
 import { useCarrinho } from "../../contexts/CarrinhoContext";
 import { getUnidadeAtiva } from "../../lib/unidade";
+import { registrarAuditoria } from "../../lib/auditoria";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -64,6 +65,10 @@ export default function ConsultaPecasPage() {
   const [unidadeAtiva] = useState(() => getUnidadeAtiva());
   const [idsVendedoresUnidade, setIdsVendedoresUnidade] = useState(null); // null = ainda não carregou
   const [clienteCustoZero, setClienteCustoZero] = useState(false);
+  const [cadastroAberto, setCadastroAberto] = useState(false);
+  const [novaPeca, setNovaPeca] = useState({ codigo: "", modelo: "", categoria: "Outros", descricaoResumida: "", descricaoPeca: "", custo: "" });
+  const [salvandoCadastro, setSalvandoCadastro] = useState(false);
+  const [erroCadastro, setErroCadastro] = useState("");
   const carrinho = useCarrinho();
   // margem vive no carrinho (compartilhada com a tela do carrinho) — assim
   // o valor escolhido aqui é o mesmo que aparece lá, em vez de resetar pro
@@ -164,6 +169,20 @@ export default function ConsultaPecasPage() {
     })();
   }, []);
 
+  async function executarBusca(termos, categoria) {
+    if (!unidadeAtiva) return;
+    setBuscando(true);
+    let query = supabase.rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id }).order("modelo").limit(300);
+    if (categoria) query = query.eq("categoria", categoria);
+    termos.forEach((t) => {
+      const like = `%${t}%`;
+      query = query.or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`);
+    });
+    const { data, error } = await query;
+    setResultados(error ? [] : data);
+    setBuscando(false);
+  }
+
   useEffect(() => {
     const termos = normKey(termo).split(/\s+/).filter(Boolean);
     if (termos.length === 0 && !categoriaAtiva) {
@@ -171,18 +190,7 @@ export default function ConsultaPecasPage() {
       return;
     }
     if (!unidadeAtiva) return;
-    const timer = setTimeout(async () => {
-      setBuscando(true);
-      let query = supabase.rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id }).order("modelo").limit(300);
-      if (categoriaAtiva) query = query.eq("categoria", categoriaAtiva);
-      termos.forEach((t) => {
-        const like = `%${t}%`;
-        query = query.or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`);
-      });
-      const { data, error } = await query;
-      setResultados(error ? [] : data);
-      setBuscando(false);
-    }, 300);
+    const timer = setTimeout(() => executarBusca(termos, categoriaAtiva), 300);
     return () => clearTimeout(timer);
   }, [termo, categoriaAtiva, unidadeAtiva]);
 
@@ -221,6 +229,55 @@ export default function ConsultaPecasPage() {
   function limparPesquisa() {
     setTermo("");
     setCategoriaAtiva(null);
+  }
+
+  // ---------- cadastro manual de peça (quando a busca não encontra nada) ----------
+
+  function abrirCadastroPeca() {
+    setNovaPeca({ codigo: termo.trim(), modelo: "", categoria: categoriaAtiva || "Outros", descricaoResumida: "", descricaoPeca: "", custo: "" });
+    setErroCadastro("");
+    setCadastroAberto(true);
+  }
+
+  function fecharCadastroPeca() {
+    if (salvandoCadastro) return;
+    setCadastroAberto(false);
+  }
+
+  async function confirmarCadastroPeca() {
+    if (!novaPeca.codigo.trim()) {
+      setErroCadastro("Informe o Part Number da peça.");
+      return;
+    }
+    if (!unidadeAtiva) {
+      setErroCadastro("Não identifiquei a unidade ativa. Recarregue a página e tente de novo.");
+      return;
+    }
+    setSalvandoCadastro(true);
+    setErroCadastro("");
+    const { data: novoId, error } = await supabase.rpc("cadastrar_peca_manual", {
+      p_modelo: novaPeca.modelo.trim() || null,
+      p_categoria: novaPeca.categoria,
+      p_codigo: novaPeca.codigo.trim(),
+      p_descricao_resumida: novaPeca.descricaoResumida.trim() || null,
+      p_descricao_peca: novaPeca.descricaoPeca.trim() || null,
+      p_custo: novaPeca.custo === "" ? null : parseFloat(novaPeca.custo),
+      p_unidade_id: unidadeAtiva.id
+    });
+    setSalvandoCadastro(false);
+    if (error) {
+      setErroCadastro("Falha ao cadastrar a peça: " + error.message);
+      return;
+    }
+    await registrarAuditoria({
+      tipoEvento: "criacao",
+      entidade: "pecas_catalogo",
+      entidadeId: novoId,
+      descricao: `Peça cadastrada manualmente: ${novaPeca.codigo.trim()}${novaPeca.modelo.trim() ? ` (modelo ${novaPeca.modelo.trim()})` : " (sem modelo — Peça Avulsa)"}.`
+    });
+    setCadastroAberto(false);
+    const termos = normKey(termo).split(/\s+/).filter(Boolean);
+    if (termos.length > 0 || categoriaAtiva) executarBusca(termos, categoriaAtiva);
   }
 
   function adicionarAoCarrinho(r, e) {
@@ -386,7 +443,13 @@ export default function ConsultaPecasPage() {
       <div className="card overflow-hidden">
         {linhas.length === 0 ? (
           <div className="text-center py-16 text-muted text-sm">
-            {temFiltro ? "Nenhuma peça encontrada para essa busca." : "Digite um ou mais termos para buscar em código, descrição, peça ou modelo."}
+            <p>{temFiltro ? "Nenhuma peça encontrada para essa busca." : "Digite um ou mais termos para buscar em código, descrição, peça ou modelo."}</p>
+            {temFiltro && mostraCusto && (
+              <button className="btn-secondary text-xs py-2 mt-4" onClick={abrirCadastroPeca}>
+                <PackagePlus size={14} />
+                Cadastrar peça nova
+              </button>
+            )}
           </div>
         ) : (
           <div className="max-h-[calc(100vh-280px)] overflow-auto">
@@ -430,7 +493,18 @@ export default function ConsultaPecasPage() {
                           {r.categoria}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 font-mono text-xs truncate" style={{ color: "var(--accent)" }}>{r.codigo}</td>
+                      <td className="px-3 py-2.5 font-mono text-xs truncate" style={{ color: "var(--accent)" }}>
+                        {r.codigo}
+                        {r.cadastro_manual && (
+                          <span
+                            className="ml-1.5 font-sans font-bold px-1 py-0.5 rounded"
+                            style={{ fontSize: 9, background: "rgba(232,163,61,0.16)", color: "#C2801F" }}
+                            title={r.cadastrado_por_nome ? `Cadastro manual — por ${r.cadastrado_por_nome}` : "Cadastro manual"}
+                          >
+                            Manual
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2.5 text-xs truncate">
                         {r.descricao_peca ? (
                           <span
@@ -514,6 +588,87 @@ export default function ConsultaPecasPage() {
         unidadeAtivaAscCod={unidadeAtiva?.asc_cod}
         onClose={() => setPecaSelecionada(null)}
       />
+
+      <Modal
+        open={cadastroAberto}
+        onClose={fecharCadastroPeca}
+        title="Cadastrar peça nova"
+        footer={
+          <>
+            <button className="btn-secondary" disabled={salvandoCadastro} onClick={fecharCadastroPeca}>Cancelar</button>
+            <button className="btn-primary" disabled={salvandoCadastro} onClick={confirmarCadastroPeca}>
+              {salvandoCadastro ? "Cadastrando..." : "Cadastrar peça"}
+            </button>
+          </>
+        }
+      >
+        <p className="text-xs text-muted mb-4">
+          Fica disponível pra todas as unidades a partir de agora. Fica registrado como cadastro manual, com seu login e a data.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="field-label">Part Number *</label>
+            <input
+              className="field-input font-mono"
+              value={novaPeca.codigo}
+              onChange={(e) => setNovaPeca((p) => ({ ...p, codigo: e.target.value }))}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="field-label">Modelo (opcional)</label>
+            <input
+              className="field-input font-mono"
+              placeholder="Peça Avulsa"
+              value={novaPeca.modelo}
+              onChange={(e) => setNovaPeca((p) => ({ ...p, modelo: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="field-label">Categoria</label>
+            <select
+              className="field-input"
+              value={novaPeca.categoria}
+              onChange={(e) => setNovaPeca((p) => ({ ...p, categoria: e.target.value }))}
+            >
+              {Object.keys(CORES_CATEGORIA).map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className="field-label">Descrição resumida</label>
+            <input
+              className="field-input"
+              placeholder="Aparece na lista de resultados"
+              value={novaPeca.descricaoResumida}
+              onChange={(e) => setNovaPeca((p) => ({ ...p, descricaoResumida: e.target.value }))}
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="field-label">Descrição completa</label>
+            <textarea
+              className="field-input"
+              rows={2}
+              placeholder="Aparece no detalhe da peça"
+              value={novaPeca.descricaoPeca}
+              onChange={(e) => setNovaPeca((p) => ({ ...p, descricaoPeca: e.target.value }))}
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="field-label">Custo (R$)</label>
+            <input
+              type="number"
+              step="0.01"
+              className="field-input font-mono"
+              placeholder="0,00"
+              value={novaPeca.custo}
+              onChange={(e) => setNovaPeca((p) => ({ ...p, custo: e.target.value }))}
+            />
+          </div>
+        </div>
+        {erroCadastro && <p className="text-xs text-danger mt-3">{erroCadastro}</p>}
+      </Modal>
 
       <Modal
         open={seletorClienteAberto}

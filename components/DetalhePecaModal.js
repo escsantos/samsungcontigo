@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Copy, Check, Send, AlertTriangle, Building2, Info } from "lucide-react";
+import { Copy, Check, Send, AlertTriangle, Building2, Info, PackagePlus } from "lucide-react";
 import Modal from "./Modal";
 import { parseBRDate } from "../lib/classificacao";
 
@@ -104,6 +104,16 @@ export default function DetalhePecaModal({ peca, qtd, mostraCusto, unidadeAtivaI
       <div className="bg-canvas rounded-lg p-4 text-sm space-y-1.5 font-mono">
         {linhasTexto().map((l, i) => <p key={i}>{l}</p>)}
       </div>
+
+      {mostrarCustoAgora && peca.cadastro_manual && (
+        <div className="mt-2 rounded-lg px-3 py-2.5 text-xs flex items-start gap-2" style={{ background: "rgba(232,163,61,0.14)", color: "#C2801F" }}>
+          <PackagePlus size={15} className="shrink-0 mt-0.5" />
+          <span>
+            Cadastro manual{peca.cadastrado_por_nome ? ` — por ${peca.cadastrado_por_nome}` : ""}
+            {peca.cadastrado_em && ` em ${new Date(peca.cadastrado_em).toLocaleDateString("pt-BR")}`}
+          </span>
+        </div>
+      )}
 
       {mostrarCustoAgora && peca.data_referencia && (
         <div className="mt-2 text-[11px] text-muted text-left">
