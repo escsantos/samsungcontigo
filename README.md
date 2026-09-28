@@ -94,6 +94,10 @@ Coloque os arquivos reais do Caixa Online em `public/logos/`:
   Postgres (função `is_admin_ou_diretor()`), não só pela interface.
 - Log de auditoria de cada processamento (`pecas_processamentos`): quem
   processou, quando, quantos registros, quantos duplicados removidos etc.
+- Suporte a múltiplas unidades (`Configurações → Unidades`): cada unidade tem
+  seu próprio ASC COD, impostos e regra de Nota Fiscal, e sobe sua própria
+  Base Peças/GSPN em `Carregar Bases`. O catálogo de peças (modelo,
+  categoria, descrição) é compartilhado entre todas as unidades.
 
 ## Próximos passos possíveis
 
