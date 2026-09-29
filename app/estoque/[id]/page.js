@@ -55,6 +55,8 @@ function EstoquePedidoPageInner() {
   const [deliveries, setDeliveries] = useState({});
   const [buscandoItem, setBuscandoItem] = useState({});
   const [erroItem, setErroItem] = useState({});
+  // item cuja Delivery já confirmada está sendo editada agora (id do item, ou null)
+  const [editandoDeliveryId, setEditandoDeliveryId] = useState(null);
 
   // quando a peça tem mais de 1 unidade: perguntar se a delivery é a mesma
   // pra todas, ou dividir o item em deliveries diferentes por quantidade
@@ -88,11 +90,16 @@ function EstoquePedidoPageInner() {
   const [formaPagamento, setFormaPagamento] = useState(FORMAS_PAGAMENTO[0]);
   const [valorPagamento, setValorPagamento] = useState("");
   const [dataPagamento, setDataPagamento] = useState(hoje());
-  const [arquivoAnexo, setArquivoAnexo] = useState(null);
+  // vários arquivos podem ser anexados de uma vez ao registrar um pagamento
+  const [arquivosAnexo, setArquivosAnexo] = useState([]);
   const [bandeiraCartao, setBandeiraCartao] = useState(BANDEIRAS_CARTAO[0]);
   const [parcelasCartao, setParcelasCartao] = useState(1);
   const [processandoPagamento, setProcessandoPagamento] = useState(false);
   const [pagamentoModalAberto, setPagamentoModalAberto] = useState(false);
+  // comprovantes extras por pagamento (pagamento_id -> [{id, anexo_url}])
+  const [anexosPagamentos, setAnexosPagamentos] = useState({});
+  const [anexosPagamentoAberto, setAnexosPagamentoAberto] = useState(null); // pagamento sendo visto/gerenciado, ou null
+  const [enviandoAnexoExtra, setEnviandoAnexoExtra] = useState(false);
 
   // liberação parcial
   const [confirmarParcial, setConfirmarParcial] = useState(false);
@@ -323,6 +330,21 @@ function EstoquePedidoPageInner() {
       .eq("orcamento_id", id)
       .order("registrado_em");
     setPagamentos(pags || []);
+    const idsPagamentos = (pags || []).map((p) => p.id);
+    if (idsPagamentos.length > 0) {
+      const { data: anexos } = await supabase
+        .from("pagamento_anexos")
+        .select("*")
+        .in("pagamento_id", idsPagamentos)
+        .order("criado_em");
+      const porPagamento = {};
+      (anexos || []).forEach((a) => {
+        (porPagamento[a.pagamento_id] = porPagamento[a.pagamento_id] || []).push(a);
+      });
+      setAnexosPagamentos(porPagamento);
+    } else {
+      setAnexosPagamentos({});
+    }
     if (orc?.parcial) {
       const { data: filho } = await supabase.from("orcamentos").select("id, status, numero_unidade").eq("pedido_pai_id", id).maybeSingle();
       setPedidoFilho(filho || null);
@@ -459,6 +481,12 @@ function EstoquePedidoPageInner() {
       return;
     }
 
+    // se o item já estava liberado com outra Delivery, isso é uma EDIÇÃO —
+    // guarda o valor anterior pra registrar na auditoria (custo já estava
+    // travado e vai mudar junto com a Delivery nova).
+    const eraEdicao = item.liberado && item.no_entrega && item.no_entrega !== valor;
+    const deliveryAnterior = item.no_entrega;
+
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from("orcamento_itens")
@@ -476,6 +504,16 @@ function EstoquePedidoPageInner() {
       setErroItem((e) => ({ ...e, [item.id]: "Falha ao salvar: " + error.message }));
       return;
     }
+
+    if (eraEdicao) {
+      await registrarAuditoria({
+        tipoEvento: "edicao",
+        entidade: "orcamento_itens",
+        entidadeId: item.id,
+        descricao: `Delivery da peça ${item.codigo} alterada no pedido #${orcamento.numero_unidade}: "${deliveryAnterior}" → "${valor}" (custo unitário atualizado pra ${fmtBRL(lote.valor_unitario)}).`
+      });
+    }
+    setEditandoDeliveryId(null);
 
     const itensAtualizados = itens.map((i) => (i.id === item.id ? { ...i, no_entrega: valor, custo_real: lote.valor_unitario, liberado: true } : i));
     setItens(itensAtualizados);
@@ -951,39 +989,46 @@ function EstoquePedidoPageInner() {
       setErro(`O valor não pode ser maior que o restante do pedido (${fmtBRL(restante)}).`);
       return;
     }
-    if (!arquivoAnexo) {
-      setErro("Anexe o comprovante de pagamento pra concluir o registro.");
+    if (arquivosAnexo.length === 0) {
+      setErro("Anexe pelo menos um comprovante de pagamento pra concluir o registro.");
       return;
     }
     setProcessandoPagamento(true);
     setErro("");
 
-    const nomeArquivo = `${id}/${Date.now()}-${arquivoAnexo.name}`;
-    const { error: errUpload } = await supabase.storage.from("comprovantes").upload(nomeArquivo, arquivoAnexo);
-    if (errUpload) {
-      setProcessandoPagamento(false);
-      setErro("Falha ao subir o anexo: " + errUpload.message);
-      return;
-    }
-    const anexoPath = nomeArquivo;
-
     const ehCartaoCredito = formaPagamento === "Cartão de Crédito";
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from("pagamentos_orcamento").insert({
-      orcamento_id: id,
-      forma_pagamento: formaPagamento,
-      valor,
-      data_pagamento: dataPagamento,
-      anexo_url: anexoPath,
-      bandeira_cartao: ehCartaoCredito ? bandeiraCartao : null,
-      parcelas: ehCartaoCredito ? parcelasCartao : null,
-      registrado_por: user.id
-    });
+    const { data: novoPagamento, error } = await supabase
+      .from("pagamentos_orcamento")
+      .insert({
+        orcamento_id: id,
+        forma_pagamento: formaPagamento,
+        valor,
+        data_pagamento: dataPagamento,
+        bandeira_cartao: ehCartaoCredito ? bandeiraCartao : null,
+        parcelas: ehCartaoCredito ? parcelasCartao : null,
+        registrado_por: user.id
+      })
+      .select()
+      .single();
 
     if (error) {
       setProcessandoPagamento(false);
       setErro("Falha ao registrar pagamento: " + error.message);
       return;
+    }
+
+    // sobe cada comprovante escolhido e liga ao pagamento recém-criado —
+    // se algum falhar no meio do caminho, o pagamento já está salvo (não
+    // perde o que já foi registrado), só avisa qual anexo não subiu.
+    for (const arquivo of arquivosAnexo) {
+      const nomeArquivo = `${id}/${novoPagamento.id}/${Date.now()}-${arquivo.name}`;
+      const { error: errUpload } = await supabase.storage.from("comprovantes").upload(nomeArquivo, arquivo);
+      if (errUpload) {
+        setErro((atual) => `${atual ? atual + " " : ""}Falha ao subir o comprovante "${arquivo.name}": ${errUpload.message}`);
+        continue;
+      }
+      await supabase.from("pagamento_anexos").insert({ pagamento_id: novoPagamento.id, anexo_url: nomeArquivo, enviado_por: user.id });
     }
 
     const { data: pagsAtuais } = await supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", id);
@@ -1006,7 +1051,7 @@ function EstoquePedidoPageInner() {
       await supabase.from("orcamentos").update({ valor_pago: totalPago, sem_pagamento: false }).eq("id", id);
     }
 
-    setArquivoAnexo(null);
+    setArquivosAnexo([]);
     setValorPagamento("");
     setBandeiraCartao(BANDEIRAS_CARTAO[0]);
     setParcelasCartao(1);
@@ -1068,6 +1113,50 @@ function EstoquePedidoPageInner() {
     setProcessando(false);
     setEditandoPagamento(null);
     carregar();
+  }
+
+  // comprovante(s) extra num pagamento que já foi salvo — usa o mesmo bucket
+  // e a mesma tabela pagamento_anexos dos anexos escolhidos na hora de
+  // registrar o pagamento.
+  async function adicionarAnexoExtra(pagamentoId, arquivos) {
+    if (!arquivos || arquivos.length === 0) return;
+    setEnviandoAnexoExtra(true);
+    setErro("");
+    const { data: { user } } = await supabase.auth.getUser();
+    for (const arquivo of Array.from(arquivos)) {
+      const nomeArquivo = `${id}/${pagamentoId}/${Date.now()}-${arquivo.name}`;
+      const { error: errUpload } = await supabase.storage.from("comprovantes").upload(nomeArquivo, arquivo);
+      if (errUpload) {
+        setErro((atual) => `${atual ? atual + " " : ""}Falha ao subir "${arquivo.name}": ${errUpload.message}`);
+        continue;
+      }
+      await supabase.from("pagamento_anexos").insert({ pagamento_id: pagamentoId, anexo_url: nomeArquivo, enviado_por: user.id });
+    }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "pagamentos_orcamento",
+      entidadeId: pagamentoId,
+      descricao: `Comprovante(s) adicional(is) anexado(s) a um pagamento do pedido #${orcamento.numero_unidade}.`
+    });
+    setEnviandoAnexoExtra(false);
+    // o modal de comprovantes fica aberto (segue mostrando o mesmo
+    // pagamento pelo id) — a lista já atualiza sozinha, pois lê de
+    // anexosPagamentos, que o carregar() acabou de recarregar.
+    await carregar();
+  }
+
+  async function excluirAnexoExtra(anexo) {
+    setEnviandoAnexoExtra(true);
+    await supabase.storage.from("comprovantes").remove([anexo.anexo_url]);
+    await supabase.from("pagamento_anexos").delete().eq("id", anexo.id);
+    await registrarAuditoria({
+      tipoEvento: "exclusao",
+      entidade: "pagamento_anexos",
+      entidadeId: anexo.id,
+      descricao: `Comprovante removido de um pagamento do pedido #${orcamento.numero_unidade}.`
+    });
+    setEnviandoAnexoExtra(false);
+    await carregar();
   }
 
   async function confirmarSeparacao() {
@@ -1410,7 +1499,46 @@ function EstoquePedidoPageInner() {
                         Aguardando peça alternativa
                       </span>
                     ) : i.liberado ? (
-                      <span className="font-mono text-xs">{i.no_entrega}</span>
+                      editandoDeliveryId === i.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            className="field-input py-1.5 text-xs w-full"
+                            placeholder="nº delivery"
+                            value={deliveries[i.id] ?? ""}
+                            onChange={(e) => setDeliveries((atual) => ({ ...atual, [i.id]: e.target.value }))}
+                            onFocus={(e) => abrirSugestaoPrincipal(i, e)}
+                            onBlur={() => fecharPopoverDelivery(`item-${i.id}`)}
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => buscarDeliveryItem(i)}
+                            disabled={buscandoItem[i.id] || !deliveries[i.id]}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas shrink-0"
+                          >
+                            {buscandoItem[i.id] ? <RefreshCw size={13} className="animate-spin" /> : <Search size={13} />}
+                          </button>
+                          <button
+                            onClick={() => { setEditandoDeliveryId(null); setErroItem((e) => ({ ...e, [i.id]: "" })); }}
+                            title="Cancelar"
+                            className="text-muted hover:text-ink shrink-0"
+                          >
+                            <XCircle size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 font-mono text-xs">
+                          {i.no_entrega}
+                          {podeInformarDelivery && (
+                            <button
+                              onClick={() => { setDeliveries((atual) => ({ ...atual, [i.id]: i.no_entrega || "" })); setErroItem((e) => ({ ...e, [i.id]: "" })); setEditandoDeliveryId(i.id); }}
+                              title="Alterar Delivery"
+                              className="text-muted hover:text-ink"
+                            >
+                              <Pencil size={11} />
+                            </button>
+                          )}
+                        </span>
+                      )
                     ) : !podeInformarDelivery ? (
                       <span className="text-xs text-muted">—</span>
                     ) : i.qtd > 1 && !escolhaDivisao[i.id] ? (
@@ -1788,9 +1916,12 @@ function EstoquePedidoPageInner() {
                                     <Pencil size={13} />
                                   </button>
                                 )}
-                                {p.anexo_url && (
-                                  <button onClick={() => verComprovante(p.anexo_url)} className="text-muted hover:text-ink" title="Ver comprovante">
-                                    <ExternalLink size={13} />
+                                {(p.anexo_url || (anexosPagamentos[p.id] || []).length > 0) && (
+                                  <button onClick={() => setAnexosPagamentoAberto(p)} className="text-muted hover:text-ink inline-flex items-center gap-0.5" title="Ver comprovantes">
+                                    <Paperclip size={13} />
+                                    <span className="text-[10px] font-mono">
+                                      {(p.anexo_url ? 1 : 0) + (anexosPagamentos[p.id] || []).length}
+                                    </span>
                                   </button>
                                 )}
                                 <button onClick={() => excluirPagamento(p.id)} className="text-muted hover:text-danger" title="Excluir">
@@ -1834,12 +1965,19 @@ function EstoquePedidoPageInner() {
                       <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
                     </div>
                     <div>
-                      <label className="field-label">Anexo *</label>
-                      <label className={`flex items-center gap-2 border rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm truncate ${arquivoAnexo ? "border-line text-muted hover:border-brand-400" : "border-danger text-danger"}`}>
+                      <label className="field-label">Comprovante(s) *</label>
+                      <label className={`flex items-center gap-2 border rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm truncate ${arquivosAnexo.length > 0 ? "border-line text-muted hover:border-brand-400" : "border-danger text-danger"}`}>
                         <Paperclip size={14} className="shrink-0" />
-                        <span className="truncate">{arquivoAnexo ? arquivoAnexo.name : "Escolher (obrigatório)"}</span>
-                        <input type="file" className="hidden" onChange={(e) => setArquivoAnexo(e.target.files[0] || null)} />
+                        <span className="truncate">
+                          {arquivosAnexo.length === 0
+                            ? "Escolher (obrigatório)"
+                            : arquivosAnexo.length === 1
+                            ? arquivosAnexo[0].name
+                            : `${arquivosAnexo.length} arquivos selecionados`}
+                        </span>
+                        <input type="file" multiple className="hidden" onChange={(e) => setArquivosAnexo(Array.from(e.target.files || []))} />
                       </label>
+                      <p className="text-[11px] text-muted mt-1">Pode escolher mais de um arquivo (ex: 2 fotos do mesmo comprovante).</p>
                     </div>
                     {formaPagamento === "Cartão de Crédito" && (
                       <>
@@ -1860,7 +1998,7 @@ function EstoquePedidoPageInner() {
                   </div>
                   <button
                     className="btn-primary mt-5"
-                    disabled={processandoPagamento || !valorPagamento || !dataPagamento || !arquivoAnexo}
+                    disabled={processandoPagamento || !valorPagamento || !dataPagamento || arquivosAnexo.length === 0}
                     onClick={adicionarPagamentoModal}
                   >
                     <Plus size={15} />
@@ -1870,6 +2008,60 @@ function EstoquePedidoPageInner() {
               )}
 
               {erro && <div className="mt-4 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">{erro}</div>}
+            </>
+          );
+        })()}
+      </Modal>
+
+      <Modal
+        open={!!anexosPagamentoAberto}
+        onClose={() => setAnexosPagamentoAberto(null)}
+        title="Comprovantes do pagamento"
+      >
+        {anexosPagamentoAberto && (() => {
+          const p = pagamentos.find((x) => x.id === anexosPagamentoAberto.id) || anexosPagamentoAberto;
+          const extras = anexosPagamentos[p.id] || [];
+          const lista = [
+            ...(p.anexo_url ? [{ id: "legacy", anexo_url: p.anexo_url, legado: true }] : []),
+            ...extras
+          ];
+          return (
+            <>
+              <p className="text-xs text-muted mb-3">
+                {p.forma_pagamento} — {fmtBRL(p.valor)}
+              </p>
+              {lista.length === 0 ? (
+                <p className="text-sm text-muted mb-4">Nenhum comprovante anexado ainda.</p>
+              ) : (
+                <div className="space-y-1.5 mb-4">
+                  {lista.map((a, idx) => (
+                    <div key={a.id} className="flex items-center justify-between gap-2 border border-line rounded-lg px-3 py-2">
+                      <button onClick={() => verComprovante(a.anexo_url)} className="flex items-center gap-2 text-sm hover:underline">
+                        <ExternalLink size={13} />
+                        Comprovante {idx + 1}
+                      </button>
+                      {!somenteLeitura && !a.legado && (
+                        <button onClick={() => excluirAnexoExtra(a)} disabled={enviandoAnexoExtra} className="text-muted hover:text-danger" title="Remover comprovante">
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!somenteLeitura && (
+                <label className="flex items-center justify-center gap-2 border border-dashed border-line rounded-lg px-3.5 py-2.5 cursor-pointer text-sm text-muted hover:border-brand-400">
+                  <Plus size={14} />
+                  {enviandoAnexoExtra ? "Enviando..." : "Adicionar mais comprovante(s)"}
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    disabled={enviandoAnexoExtra}
+                    onChange={(e) => { adicionarAnexoExtra(p.id, e.target.files); e.target.value = ""; }}
+                  />
+                </label>
+              )}
             </>
           );
         })()}
@@ -1947,9 +2139,8 @@ function EstoquePedidoPageInner() {
                       <input
                         className="field-input font-mono"
                         placeholder="Nº da Nota Fiscal"
-                        inputMode="numeric"
                         value={numeroNF}
-                        onChange={(e) => setNumeroNF(e.target.value.replace(/\D/g, "").slice(0, 12))}
+                        onChange={(e) => setNumeroNF(e.target.value.replace(/[^0-9-]/g, "").slice(0, 20))}
                       />
                       <button className="btn-primary shrink-0" disabled={processandoNF || !numeroNF.trim()} onClick={registrarNotaFiscal}>
                         <Check size={15} />
