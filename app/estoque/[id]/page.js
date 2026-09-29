@@ -25,6 +25,12 @@ function fmtBRL(v) {
 function hoje() {
   return new Date().toISOString().slice(0, 10);
 }
+// CNPJ fixo do cliente J MACEDO ELETRONICA LTDA (JM3) — mesmo usado no banco
+// (fixar_cliente_jm3()) pra identificar esse cliente de forma estável.
+const CNPJ_JM3 = "01405991000317";
+function ehClienteJm3(cnpj) {
+  return !!cnpj && cnpj.replace(/\D/g, "") === CNPJ_JM3;
+}
 
 export default function EstoquePedidoPage() {
   return (
@@ -101,10 +107,11 @@ function EstoquePedidoPageInner() {
   const [anexosPagamentoAberto, setAnexosPagamentoAberto] = useState(null); // pagamento sendo visto/gerenciado, ou null
   const [enviandoAnexoExtra, setEnviandoAnexoExtra] = useState(false);
 
-  // liberação parcial
+  // liberação parcial (e também separação de peça indisponível — os dois
+  // fluxos podem gerar um pedido filho, por isso é uma lista, não só um)
   const [confirmarParcial, setConfirmarParcial] = useState(false);
   const [processandoParcial, setProcessandoParcial] = useState(false);
-  const [pedidoFilho, setPedidoFilho] = useState(null);
+  const [pedidosFilhos, setPedidosFilhos] = useState([]);
   const [pedidoPai, setPedidoPai] = useState(null);
 
   // peça indisponível na Samsung (marcada pelo Estoque, com observação)
@@ -126,6 +133,15 @@ function EstoquePedidoPageInner() {
   const [processandoNF, setProcessandoNF] = useState(false);
   const [marcandoDepoisModal, setMarcandoDepoisModal] = useState(false);
   const [motivoDepois, setMotivoDepois] = useState("");
+  // NF em lote pra JM3 — outros pedidos da JM3 (mesma unidade, sem NF ainda)
+  // que podem receber esse mesmo número junto
+  const [outrosPedidosJm3, setOutrosPedidosJm3] = useState([]);
+  const [selecionadosOutrosNF, setSelecionadosOutrosNF] = useState([]);
+
+  // nº do pedido de compra — editável depois de já registrado
+  const [editandoPedidoCompra, setEditandoPedidoCompra] = useState(false);
+  const [pedidoCompraEdit, setPedidoCompraEdit] = useState("");
+  const [processandoPedidoCompra, setProcessandoPedidoCompra] = useState(false);
 
   // liberar pro faturamento sem pagamento total
   const [modalSemPagamentoAberto, setModalSemPagamentoAberto] = useState(false);
@@ -261,33 +277,112 @@ function EstoquePedidoPageInner() {
   async function confirmarIndisponivel() {
     if (!marcandoIndisponivel) return;
     setProcessandoIndisponivel(true);
+    setErro("");
+    const item = marcandoIndisponivel;
     const { data: { user } } = await supabase.auth.getUser();
     const agora = new Date().toISOString();
+    const motivo = motivoIndisponivel.trim() || null;
 
-    const { error: errItem } = await supabase
-      .from("orcamento_itens")
-      .update({
-        indisponivel: true,
-        indisponivel_motivo: motivoIndisponivel.trim() || null,
-        indisponivel_por: user.id,
-        indisponivel_em: agora
-      })
-      .eq("id", marcandoIndisponivel.id);
-    if (errItem) {
+    // pedido com só essa peça — não tem o que separar, o pedido inteiro
+    // já é só ela. Vira "Peça Indisponível Samsung" direto, sem gerar filho.
+    if (itens.length <= 1) {
+      const { error: errItem } = await supabase
+        .from("orcamento_itens")
+        .update({ indisponivel: true, indisponivel_motivo: motivo, indisponivel_por: user.id, indisponivel_em: agora })
+        .eq("id", item.id);
+      if (errItem) {
+        setProcessandoIndisponivel(false);
+        setErro("Falha ao marcar a peça como indisponível: " + errItem.message);
+        return;
+      }
+      await supabase.from("orcamentos").update({ status: "Peça Indisponível Samsung" }).eq("id", id);
+      await registrarAuditoria({
+        tipoEvento: "status",
+        entidade: "orcamentos",
+        entidadeId: id,
+        descricao: `Peça ${item.codigo} do pedido #${orcamento.numero_unidade} marcada indisponível na Samsung.${motivo ? " Obs: " + motivo : ""}`
+      });
       setProcessandoIndisponivel(false);
-      setErro("Falha ao marcar a peça como indisponível: " + errItem.message);
+      fecharIndisponivel();
+      carregar();
       return;
     }
 
-    if (orcamento.status !== "Peça Indisponível Samsung") {
-      await supabase.from("orcamentos").update({ status: "Peça Indisponível Samsung" }).eq("id", id);
+    // pedido com mais peças: separa só a indisponível — ela vira uma OS nova
+    // (pedido filho, com número próprio e OS Interna em branco pra
+    // preencher depois), e o restante do pedido original segue o fluxo
+    // normal, sem travar por causa dessa peça. Mesmo mecanismo da liberação
+    // parcial (orcamento_itens muda de orcamento_id, valor_total é dividido).
+    const { data: numeroReservado, error: errNumero } = await supabase.rpc("proximo_numero_pedido", { p_unidade_id: orcamento.unidade_id });
+    if (errNumero) {
+      setProcessandoIndisponivel(false);
+      setErro("Falha ao gerar o número da nova OS: " + errNumero.message);
+      return;
+    }
+
+    const valorItem = Number(item.venda_total || 0);
+    const valorRestante = Number(orcamento.valor_total || 0) - valorItem;
+    const jaPagoNoOriginal = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento.valor_herdado_pai || 0);
+    const subtotalOriginal = valorItem + valorRestante;
+    const proporcaoItem = subtotalOriginal > 0 ? valorItem / subtotalOriginal : 0;
+    const herdadoParaFilho = Math.round(jaPagoNoOriginal * proporcaoItem * 100) / 100;
+
+    const { data: novoPedido, error: errNovo } = await supabase
+      .from("orcamentos")
+      .insert({
+        cliente_id: orcamento.cliente_id,
+        vendedor_id: orcamento.vendedor_id,
+        criado_por: user.id,
+        status: "Peça Indisponível Samsung",
+        valor_total: valorItem,
+        margem: orcamento.margem,
+        imposto_total: orcamento.imposto_total,
+        numero_pedido_compra: orcamento.numero_pedido_compra,
+        pedido_pai_id: id,
+        valor_herdado_pai: herdadoParaFilho,
+        unidade_id: orcamento.unidade_id,
+        numero_unidade: numeroReservado
+        // os_interna fica em branco de propósito — é uma OS nova e separada.
+      })
+      .select()
+      .single();
+    if (errNovo) {
+      setProcessandoIndisponivel(false);
+      setErro("Falha ao separar a peça indisponível: " + errNovo.message);
+      return;
+    }
+
+    const { error: errMove } = await supabase
+      .from("orcamento_itens")
+      .update({
+        orcamento_id: novoPedido.id,
+        indisponivel: true,
+        indisponivel_motivo: motivo,
+        indisponivel_por: user.id,
+        indisponivel_em: agora
+      })
+      .eq("id", item.id);
+    if (errMove) {
+      setProcessandoIndisponivel(false);
+      setErro("Falha ao mover a peça indisponível: " + errMove.message);
+      return;
+    }
+
+    const { error: errAtualiza } = await supabase
+      .from("orcamentos")
+      .update({ valor_total: valorRestante, parcial: true })
+      .eq("id", id);
+    if (errAtualiza) {
+      setProcessandoIndisponivel(false);
+      setErro("Peça separada, mas falhou ao atualizar o valor do pedido original: " + errAtualiza.message);
+      return;
     }
 
     await registrarAuditoria({
       tipoEvento: "status",
       entidade: "orcamentos",
-      entidadeId: id,
-      descricao: `Peça ${marcandoIndisponivel.codigo} do pedido #${orcamento.numero_unidade} marcada indisponível na Samsung.${motivoIndisponivel.trim() ? " Obs: " + motivoIndisponivel.trim() : ""}`
+      entidadeId: novoPedido.id,
+      descricao: `Peça ${item.codigo} do pedido #${orcamento.numero_unidade} indisponível na Samsung — separada como pedido #${numeroReservado}.${motivo ? " Obs: " + motivo : ""} O restante do pedido #${orcamento.numero_unidade} segue o fluxo normal.`
     });
 
     setProcessandoIndisponivel(false);
@@ -299,7 +394,7 @@ function EstoquePedidoPageInner() {
     setPerfil(await getPerfilAtual());
     const { data: orc } = await supabase
       .from("orcamentos")
-      .select(`*, clientes(id, nome, celular, email), unidades(nome, obriga_nota_fiscal),
+      .select(`*, clientes(id, nome, celular, email, cnpj), unidades(nome, obriga_nota_fiscal),
         criador:perfis!orcamentos_criado_por_fkey(nome),
         revisor:perfis!orcamentos_revisado_por_fkey(nome),
         validador:perfis!orcamentos_pagamento_validado_por_fkey(nome),
@@ -346,8 +441,10 @@ function EstoquePedidoPageInner() {
       setAnexosPagamentos({});
     }
     if (orc?.parcial) {
-      const { data: filho } = await supabase.from("orcamentos").select("id, status, numero_unidade").eq("pedido_pai_id", id).maybeSingle();
-      setPedidoFilho(filho || null);
+      const { data: filhos } = await supabase.from("orcamentos").select("id, status, numero_unidade").eq("pedido_pai_id", id).order("id");
+      setPedidosFilhos(filhos || []);
+    } else {
+      setPedidosFilhos([]);
     }
     if (orc?.pedido_pai_id) {
       const { data: pai } = await supabase.from("orcamentos").select("id, numero_unidade").eq("id", orc.pedido_pai_id).maybeSingle();
@@ -358,6 +455,23 @@ function EstoquePedidoPageInner() {
       const faltando = Number(orc.valor_total || 0) - totalPago;
       setValorPagamento(faltando > 0 ? faltando.toFixed(2) : "");
     }
+    // outros pedidos da JM3, na mesma unidade, ainda sem NF — pra oferecer
+    // "aplicar essa mesma NF também neles" na hora de registrar
+    if (orc && ehClienteJm3(orc.clientes?.cnpj) && !orc.nota_fiscal_numero && STATUS_ELEGIVEIS_NF.includes(orc.status)) {
+      const { data: outros } = await supabase
+        .from("orcamentos")
+        .select("id, numero_unidade, valor_total, status")
+        .eq("unidade_id", orc.unidade_id)
+        .eq("cliente_id", orc.cliente_id)
+        .in("status", STATUS_ELEGIVEIS_NF)
+        .is("nota_fiscal_numero", null)
+        .neq("id", id)
+        .order("numero_unidade");
+      setOutrosPedidosJm3(outros || []);
+    } else {
+      setOutrosPedidosJm3([]);
+    }
+    setSelecionadosOutrosNF([]);
   }
 
   if (perfil === undefined || orcamento === undefined) {
@@ -419,8 +533,11 @@ function EstoquePedidoPageInner() {
   // decisão de negócio, mesmo tendo nível de gerente nas outras ações desta
   // tela. Ele ainda enxerga o andamento (linha de cada peça, status), só não
   // interage com essa etapa.
+  // "Peça Indisponível Samsung" entra aqui também — é o status do pedido
+  // filho separado (só com a peça indisponível), e a única coisa que se faz
+  // nele é justamente informar a Delivery quando a peça finalmente chegar.
   const podeInformarDelivery =
-    ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status) &&
+    ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada", "Peça Indisponível Samsung"].includes(orcamento.status) &&
     perfil?.cargo !== "JM3 Cliente";
   const todosLiberados = itens.length > 0 && itens.every((i) => i.liberado);
   // Part Number só pode ser trocado enquanto o item ainda não tem Delivery
@@ -486,6 +603,9 @@ function EstoquePedidoPageInner() {
     // travado e vai mudar junto com a Delivery nova).
     const eraEdicao = item.liberado && item.no_entrega && item.no_entrega !== valor;
     const deliveryAnterior = item.no_entrega;
+    // se o item estava marcado indisponível na Samsung, isso é "a peça
+    // chegou" — resolve a indisponibilidade junto com a Delivery.
+    const eraIndisponivel = !!item.indisponivel;
 
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
@@ -495,7 +615,8 @@ function EstoquePedidoPageInner() {
         custo_real: lote.valor_unitario,
         liberado: true,
         liberado_por: user.id,
-        liberado_em: new Date().toISOString()
+        liberado_em: new Date().toISOString(),
+        ...(eraIndisponivel ? { indisponivel: false, indisponivel_motivo: null } : {})
       })
       .eq("id", item.id);
 
@@ -505,7 +626,14 @@ function EstoquePedidoPageInner() {
       return;
     }
 
-    if (eraEdicao) {
+    if (eraIndisponivel) {
+      await registrarAuditoria({
+        tipoEvento: "edicao",
+        entidade: "orcamento_itens",
+        entidadeId: item.id,
+        descricao: `Peça ${item.codigo} chegou depois de indisponível na Samsung — Delivery "${valor}" informada no pedido #${orcamento.numero_unidade} (custo ${fmtBRL(lote.valor_unitario)}).`
+      });
+    } else if (eraEdicao) {
       await registrarAuditoria({
         tipoEvento: "edicao",
         entidade: "orcamento_itens",
@@ -515,7 +643,7 @@ function EstoquePedidoPageInner() {
     }
     setEditandoDeliveryId(null);
 
-    const itensAtualizados = itens.map((i) => (i.id === item.id ? { ...i, no_entrega: valor, custo_real: lote.valor_unitario, liberado: true } : i));
+    const itensAtualizados = itens.map((i) => (i.id === item.id ? { ...i, no_entrega: valor, custo_real: lote.valor_unitario, liberado: true, indisponivel: eraIndisponivel ? false : i.indisponivel } : i));
     setItens(itensAtualizados);
 
     if (itensAtualizados.every((i) => i.liberado)) {
@@ -806,6 +934,22 @@ function EstoquePedidoPageInner() {
       descricao: `OS Interna do pedido #${orcamento.numero_unidade} definida como "${valor || "—"}".`
     });
     setEditandoOS(false);
+    carregar();
+  }
+
+  async function salvarPedidoCompra() {
+    setProcessandoPedidoCompra(true);
+    const valor = pedidoCompraEdit.trim() || null;
+    const { error } = await supabase.rpc("salvar_numero_pedido_compra", { p_orcamento_id: Number(id), p_valor: valor });
+    setProcessandoPedidoCompra(false);
+    if (error) { setErro("Falha ao salvar o nº do pedido de compra: " + error.message); return; }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Nº do pedido de compra do pedido #${orcamento.numero_unidade} alterado para "${valor || "—"}".`
+    });
+    setEditandoPedidoCompra(false);
     carregar();
   }
 
@@ -1184,17 +1328,15 @@ function EstoquePedidoPageInner() {
     setProcessandoNF(true);
     setErro("");
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase
-      .from("orcamentos")
-      .update({
-        nota_fiscal_numero: numero,
-        nota_fiscal_emitida_por: user.id,
-        nota_fiscal_emitida_em: new Date().toISOString(),
-        nota_fiscal_emitir_depois: false
-      })
-      .eq("id", id);
-    setProcessandoNF(false);
+    const payload = {
+      nota_fiscal_numero: numero,
+      nota_fiscal_emitida_por: user.id,
+      nota_fiscal_emitida_em: new Date().toISOString(),
+      nota_fiscal_emitir_depois: false
+    };
+    const { error } = await supabase.from("orcamentos").update(payload).eq("id", id);
     if (error) {
+      setProcessandoNF(false);
       setErro(error.code === "23505" ? `Já existe outra NF com o número ${numero} registrada nesta unidade.` : "Falha ao registrar a Nota Fiscal: " + error.message);
       return;
     }
@@ -1204,8 +1346,29 @@ function EstoquePedidoPageInner() {
       entidadeId: id,
       descricao: `Nota Fiscal nº ${numero} registrada no pedido #${orcamento.numero_unidade}.`
     });
+
+    // JM3: aplica essa mesma NF nos outros pedidos marcados também (a
+    // uniqueness fica liberada só pro cliente JM3, então isso não esbarra
+    // no índice único de nota_fiscal_numero por unidade).
+    for (const outroId of selecionadosOutrosNF) {
+      const outro = outrosPedidosJm3.find((o) => o.id === outroId);
+      const { error: errOutro } = await supabase.from("orcamentos").update(payload).eq("id", outroId);
+      if (errOutro) {
+        setErro((atual) => `${atual ? atual + " " : ""}Falha ao aplicar a NF ao pedido #${outro?.numero_unidade ?? outroId}: ${errOutro.message}`);
+        continue;
+      }
+      await registrarAuditoria({
+        tipoEvento: "edicao",
+        entidade: "orcamentos",
+        entidadeId: outroId,
+        descricao: `Nota Fiscal nº ${numero} registrada no pedido #${outro?.numero_unidade ?? outroId} (mesma NF do pedido #${orcamento.numero_unidade}, JM3).`
+      });
+    }
+
+    setProcessandoNF(false);
     setNumeroNF("");
     setEditandoNF(false);
+    setSelecionadosOutrosNF([]);
     carregar();
   }
 
@@ -1335,7 +1498,39 @@ function EstoquePedidoPageInner() {
           )}
         </div>
         {orcamento.numero_pedido_compra && (
-          <p className="text-xs text-muted mt-3">Nº do pedido de compra: <span className="font-mono">{orcamento.numero_pedido_compra}</span></p>
+          <div className="flex items-center gap-2 mt-3">
+            <p className="text-xs text-muted">Nº do pedido de compra:</p>
+            {editandoPedidoCompra ? (
+              <>
+                <input
+                  className="field-input py-1 px-2 text-xs font-mono w-40"
+                  placeholder="nº do pedido de compra"
+                  value={pedidoCompraEdit}
+                  onChange={(e) => setPedidoCompraEdit(e.target.value)}
+                  autoFocus
+                />
+                <button className="text-muted hover:text-ink" disabled={processandoPedidoCompra} onClick={salvarPedidoCompra}>
+                  <Save size={13} />
+                </button>
+                <button className="text-muted hover:text-danger" onClick={() => setEditandoPedidoCompra(false)}>
+                  <XCircle size={13} />
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="font-mono text-xs">{orcamento.numero_pedido_compra}</span>
+                {!somenteLeitura && (
+                  <button
+                    className="text-muted hover:text-ink"
+                    onClick={() => { setPedidoCompraEdit(orcamento.numero_pedido_compra || ""); setEditandoPedidoCompra(true); }}
+                    title="Editar nº do pedido de compra"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         )}
         {orcamento.valor_pago && orcamento.status !== "Em Estoque - Aguardando Faturamento" && (
           <p className="text-xs text-muted mt-1">
@@ -1403,17 +1598,17 @@ function EstoquePedidoPageInner() {
             )}
           </div>
         )}
-        {orcamento.parcial && pedidoFilho && (
-          <div className="mt-3 rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-2" style={{ background: "rgba(232,163,61,0.12)", color: "#C2801F" }}>
+        {orcamento.parcial && pedidosFilhos.map((filho) => (
+          <div key={filho.id} className="mt-3 rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-2" style={{ background: "rgba(232,163,61,0.12)", color: "#C2801F" }}>
             <span>
-              Liberado parcialmente — a peça pendente virou o{" "}
-              <button onClick={() => router.push(`/estoque/${pedidoFilho.id}`)} className="underline font-medium">
-                pedido #{pedidoFilho.numero_unidade}
+              {filho.status === "Peça Indisponível Samsung" ? "Peça indisponível separada — virou o" : "Liberado parcialmente — a peça pendente virou o"}{" "}
+              <button onClick={() => router.push(`/estoque/${filho.id}`)} className="underline font-medium">
+                pedido #{filho.numero_unidade}
               </button>{" "}
-              ({pedidoFilho.status}).
+              ({filho.status}).
             </span>
           </div>
-        )}
+        ))}
       </div>
 
       {/* "Registrar pedido de compra" é reposição interna de estoque — fica de
@@ -1495,9 +1690,49 @@ function EstoquePedidoPageInner() {
                   <td className="px-3 py-2.5 text-center">{i.qtd}</td>
                   <td className="px-3 py-2.5">
                     {i.indisponivel ? (
-                      <span className="text-[10.5px] font-mono font-semibold px-1.5 py-0.5 rounded" style={{ background: "rgba(214,51,108,0.14)", color: "#D6336C" }}>
-                        Aguardando peça alternativa
-                      </span>
+                      editandoDeliveryId === i.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            className="field-input py-1.5 text-xs w-full"
+                            placeholder="nº delivery"
+                            value={deliveries[i.id] || ""}
+                            onChange={(e) => setDeliveries((atual) => ({ ...atual, [i.id]: e.target.value }))}
+                            onFocus={(e) => abrirSugestaoPrincipal(i, e)}
+                            onBlur={() => fecharPopoverDelivery(`item-${i.id}`)}
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => buscarDeliveryItem(i)}
+                            disabled={buscandoItem[i.id] || !deliveries[i.id]}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas shrink-0"
+                          >
+                            {buscandoItem[i.id] ? <RefreshCw size={13} className="animate-spin" /> : <Search size={13} />}
+                          </button>
+                          <button
+                            onClick={() => { setEditandoDeliveryId(null); setErroItem((e) => ({ ...e, [i.id]: "" })); }}
+                            title="Cancelar"
+                            className="text-muted hover:text-ink shrink-0"
+                          >
+                            <XCircle size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <span className="text-[10.5px] font-mono font-semibold px-1.5 py-0.5 rounded inline-block" style={{ background: "rgba(214,51,108,0.14)", color: "#D6336C" }}>
+                            Indisponível na Samsung
+                          </span>
+                          {podeInformarDelivery && (
+                            <button
+                              onClick={() => { setDeliveries((atual) => ({ ...atual, [i.id]: "" })); setErroItem((e) => ({ ...e, [i.id]: "" })); setEditandoDeliveryId(i.id); }}
+                              className="text-[10.5px] font-mono font-semibold px-2 py-1 rounded-md hover:opacity-80 flex items-center gap-1"
+                              style={{ background: "rgba(63,167,150,0.14)", color: "#2C7C6E" }}
+                            >
+                              <RefreshCw size={11} />
+                              Peça chegou
+                            </button>
+                          )}
+                        </div>
+                      )
                     ) : i.liberado ? (
                       editandoDeliveryId === i.id ? (
                         <div className="flex items-center gap-1">
@@ -2147,6 +2382,28 @@ function EstoquePedidoPageInner() {
                         Registrar
                       </button>
                     </div>
+                    {ehClienteJm3(orcamento.clientes?.cnpj) && outrosPedidosJm3.length > 0 && (
+                      <div className="mt-3 border border-line rounded-lg p-3 max-w-md">
+                        <p className="text-xs font-semibold mb-2">Aplicar essa mesma NF também a outros pedidos da JM3 pendentes:</p>
+                        <div className="space-y-1.5 max-h-36 overflow-auto">
+                          {outrosPedidosJm3.map((o) => (
+                            <label key={o.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selecionadosOutrosNF.includes(o.id)}
+                                onChange={() =>
+                                  setSelecionadosOutrosNF((atual) =>
+                                    atual.includes(o.id) ? atual.filter((x) => x !== o.id) : [...atual, o.id]
+                                  )
+                                }
+                              />
+                              <span className="font-mono font-semibold">#{o.numero_unidade}</span>
+                              <span className="text-muted">{fmtBRL(o.valor_total)} — {o.status}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {statusNF === "pendente" && (
                       <button className="text-xs text-muted hover:text-ink mt-2 flex items-center gap-1.5" disabled={processandoNF} onClick={() => { setMotivoDepois(""); setMarcandoDepoisModal(true); }}>
                         <Clock size={13} />
@@ -2326,8 +2583,10 @@ function EstoquePedidoPageInner() {
         {marcandoIndisponivel && (
           <>
             <p className="text-sm text-muted mb-3">
-              Peça: <span className="font-mono font-medium" style={{ color: "var(--accent)" }}>{marcandoIndisponivel.codigo}</span> — {marcandoIndisponivel.descricao_resumida}.
-              O pedido vai pro card "Peça Indisponível Samsung" e a JM3 é avisada pra escolher uma peça alternativa.
+              Peça: <span className="font-mono font-medium" style={{ color: "var(--accent)" }}>{marcandoIndisponivel.codigo}</span> — {marcandoIndisponivel.descricao_resumida}.{" "}
+              {itens.length > 1
+                ? "Essa peça é separada do restante do pedido e vira um novo pedido (nova OS) no card \"Peça Indisponível Samsung\". O restante segue o fluxo normal. Quando a peça chegar, informe a Delivery nela; se a Samsung não liberar, dá pra cancelar esse pedido separado com justificativa."
+                : "Como é a única peça do pedido, o pedido inteiro vai pro card \"Peça Indisponível Samsung\". Quando a peça chegar, informe a Delivery; se a Samsung não liberar, dá pra cancelar o pedido com justificativa."}
             </p>
             <label className="field-label">Observação (opcional)</label>
             <textarea
