@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldAlert, ChevronRight, FileBarChart } from "lucide-react";
+import { ShieldAlert, ChevronRight, FileBarChart, Search, X } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
 import { ORDEM_STATUS, CORES_STATUS, ICONES_STATUS, rotuloPagamentoPendente } from "../../lib/estoque";
@@ -31,6 +31,9 @@ export default function EstoquePage() {
   const [periodo, setPeriodo] = useState("todos");
   const [semanaEscolhida, setSemanaEscolhida] = useState(semanaAtualStr());
   const [mesEscolhido, setMesEscolhido] = useState(mesAtualStr());
+  const [deEscolhido, setDeEscolhido] = useState("");
+  const [ateEscolhido, setAteEscolhido] = useState("");
+  const [buscaCliente, setBuscaCliente] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -69,16 +72,33 @@ export default function EstoquePage() {
   const intervalo = useMemo(() => {
     if (periodo === "semana") return calcularSemanaISO(semanaEscolhida);
     if (periodo === "mes") return calcularMesEscolhido(mesEscolhido);
+    if (periodo === "personalizado" && (deEscolhido || ateEscolhido)) {
+      return {
+        de: deEscolhido ? new Date(deEscolhido + "T00:00:00") : new Date(0),
+        ate: ateEscolhido ? new Date(ateEscolhido + "T23:59:59") : new Date()
+      };
+    }
     return null;
-  }, [periodo, semanaEscolhida, mesEscolhido]);
+  }, [periodo, semanaEscolhida, mesEscolhido, deEscolhido, ateEscolhido]);
+
+  function normaliza(s) {
+    return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  }
 
   const lista = useMemo(() => {
-    if (!intervalo) return todosPedidos;
-    return todosPedidos.filter((o) => {
-      const t = new Date(o.criado_em).getTime();
-      return t >= intervalo.de.getTime() && t <= intervalo.ate.getTime();
-    });
-  }, [todosPedidos, intervalo]);
+    let base = todosPedidos;
+    if (intervalo) {
+      base = base.filter((o) => {
+        const t = new Date(o.criado_em).getTime();
+        return t >= intervalo.de.getTime() && t <= intervalo.ate.getTime();
+      });
+    }
+    const termo = normaliza(buscaCliente.trim());
+    if (termo) {
+      base = base.filter((o) => normaliza(o.clientes?.nome).includes(termo));
+    }
+    return base;
+  }, [todosPedidos, intervalo, buscaCliente]);
 
   if (perfil === undefined) {
     return <AppShell titulo="Estoque"><p className="text-muted text-sm">Carregando...</p></AppShell>;
@@ -114,10 +134,30 @@ export default function EstoquePage() {
     <AppShell titulo="Estoque">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
         <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              type="text"
+              className="field-input py-1.5 pl-7 pr-7 text-xs w-56"
+              placeholder="Buscar por cliente..."
+              value={buscaCliente}
+              onChange={(e) => setBuscaCliente(e.target.value)}
+            />
+            {buscaCliente && (
+              <button
+                onClick={() => setBuscaCliente("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+                title="Limpar busca"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
           {[
             { id: "todos", label: "Todos" },
             { id: "semana", label: "Semana" },
-            { id: "mes", label: "Mês" }
+            { id: "mes", label: "Mês" },
+            { id: "personalizado", label: "Período" }
           ].map((p) => (
             <button key={p.id} onClick={() => setPeriodo(p.id)} className={`chip ${periodo === p.id ? "chip-active" : ""}`}>
               {p.label}
@@ -128,6 +168,13 @@ export default function EstoquePage() {
           )}
           {periodo === "mes" && (
             <input type="month" className="field-input py-1.5 text-xs" value={mesEscolhido} onChange={(e) => setMesEscolhido(e.target.value)} />
+          )}
+          {periodo === "personalizado" && (
+            <div className="flex items-center gap-1.5">
+              <input type="date" className="field-input py-1.5 text-xs" value={deEscolhido} onChange={(e) => setDeEscolhido(e.target.value)} />
+              <span className="text-xs text-muted">até</span>
+              <input type="date" className="field-input py-1.5 text-xs" value={ateEscolhido} onChange={(e) => setAteEscolhido(e.target.value)} />
+            </div>
           )}
           <button className="btn-secondary text-xs py-2" onClick={() => router.push("/estoque/pedidos")}>
             <FileBarChart size={13} />
