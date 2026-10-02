@@ -97,6 +97,7 @@ function RomaneioConteudo() {
                 <th style={{ padding: "4px 6px" }}>Delivery</th>
                 <th style={{ padding: "4px 6px", textAlign: "center" }}>Qtd</th>
                 <th style={{ padding: "4px 6px", textAlign: "right" }}>Valor</th>
+                <th style={{ padding: "4px 6px", textAlign: "right" }}>Vlr. C/ Desc.</th>
               </tr>
             </thead>
             <tbody>
@@ -107,6 +108,9 @@ function RomaneioConteudo() {
                   <td style={{ padding: "4px 6px", fontFamily: "monospace" }}>{i.no_entrega || "—"}</td>
                   <td style={{ padding: "4px 6px", textAlign: "center" }}>{i.qtd}</td>
                   <td style={{ padding: "4px 6px", textAlign: "right" }}>{fmtBRL(i.venda_total)}</td>
+                  <td style={{ padding: "4px 6px", textAlign: "right" }}>
+                    {Number(i.desconto_item || 0) > 0 ? fmtBRL(Number(i.venda_total || 0) - Number(i.desconto_item || 0)) : fmtBRL(i.venda_total)}
+                  </td>
                 </tr>
               ))}
             </tbody>

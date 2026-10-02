@@ -189,6 +189,54 @@ export default function DetalheOrcamentoPage() {
     setItens((atual) => atual.filter((i) => i.id !== itemId));
   }
 
+  // Duas formas de lançar o desconto, que ficam sincronizadas entre si:
+  // 1) digita o desconto total → distribui proporcionalmente ao valor de
+  //    venda de cada peça (método do maior resto, pra fechar exatamente o
+  //    valor digitado mesmo com arredondamento de centavos);
+  // 2) digita o desconto peça a peça → o campo do desconto total passa a
+  //    mostrar a soma do que foi lançado em cada peça.
+  function handleDescontoTotalChange(valorStr) {
+    setDesconto(valorStr);
+    if (itens.length === 0) return;
+    const subtotal = itens.reduce((s, i) => s + Number(i.venda_total || 0), 0);
+    const valor = Math.min(Math.max(parseFloat(valorStr) || 0, 0), subtotal);
+
+    const base = itens.map((i) => {
+      const share = subtotal > 0 ? Number(i.venda_total || 0) / subtotal : 1 / itens.length;
+      const exato = valor * share;
+      const arred = Math.floor(exato * 100) / 100;
+      return { id: i.id, arred, resto: exato - arred };
+    });
+    const somaArred = base.reduce((s, b) => s + b.arred, 0);
+    const faltamCentavos = Math.round((valor - somaArred) * 100);
+    const ordemPorResto = [...base].sort((a, b) => b.resto - a.resto);
+    const extraPorId = {};
+    ordemPorResto.forEach((b, k) => { extraPorId[b.id] = k < faltamCentavos ? 0.01 : 0; });
+
+    setItens((atual) =>
+      atual.map((i) => {
+        const b = base.find((x) => x.id === i.id);
+        if (!b) return i;
+        const valorItem = Math.round((b.arred + (extraPorId[i.id] || 0)) * 100) / 100;
+        return { ...i, desconto_item: valorItem };
+      })
+    );
+  }
+
+  function mudarDescontoItem(itemId, valorStr) {
+    setItens((atual) => {
+      const novoItens = atual.map((i) => {
+        if (i.id !== itemId) return i;
+        const bruto = Number(i.venda_total || 0);
+        const d = Math.min(Math.max(parseFloat(valorStr) || 0, 0), bruto);
+        return { ...i, desconto_item: d };
+      });
+      const soma = novoItens.reduce((s, i) => s + Number(i.desconto_item || 0), 0);
+      setDesconto(String(Math.round(soma * 100) / 100));
+      return novoItens;
+    });
+  }
+
   useEffect(() => {
     if (!buscaAberta) return;
     const termo = termoBusca.trim();
@@ -249,7 +297,8 @@ export default function DetalheOrcamentoPage() {
       qtd: qtdEscolhida,
       custo_unitario: peca.valor_unitario,
       venda_unitario: venda,
-      venda_total: venda * qtdEscolhida
+      venda_total: venda * qtdEscolhida,
+      desconto_item: 0
     };
     setItens((atual) => [...atual, novoItem]);
     setPecasAdicionadasAgora((atual) => [...atual, peca.id]);
@@ -336,16 +385,18 @@ export default function DetalheOrcamentoPage() {
       await supabase.from("orcamento_itens").delete().in("id", idsParaExcluir);
     }
 
-    // 3º: atualiza qtd/custo/venda dos itens que já existiam e continuam
+    // 3º: atualiza qtd/custo/venda/desconto dos itens que já existiam e continuam
     for (const i of itens.filter((i) => !i._novo)) {
+      const descontoItemClamp = Math.min(Math.max(Number(i.desconto_item) || 0, 0), Number(i.venda_total) || 0);
       await supabase
         .from("orcamento_itens")
-        .update({ qtd: i.qtd, custo_unitario: i.custo_unitario, venda_unitario: i.venda_unitario, venda_total: i.venda_total })
+        .update({ qtd: i.qtd, custo_unitario: i.custo_unitario, venda_unitario: i.venda_unitario, venda_total: i.venda_total, desconto_item: descontoItemClamp })
         .eq("id", i.id);
     }
 
     // 4º: só agora insere os itens novos (depois de já ter decidido o que excluir)
     for (const i of itens.filter((i) => i._novo)) {
+      const descontoItemClamp = Math.min(Math.max(Number(i.desconto_item) || 0, 0), Number(i.venda_total) || 0);
       const { error } = await supabase.from("orcamento_itens").insert({
         orcamento_id: id,
         peca_id: i.peca_id,
@@ -357,7 +408,8 @@ export default function DetalheOrcamentoPage() {
         qtd: i.qtd,
         custo_unitario: i.custo_unitario,
         venda_unitario: i.venda_unitario,
-        venda_total: i.venda_total
+        venda_total: i.venda_total,
+        desconto_item: descontoItemClamp
       });
       if (error) {
         setProcessando(false);
@@ -741,15 +793,16 @@ export default function DetalheOrcamentoPage() {
         <table className="w-full text-sm table-fixed">
           <thead>
             <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
-              <th className="text-left px-3 py-2.5" style={{ width: mostraCusto ? "34%" : "58%" }}>Peça</th>
-              <th className="text-center px-3 py-2.5" style={{ width: "10%" }}>Qtd</th>
+              <th className="text-left px-3 py-2.5" style={{ width: mostraCusto ? "28%" : "58%" }}>Peça</th>
+              <th className="text-center px-3 py-2.5" style={{ width: "8%" }}>Qtd</th>
               {mostraCusto && (
                 <>
-                  <th className="text-right px-3 py-2.5" style={{ width: "18%" }}>Custo / Imposto</th>
-                  <th className="text-right px-3 py-2.5" style={{ width: "16%" }}>Lucro / Margem</th>
+                  <th className="text-right px-3 py-2.5" style={{ width: "15%" }}>Custo / Imposto</th>
+                  <th className="text-right px-3 py-2.5" style={{ width: "13%" }}>Lucro / Margem</th>
                 </>
               )}
-              <th className="text-right px-3 py-2.5" style={{ width: "16%" }}>{mostraCusto ? "Venda" : "Valor"}</th>
+              <th className="text-right px-3 py-2.5" style={{ width: mostraCusto ? "13%" : "28%" }}>{mostraCusto ? "Venda" : "Valor"}</th>
+              {mostraCusto && !ehCustoZero && <th className="text-right px-3 py-2.5" style={{ width: "15%" }}>{ajustando ? "Desconto" : "Vlr. C/ Desc."}</th>}
               {ajustando && <th style={{ width: "6%" }}></th>}
             </tr>
           </thead>
@@ -841,6 +894,33 @@ export default function DetalheOrcamentoPage() {
                       <p className="font-mono font-semibold" style={{ color: mostraCusto ? "#2C7C6E" : undefined }}>{fmtBRL(i.venda_total)}</p>
                     )}
                   </td>
+                  {mostraCusto && !ehCustoZero && (
+                    <td className="px-3 py-2.5 text-right text-sm">
+                      {ajustando ? (
+                        <>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="field-input py-1 px-1.5 text-right font-mono w-full"
+                            value={i.desconto_item ?? 0}
+                            onChange={(e) => mudarDescontoItem(i.id, e.target.value)}
+                            title="Desconto lançado só nesta peça — o campo de desconto total acima passa a somar os valores lançados peça a peça"
+                          />
+                          {Number(i.desconto_item || 0) > 0 && (
+                            <p className="font-mono text-[10px] text-muted mt-0.5">= {fmtBRL(Number(i.venda_total || 0) - Number(i.desconto_item || 0))}</p>
+                          )}
+                        </>
+                      ) : Number(i.desconto_item || 0) > 0 ? (
+                        <>
+                          <p className="font-mono font-semibold">{fmtBRL(Number(i.venda_total || 0) - Number(i.desconto_item || 0))}</p>
+                          <p className="font-mono text-[10px] text-danger">- {fmtBRL(i.desconto_item)}</p>
+                        </>
+                      ) : (
+                        <p className="font-mono font-semibold">{fmtBRL(i.venda_total)}</p>
+                      )}
+                    </td>
+                  )}
                   {ajustando && (
                     <td className="px-3 py-2.5 text-right">
                       <button onClick={() => removerItem(i.id)} className="text-muted hover:text-danger">
@@ -867,11 +947,16 @@ export default function DetalheOrcamentoPage() {
               className="field-input disabled:opacity-60"
               value={ehCustoZero ? 0 : desconto}
               disabled={ehCustoZero}
-              onChange={(e) => setDesconto(e.target.value)}
+              onChange={(e) => handleDescontoTotalChange(e.target.value)}
             />
           </div>
           {ehCustoZero && (
             <p className="text-xs text-muted -mt-2 mb-4">Não há desconto pra esse cliente — o pedido já é vendido pelo valor de custo.</p>
+          )}
+          {!ehCustoZero && (
+            <p className="text-xs text-muted -mt-2 mb-4">
+              Digite aqui pra distribuir o desconto proporcionalmente entre as peças, ou lance o desconto peça a peça na coluna "Desconto" da tabela acima — os dois campos ficam sincronizados.
+            </p>
           )}
 
           <p className="text-xs font-semibold text-muted mb-2">Resumo da negociação</p>

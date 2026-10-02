@@ -1634,11 +1634,12 @@ function EstoquePedidoPageInner() {
         <table className="w-full text-sm table-fixed">
           <thead>
             <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
-              <th className="text-left px-3 py-2.5" style={{ width: mostraCusto ? "28%" : "34%" }}>Peça</th>
-              <th className="text-center px-3 py-2.5" style={{ width: "8%" }}>Qtd</th>
-              <th className="text-left px-3 py-2.5" style={{ width: mostraCusto ? "20%" : "24%" }}>Delivery</th>
-              {mostraCusto && <th className="text-right px-3 py-2.5" style={{ width: "18%" }}>Custo</th>}
-              <th className="text-right px-3 py-2.5" style={{ width: mostraCusto ? "16%" : "24%" }}>Venda</th>
+              <th className="text-left px-3 py-2.5" style={{ width: mostraCusto ? "22%" : "34%" }}>Peça</th>
+              <th className="text-center px-3 py-2.5" style={{ width: "7%" }}>Qtd</th>
+              <th className="text-left px-3 py-2.5" style={{ width: mostraCusto ? "17%" : "24%" }}>Delivery</th>
+              {mostraCusto && <th className="text-right px-3 py-2.5" style={{ width: "14%" }}>Custo</th>}
+              <th className="text-right px-3 py-2.5" style={{ width: mostraCusto ? "13%" : "24%" }}>Venda</th>
+              {mostraCusto && <th className="text-right px-3 py-2.5" style={{ width: "15%" }}>Vlr. C/ Desc.</th>}
               <th className="text-center px-3 py-2.5" style={{ width: "10%" }}>Status</th>
             </tr>
           </thead>
@@ -1912,6 +1913,18 @@ function EstoquePedidoPageInner() {
                     </td>
                   )}
                   <td className="px-3 py-2.5 text-right font-mono font-semibold text-sm" style={{ color: "#2C7C6E" }}>{fmtBRL(i.venda_total)}</td>
+                  {mostraCusto && (
+                    <td className="px-3 py-2.5 text-right font-mono text-sm">
+                      {Number(i.desconto_item || 0) > 0 ? (
+                        <>
+                          <p className="font-semibold">{fmtBRL(Number(i.venda_total || 0) - Number(i.desconto_item || 0))}</p>
+                          <p className="text-[10px] text-danger">- {fmtBRL(i.desconto_item)}</p>
+                        </>
+                      ) : (
+                        <p className="font-semibold">{fmtBRL(i.venda_total)}</p>
+                      )}
+                    </td>
+                  )}
                   <td className="px-3 py-2.5 text-center">
                     {i.indisponivel ? (
                       <Ban size={16} style={{ color: "#D6336C" }} className="inline" />
@@ -1932,6 +1945,11 @@ function EstoquePedidoPageInner() {
                 <td className="px-3 py-2.5 text-right font-mono text-xs">{fmtBRL(itens.reduce((s, i) => s + Number(i.custo_real || 0) * i.qtd, 0))}</td>
               )}
               <td className="px-3 py-2.5 text-right font-mono text-sm" style={{ color: "#2C7C6E" }}>{fmtBRL(itens.reduce((s, i) => s + Number(i.venda_total || 0), 0))}</td>
+              {mostraCusto && (
+                <td className="px-3 py-2.5 text-right font-mono text-sm">
+                  {fmtBRL(itens.reduce((s, i) => s + Number(i.venda_total || 0) - Number(i.desconto_item || 0), 0))}
+                </td>
+              )}
               <td></td>
             </tr>
           </tfoot>

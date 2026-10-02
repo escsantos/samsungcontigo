@@ -63,14 +63,10 @@ export default function RelatorioCustoPage() {
       const idsPedidos = [...new Set((liberados || []).map((l) => l.orcamentos?.id).filter(Boolean))];
       const fatores = {};
       if (idsPedidos.length > 0) {
-        // subtotal real de cada pedido (soma de TODOS os itens, não só os liberados) — pra achar a proporção do desconto
-        const { data: todosItens } = await supabase.from("orcamento_itens").select("orcamento_id, venda_total").in("orcamento_id", idsPedidos);
-        const subtotalPorPedido = {};
-        (todosItens || []).forEach((i) => {
-          subtotalPorPedido[i.orcamento_id] = (subtotalPorPedido[i.orcamento_id] || 0) + Number(i.venda_total || 0);
-        });
-
-        // total pago de cada pedido
+        // total pago de cada pedido (o desconto por peça já vem pronto em
+        // orcamento_itens.desconto_item — lançado peça a peça ou distribuído
+        // proporcionalmente na tela do Orçamento, não precisa mais recalcular
+        // aqui por rateio)
         const { data: pagamentos } = await supabase.from("pagamentos_orcamento").select("orcamento_id, valor").in("orcamento_id", idsPedidos);
         const pagoPorPedido = {};
         (pagamentos || []).forEach((p) => {
@@ -80,10 +76,8 @@ export default function RelatorioCustoPage() {
         for (const l of liberados || []) {
           const orc = l.orcamentos;
           if (!orc || fatores[orc.id]) continue;
-          const subtotal = subtotalPorPedido[orc.id] || 0;
-          const fator = subtotal > 0 ? Number(orc.valor_total || 0) / subtotal : 1;
           const totalPago = (pagoPorPedido[orc.id] || 0) + Number(orc.valor_herdado_pai || 0);
-          fatores[orc.id] = { fator, totalPago };
+          fatores[orc.id] = { totalPago };
         }
       }
       setFatoresPedido(fatores);
@@ -116,9 +110,9 @@ export default function RelatorioCustoPage() {
       const orc = l.orcamentos;
       const impostoPct = Number(orc?.imposto_total || 0);
       const custoTotal = Number(l.custo_real || 0) * l.qtd;
-      const info = fatoresPedido[orc?.id] || { fator: 1, totalPago: 0 };
-      const vendaLiquida = Number(l.venda_total || 0) * info.fator;
-      const descontoItem = Number(l.venda_total || 0) - vendaLiquida;
+      const info = fatoresPedido[orc?.id] || { totalPago: 0 };
+      const descontoItem = Number(l.desconto_item || 0);
+      const vendaLiquida = Number(l.venda_total || 0) - descontoItem;
       const impostoValor = vendaLiquida * (impostoPct / 100);
       const lucroLiquido = vendaLiquida - custoTotal - impostoValor;
       const percentualLucro = vendaLiquida > 0 ? (lucroLiquido / vendaLiquida) * 100 : 0;
