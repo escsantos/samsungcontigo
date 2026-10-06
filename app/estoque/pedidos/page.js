@@ -27,6 +27,9 @@ export default function RelatorioPedidosPage() {
   const [periodo, setPeriodo] = useState("tudo");
   const [dataDe, setDataDe] = useState("");
   const [dataAte, setDataAte] = useState("");
+  // Só vale pro período "Personalizado" — os outros chips (Hoje, Esta
+  // semana, Este mês) continuam olhando a data de abertura do pedido.
+  const [campoDataPersonalizado, setCampoDataPersonalizado] = useState("abertura");
   const [statusFiltro, setStatusFiltro] = useState("Todos");
   const [vendedorFiltro, setVendedorFiltro] = useState("");
   const [clienteBusca, setClienteBusca] = useState("");
@@ -87,7 +90,10 @@ export default function RelatorioPedidosPage() {
   const filtrados = useMemo(() => {
     return lista.filter((o) => {
       if (intervalo) {
-        const t = new Date(o.criado_em).getTime();
+        const usaDataEntrega = periodo === "personalizado" && campoDataPersonalizado === "entrega";
+        const dataRef = usaDataEntrega ? o.entregue_em : o.criado_em;
+        if (!dataRef) return false; // ainda não foi entregue — não tem data de entrega pra comparar
+        const t = new Date(dataRef).getTime();
         if (t < intervalo.de.getTime() || t > intervalo.ate.getTime()) return false;
       }
       if (statusFiltro === "Entregue" && !o.entregue) return false;
@@ -96,7 +102,7 @@ export default function RelatorioPedidosPage() {
       if (clienteBusca.trim() && !(o.clientes?.nome || "").toLowerCase().includes(clienteBusca.trim().toLowerCase())) return false;
       return true;
     });
-  }, [lista, intervalo, statusFiltro, vendedorFiltro, clienteBusca]);
+  }, [lista, intervalo, statusFiltro, vendedorFiltro, clienteBusca, periodo, campoDataPersonalizado]);
 
   // Pedido cancelado não vira venda — os cards de totais (e a contagem de
   // Pedidos) não devem somar ele, mesmo que "Cancelado" apareça listado na
@@ -159,7 +165,33 @@ export default function RelatorioPedidosPage() {
             </button>
           ))}
           {periodo === "personalizado" && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center rounded-lg border border-line overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setCampoDataPersonalizado("abertura")}
+                  className="text-xs px-2.5 py-1.5"
+                  style={
+                    campoDataPersonalizado === "abertura"
+                      ? { background: "var(--accent)", color: "#fff" }
+                      : { background: "transparent" }
+                  }
+                >
+                  Data de abertura
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCampoDataPersonalizado("entrega")}
+                  className="text-xs px-2.5 py-1.5"
+                  style={
+                    campoDataPersonalizado === "entrega"
+                      ? { background: "var(--accent)", color: "#fff" }
+                      : { background: "transparent" }
+                  }
+                >
+                  Data de entrega
+                </button>
+              </div>
               <input type="date" className="field-input py-1.5 text-xs" value={dataDe} onChange={(e) => setDataDe(e.target.value)} />
               <span className="text-xs text-muted">até</span>
               <input type="date" className="field-input py-1.5 text-xs" value={dataAte} onChange={(e) => setDataAte(e.target.value)} />
@@ -230,7 +262,9 @@ export default function RelatorioPedidosPage() {
                   <th className="text-left px-3 py-2.5 whitespace-nowrap" style={{ width: "8%" }}>Pedido</th>
                   <th className="text-left px-3 py-2.5 whitespace-nowrap" style={{ width: "22%" }}>Cliente</th>
                   <th className="text-left px-3 py-2.5 whitespace-nowrap" style={{ width: "14%" }}>Vendedor</th>
-                  <th className="text-left px-3 py-2.5 whitespace-nowrap" style={{ width: "9%" }}>Data</th>
+                  <th className="text-left px-3 py-2.5 whitespace-nowrap" style={{ width: "9%" }}>
+                    {periodo === "personalizado" && campoDataPersonalizado === "entrega" ? "Data entrega" : "Data"}
+                  </th>
                   <th className="text-right px-3 py-2.5 whitespace-nowrap" style={{ width: "10%" }}>Desconto</th>
                   <th className="text-right px-3 py-2.5 whitespace-nowrap" style={{ width: "11%" }}>Total</th>
                   <th className="text-right px-3 py-2.5 whitespace-nowrap" style={{ width: "11%" }}>Pago</th>
@@ -262,7 +296,11 @@ export default function RelatorioPedidosPage() {
                         })()}
                       </td>
                       <td className="px-3 py-2.5 text-muted whitespace-nowrap overflow-hidden text-ellipsis">{o.perfis?.nome || "—"}</td>
-                      <td className="px-3 py-2.5 text-muted whitespace-nowrap">{new Date(o.criado_em).toLocaleDateString("pt-BR")}</td>
+                      <td className="px-3 py-2.5 text-muted whitespace-nowrap">
+                        {periodo === "personalizado" && campoDataPersonalizado === "entrega"
+                          ? (o.entregue_em ? new Date(o.entregue_em).toLocaleDateString("pt-BR") : "—")
+                          : new Date(o.criado_em).toLocaleDateString("pt-BR")}
+                      </td>
                       <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap" style={{ color: Number(o.desconto) > 0 ? "#D6336C" : undefined }}>
                         {Number(o.desconto) > 0 ? `-${fmtBRL(o.desconto)}` : "—"}
                       </td>
