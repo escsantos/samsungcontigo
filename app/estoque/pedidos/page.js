@@ -164,44 +164,55 @@ export default function RelatorioPedidosPage() {
               {p.label}
             </button>
           ))}
-          {periodo === "personalizado" && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center rounded-lg border border-line overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setCampoDataPersonalizado("abertura")}
-                  className="text-xs px-2.5 py-1.5"
-                  style={
-                    campoDataPersonalizado === "abertura"
-                      ? { background: "var(--accent)", color: "#fff" }
-                      : { background: "transparent" }
-                  }
-                >
-                  Data de abertura
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCampoDataPersonalizado("entrega")}
-                  className="text-xs px-2.5 py-1.5"
-                  style={
-                    campoDataPersonalizado === "entrega"
-                      ? { background: "var(--accent)", color: "#fff" }
-                      : { background: "transparent" }
-                  }
-                >
-                  Data de entrega
-                </button>
-              </div>
-              <input type="date" className="field-input py-1.5 text-xs" value={dataDe} onChange={(e) => setDataDe(e.target.value)} />
-              <span className="text-xs text-muted">até</span>
-              <input type="date" className="field-input py-1.5 text-xs" value={dataAte} onChange={(e) => setDataAte(e.target.value)} />
-            </div>
-          )}
           <button className="btn-primary text-xs py-2 ml-auto" onClick={exportarExcel}>
             <Download size={14} />
             Exportar Excel
           </button>
         </div>
+
+        {periodo === "personalizado" && (
+          <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto mb-3 pb-0.5">
+            <div className="flex items-center rounded-lg border border-line overflow-hidden shrink-0">
+              <button
+                type="button"
+                onClick={() => setCampoDataPersonalizado("abertura")}
+                className="text-xs px-2 py-1.5 whitespace-nowrap"
+                style={
+                  campoDataPersonalizado === "abertura"
+                    ? { background: "var(--accent)", color: "#fff" }
+                    : { background: "transparent" }
+                }
+              >
+                Abertura
+              </button>
+              <button
+                type="button"
+                onClick={() => setCampoDataPersonalizado("entrega")}
+                className="text-xs px-2 py-1.5 whitespace-nowrap"
+                style={
+                  campoDataPersonalizado === "entrega"
+                    ? { background: "var(--accent)", color: "#fff" }
+                    : { background: "transparent" }
+                }
+              >
+                Entrega
+              </button>
+            </div>
+            <input
+              type="date"
+              className="field-input py-1.5 text-xs w-[8.5rem] shrink-0"
+              value={dataDe}
+              onChange={(e) => setDataDe(e.target.value)}
+            />
+            <span className="text-xs text-muted shrink-0">até</span>
+            <input
+              type="date"
+              className="field-input py-1.5 text-xs w-[8.5rem] shrink-0"
+              value={dataAte}
+              onChange={(e) => setDataAte(e.target.value)}
+            />
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
