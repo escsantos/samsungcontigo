@@ -1671,7 +1671,17 @@ function EstoquePedidoPageInner() {
                           <Pencil size={11} />
                         </button>
                       )}
-                      {podeTrocarPeca && orcamento.status === "Peças Compradas - Aguardando Chegada" && !i.liberado && !i.indisponivel && (
+                      {podeTrocarPeca &&
+                        // pedido explícito, 07/10/2026: dá pra marcar a
+                        // peça indisponível na Samsung já em "Aguardando
+                        // Separação/Compra" também — às vezes a informação
+                        // de que a Samsung não tem o item chega ANTES de
+                        // registrar o pedido de compra, não só depois
+                        // (antes, só dava pra marcar depois de já ter
+                        // registrado um nº de pedido de compra).
+                        ["Aguardando Separação/Compra", "Peças Compradas - Aguardando Chegada"].includes(orcamento.status) &&
+                        !i.liberado &&
+                        !i.indisponivel && (
                         <button
                           onClick={() => abrirIndisponivel(i)}
                           title="Marcar peça indisponível na Samsung"
