@@ -2788,3 +2788,90 @@ language sql security definer set search_path = public stable as $$
   union all
   select * from nao_classificadas;
 $$;
+
+-- ================================================================
+-- PAGAMENTO DE COMISSÃO DO VENDEDOR (13/10/2026)
+-- Relatórios > Comissões: clicar na comissão do mês do vendedor abre o
+-- pop-up pra marcar como paga (valor, data, forma de pagamento,
+-- observação e comprovante/recibo assinado — anexo obrigatório).
+-- Pode ter mais de um pagamento no mesmo mês (ex.: complemento, quando
+-- entra pedido entregue depois que a comissão já foi paga).
+-- Quem paga/desfaz: Administrador, Diretor, Gerente e Financeiro.
+-- Quem vê: esses + Supervisor; o Vendedor vê só os dele (só leitura).
+-- Anexos no bucket "comprovantes", pasta comissoes/<vendedor_id>/...
+-- Rode este bloco inteiro no SQL Editor do Supabase
+-- ================================================================
+
+create table if not exists comissoes_pagamentos (
+  id bigint generated always as identity primary key,
+  unidade_id bigint not null references unidades(id),
+  vendedor_id uuid not null references perfis(id),
+  competencia date not null,              -- sempre o dia 1º do mês da comissão
+  valor numeric(12,2) not null check (valor > 0),
+  forma_pagamento text not null,
+  data_pagamento date not null,
+  observacao text,
+  anexo_path text not null,
+  registrado_por uuid references perfis(id) default auth.uid(),
+  criado_em timestamptz default now()
+);
+
+create index if not exists idx_comissoes_pag_unidade_comp on comissoes_pagamentos (unidade_id, competencia);
+create index if not exists idx_comissoes_pag_vendedor on comissoes_pagamentos (vendedor_id);
+
+alter table comissoes_pagamentos enable row level security;
+
+create or replace function pode_pagar_comissao()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Financeiro'));
+$$;
+
+create or replace function pode_ver_comissoes_todas()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (select 1 from perfis where id = auth.uid() and cargo in ('Administrador','Diretor','Gerente','Supervisor','Financeiro'));
+$$;
+
+drop policy if exists "le pagamentos de comissao" on comissoes_pagamentos;
+create policy "le pagamentos de comissao"
+  on comissoes_pagamentos for select
+  using (
+    vendedor_id = auth.uid()
+    or (
+      pode_ver_comissoes_todas()
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = comissoes_pagamentos.unidade_id and pu.perfil_id = auth.uid())
+    )
+  );
+
+drop policy if exists "registra pagamento de comissao" on comissoes_pagamentos;
+create policy "registra pagamento de comissao"
+  on comissoes_pagamentos for insert
+  with check (
+    pode_pagar_comissao()
+    and exists (select 1 from perfis_unidades pu where pu.unidade_id = comissoes_pagamentos.unidade_id and pu.perfil_id = auth.uid())
+  );
+
+drop policy if exists "desfaz pagamento de comissao" on comissoes_pagamentos;
+create policy "desfaz pagamento de comissao"
+  on comissoes_pagamentos for delete
+  using (
+    pode_pagar_comissao()
+    and exists (select 1 from perfis_unidades pu where pu.unidade_id = comissoes_pagamentos.unidade_id and pu.perfil_id = auth.uid())
+  );
+
+drop policy if exists "le comprovantes de comissao" on storage.objects;
+create policy "le comprovantes de comissao"
+  on storage.objects for select
+  using (
+    bucket_id = 'comprovantes'
+    and (storage.foldername(name))[1] = 'comissoes'
+    and (pode_ver_comissoes_todas() or (storage.foldername(name))[2] = auth.uid()::text)
+  );
+
+drop policy if exists "sobe comprovantes de comissao" on storage.objects;
+create policy "sobe comprovantes de comissao"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'comprovantes'
+    and (storage.foldername(name))[1] = 'comissoes'
+    and pode_pagar_comissao()
+  );

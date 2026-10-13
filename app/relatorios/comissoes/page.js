@@ -2,17 +2,19 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar, Wallet, Receipt,
-  Percent, TrendingUp, Trophy, Award, Medal, Users
+  Percent, TrendingUp, Trophy, Award, Medal, Users, HandCoins
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList } from "recharts";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import CardStat from "../../../components/CardStat";
+import PagamentoComissaoModal from "../../../components/PagamentoComissaoModal";
 import { getUnidadeAtiva } from "../../../lib/unidade";
 import {
   CARGOS_COMISSOES,
   CARGOS_COMISSOES_TODOS,
+  CARGOS_PAGAR_COMISSAO,
   inicioSemana,
   fimSemana,
   rotuloSemana,
@@ -61,6 +63,20 @@ function TooltipRanking({ active, payload }) {
   );
 }
 
+// Selo de status do pagamento da comissão do mês (13/10/2026).
+function SeloPagamento({ comissao, pago }) {
+  if (!(comissao > 0.004)) return <span className="text-muted text-xs">—</span>;
+  const falta = comissao - pago;
+  let txt = "Pendente", bg = "var(--danger-soft)", fg = "var(--danger)";
+  if (falta <= 0.004) { txt = "Pago"; bg = "rgba(63,167,150,0.14)"; fg = "var(--success)"; }
+  else if (pago > 0.004) { txt = "Parcial"; bg = "rgba(232,163,61,0.16)"; fg = "#B5771C"; }
+  return (
+    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded whitespace-nowrap" style={{ background: bg, color: fg }}>
+      {txt}
+    </span>
+  );
+}
+
 export default function RelatorioComissoesPage() {
   const [perfil, setPerfil] = useState(undefined);
   const [carregando, setCarregando] = useState(true);
@@ -70,9 +86,42 @@ export default function RelatorioComissoesPage() {
   const [vendedores, setVendedores] = useState([]);
   const [vendedorFiltro, setVendedorFiltro] = useState("");
   const [pedidos, setPedidos] = useState([]);
+  // Pagamento de comissão (13/10/2026) — só no modo Mensal (a comissão é paga por mês).
+  const [pagamentosComissao, setPagamentosComissao] = useState([]);
+  const [recarregarPag, setRecarregarPag] = useState(0);
+  const [modalPagamento, setModalPagamento] = useState(null); // { vendedorId, nome, comissao }
 
   const ehVendedor = perfil?.cargo === "Vendedor";
   const podeVerTodos = CARGOS_COMISSOES_TODOS.includes(perfil?.cargo);
+  const podePagarComissao = CARGOS_PAGAR_COMISSAO.includes(perfil?.cargo);
+  const competencia = tipoPeriodo === "mensal" && mesSelecionado ? `${mesSelecionado}-01` : null;
+
+  useEffect(() => {
+    if (perfil === undefined || !CARGOS_COMISSOES.includes(perfil?.cargo) || !competencia) { setPagamentosComissao([]); return; }
+    (async () => {
+      const unidadeAtiva = getUnidadeAtiva();
+      if (!unidadeAtiva) return;
+      const { data } = await supabase
+        .from("comissoes_pagamentos")
+        .select("*, registrador:perfis!comissoes_pagamentos_registrado_por_fkey(nome)")
+        .eq("unidade_id", unidadeAtiva.id)
+        .eq("competencia", competencia)
+        .order("data_pagamento", { ascending: true });
+      setPagamentosComissao(data || []);
+    })();
+  }, [perfil, competencia, recarregarPag]);
+
+  const pagamentosPorVendedor = useMemo(() => {
+    const mapa = {};
+    pagamentosComissao.forEach((p) => {
+      const k = String(p.vendedor_id);
+      if (!mapa[k]) mapa[k] = { total: 0, lista: [] };
+      mapa[k].total += Number(p.valor || 0);
+      mapa[k].lista.push(p);
+    });
+    return mapa;
+  }, [pagamentosComissao]);
+  const pagoDoVendedor = (id) => pagamentosPorVendedor[String(id)]?.total || 0;
 
   useEffect(() => {
     getPerfilAtual().then(setPerfil);
@@ -166,6 +215,12 @@ export default function RelatorioComissoesPage() {
   }, [linhas]);
 
   const visaoUnica = ehVendedor || (podeVerTodos && !!vendedorFiltro);
+
+  const totalAPagar = rankingVendedores.reduce(
+    (s, v) => s + (v.vendedorId ? Math.max(0, v.comissaoTotal - pagoDoVendedor(v.vendedorId)) : 0),
+    0
+  );
+  const vendedorUnico = visaoUnica ? rankingVendedores[0] : null;
 
   // dados do gráfico: ranking por vendedor (visão gerencial) ou top pedidos do próprio vendedor (visão única)
   const dadosGrafico = useMemo(() => {
@@ -301,11 +356,14 @@ export default function RelatorioComissoesPage() {
         <p className="text-sm text-muted mb-3">Período: <b>{rotuloPeriodo}</b></p>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+      <div className={`grid grid-cols-2 ${competencia ? "sm:grid-cols-5" : "sm:grid-cols-4"} gap-3 mb-5`}>
         <CardStat icone={Percent} cor="#C2801F" corValor="#C2801F" label="Comissão Total" valor={fmtBRL(totais.comissaoTotal)} destaque />
         <CardStat icone={Wallet} cor="#2E6DA8" label="Valor Vendido" valor={fmtBRL(totais.valorVendido)} />
         <CardStat icone={Receipt} cor="#7A4FB0" label="Pedidos Entregues" valor={String(qtdPedidos)} />
         <CardStat icone={TrendingUp} cor="#2C7C6E" label="Taxa Efetiva" valor={fmtPct(taxaEfetiva)} tooltip="Comissão Total ÷ Valor Vendido no período." />
+        {competencia && (
+          <CardStat icone={HandCoins} cor="#E1614F" corValor={totalAPagar > 0.004 ? "#E1614F" : "#3FA796"} label="A pagar" valor={fmtBRL(totalAPagar)} tooltip="Comissão do mês ainda não marcada como paga." />
+        )}
       </div>
 
       {dadosGrafico.length > 0 && (
@@ -347,6 +405,7 @@ export default function RelatorioComissoesPage() {
                 <th className="text-right px-4 py-2.5">Pedidos</th>
                 <th className="text-right px-4 py-2.5">Valor Vendido</th>
                 <th className="text-right px-4 py-2.5">Comissão</th>
+                {competencia && <th className="text-center px-4 py-2.5">Pagamento</th>}
               </tr>
             </thead>
             <tbody>
@@ -360,7 +419,23 @@ export default function RelatorioComissoesPage() {
                     <td className="px-4 py-2.5 font-medium">{v.nome}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-muted">{v.qtdPedidos}</td>
                     <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(v.valorVendido)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: "#C2801F" }}>{fmtBRL(v.comissaoTotal)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: "#C2801F" }}>
+                      {competencia && v.vendedorId ? (
+                        <button
+                          type="button"
+                          className="font-mono font-semibold underline decoration-dotted underline-offset-4 hover:opacity-80"
+                          title="Ver / registrar pagamento da comissão"
+                          onClick={(e) => { e.stopPropagation(); setModalPagamento({ vendedorId: v.vendedorId, nome: v.nome, comissao: v.comissaoTotal }); }}
+                        >
+                          {fmtBRL(v.comissaoTotal)}
+                        </button>
+                      ) : fmtBRL(v.comissaoTotal)}
+                    </td>
+                    {competencia && (
+                      <td className="px-4 py-2.5 text-center">
+                        <SeloPagamento comissao={v.comissaoTotal} pago={v.vendedorId ? pagoDoVendedor(v.vendedorId) : 0} />
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -374,6 +449,26 @@ export default function RelatorioComissoesPage() {
           <ChevronLeft size={13} />
           Voltar pro ranking de todos os vendedores
         </button>
+      )}
+
+      {competencia && visaoUnica && vendedorUnico?.vendedorId && !carregando && (
+        <div className="card p-4 mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <HandCoins size={18} style={{ color: "#C2801F" }} />
+            <div>
+              <p className="text-sm font-medium">Comissão de {rotuloPeriodo}: <span className="font-mono" style={{ color: "#C2801F" }}>{fmtBRL(vendedorUnico.comissaoTotal)}</span></p>
+              <p className="text-xs text-muted">Pago: {fmtBRL(pagoDoVendedor(vendedorUnico.vendedorId))}</p>
+            </div>
+            <SeloPagamento comissao={vendedorUnico.comissaoTotal} pago={pagoDoVendedor(vendedorUnico.vendedorId)} />
+          </div>
+          <button
+            type="button"
+            className={podePagarComissao ? "btn-primary text-xs py-2" : "btn-secondary text-xs py-2"}
+            onClick={() => setModalPagamento({ vendedorId: vendedorUnico.vendedorId, nome: vendedorUnico.nome, comissao: vendedorUnico.comissaoTotal })}
+          >
+            {podePagarComissao ? "Pagamento da comissão" : "Ver pagamento"}
+          </button>
+        </div>
       )}
 
       <div className="card overflow-hidden">
@@ -429,6 +524,20 @@ export default function RelatorioComissoesPage() {
           </div>
         )}
       </div>
+
+      <PagamentoComissaoModal
+        open={!!modalPagamento}
+        onClose={() => setModalPagamento(null)}
+        onSalvo={() => setRecarregarPag((n) => n + 1)}
+        vendedorId={modalPagamento?.vendedorId}
+        vendedorNome={modalPagamento?.nome}
+        competencia={competencia}
+        rotuloMes={rotuloPeriodo}
+        unidadeId={getUnidadeAtiva()?.id}
+        comissaoMes={modalPagamento?.comissao || 0}
+        pagamentos={modalPagamento ? (pagamentosPorVendedor[String(modalPagamento.vendedorId)]?.lista || []) : []}
+        podePagar={podePagarComissao}
+      />
     </AppShell>
   );
 }
