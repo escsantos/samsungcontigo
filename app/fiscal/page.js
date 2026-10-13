@@ -36,6 +36,8 @@ export default function FiscalPage() {
   const [periodo, setPeriodo] = useState("mes");
   const [dataDe, setDataDe] = useState("");
   const [dataAte, setDataAte] = useState("");
+  // Filtro "Emitida por" na aba Emitidas (pedido 13/10/2026).
+  const [emissorFiltro, setEmissorFiltro] = useState("");
 
   const intervalo = useMemo(() => calcularIntervalo(periodo, dataDe, dataAte), [periodo, dataDe, dataAte]);
 
@@ -63,7 +65,7 @@ export default function FiscalPage() {
 
     let query = supabase
       .from("orcamentos")
-      .select("id, numero_unidade, status, entregue, valor_total, criado_em, separado_em, nota_fiscal_numero, nota_fiscal_emitida_em, nota_fiscal_emitir_depois, nota_fiscal_observacao, clientes(nome), emissor:perfis!orcamentos_nota_fiscal_emitida_por_fkey(nome)")
+      .select("id, numero_unidade, status, entregue, valor_total, criado_em, separado_em, nota_fiscal_numero, nota_fiscal_emitida_em, nota_fiscal_emitir_depois, nota_fiscal_observacao, nota_fiscal_emitida_por, clientes(nome), emissor:perfis!orcamentos_nota_fiscal_emitida_por_fkey(nome)")
       .neq("status", "Cancelado")
       .order("criado_em", { ascending: false });
     if (unidadeAtiva) query = query.eq("unidade_id", unidadeAtiva.id);
@@ -99,7 +101,18 @@ export default function FiscalPage() {
   const pendentes = lista.filter((o) => faltaEmitirNF(o, obrigaNF));
   const marcadasDepois = pendentes.filter((o) => o.nota_fiscal_emitir_depois);
   const emitidas = lista.filter((o) => o.nota_fiscal_numero);
-  const emitidasPeriodo = emitidas.filter((o) => noPeriodo(o.nota_fiscal_emitida_em, intervalo));
+  const emitidasNoIntervalo = emitidas.filter((o) => noPeriodo(o.nota_fiscal_emitida_em, intervalo));
+  // Lista do filtro: só quem emitiu NF no período escolhido.
+  const emissoresDoPeriodo = (() => {
+    const mapa = new Map();
+    emitidasNoIntervalo.forEach((o) => {
+      if (o.nota_fiscal_emitida_por && !mapa.has(o.nota_fiscal_emitida_por)) mapa.set(o.nota_fiscal_emitida_por, o.emissor?.nome || "—");
+    });
+    return [...mapa.entries()].map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  })();
+  const emitidasPeriodo = emissorFiltro
+    ? emitidasNoIntervalo.filter((o) => o.nota_fiscal_emitida_por === emissorFiltro)
+    : emitidasNoIntervalo;
   const liberadosComNF = liberados.filter((o) => o.nota_fiscal_numero).length;
   const percentualEmitido = liberados.length > 0 ? (liberadosComNF / liberados.length) * 100 : 100;
 
@@ -192,6 +205,18 @@ export default function FiscalPage() {
                   <input type="date" className="field-input py-1.5 text-xs" value={dataAte} onChange={(e) => setDataAte(e.target.value)} />
                 </div>
               )}
+              <select
+                className="field-input py-1.5 text-xs w-auto"
+                value={emissorFiltro}
+                onChange={(e) => setEmissorFiltro(e.target.value)}
+                title="Emitida por"
+              >
+                <option value="">Emitida por: todos</option>
+                {emissoresDoPeriodo.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                {emissorFiltro && !emissoresDoPeriodo.some((e) => e.id === emissorFiltro) && (
+                  <option value={emissorFiltro}>(sem NF neste período)</option>
+                )}
+              </select>
             </>
           )}
           <button className="btn-secondary text-xs py-2" onClick={exportarExcel}>
