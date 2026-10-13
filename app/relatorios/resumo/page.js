@@ -49,6 +49,10 @@ export default function RelatorioResumoPage() {
   const [semanaRef, setSemanaRef] = useState(() => new Date());
   const [vendedores, setVendedores] = useState([]);
   const [vendedorFiltro, setVendedorFiltro] = useState("");
+  // Filtro por cliente (pedido 13/10/2026). Feito aqui no navegador, em
+  // cima dos pedidos já carregados do período/vendedor — a lista só mostra
+  // clientes que têm pedido entregue no período escolhido.
+  const [clienteFiltro, setClienteFiltro] = useState("");
   const [pedidos, setPedidos] = useState([]);
   const [itensPorPedido, setItensPorPedido] = useState({});
   const [pedidoAberto, setPedidoAberto] = useState(null);
@@ -97,7 +101,7 @@ export default function RelatorioResumoPage() {
 
       let query = supabase
         .from("orcamentos")
-        .select("id, numero_unidade, valor_total, imposto_total, vendedor_id, entregue_em, nota_fiscal_numero, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome, comissao_percentual)")
+        .select("id, numero_unidade, valor_total, imposto_total, vendedor_id, entregue_em, nota_fiscal_numero, cliente_id, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome, comissao_percentual)")
         .eq("unidade_id", unidadeAtiva.id)
         .eq("entregue", true)
         .gte("entregue_em", periodo.de.toISOString())
@@ -132,8 +136,27 @@ export default function RelatorioResumoPage() {
     })();
   }, [perfil, periodo, vendedorFiltro, ehVendedor]);
 
+  const clientesDoPeriodo = useMemo(() => {
+    const mapa = new Map();
+    pedidos.forEach((o) => {
+      if (o.cliente_id != null && !mapa.has(String(o.cliente_id))) mapa.set(String(o.cliente_id), o.clientes?.nome || "—");
+    });
+    return [...mapa.entries()]
+      .map(([id, nome]) => ({ id, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [pedidos]);
+
+  // Se trocar o período/vendedor e o cliente escolhido não tiver pedido
+  // nele, volta pra "Todos os clientes" em vez de mostrar a tela vazia.
+  useEffect(() => {
+    if (carregando || !clienteFiltro) return;
+    if (!clientesDoPeriodo.some((c) => c.id === clienteFiltro)) setClienteFiltro("");
+  }, [clientesDoPeriodo, clienteFiltro, carregando]);
+
   const linhas = useMemo(() => {
-    return pedidos.map((o) => {
+    return pedidos
+      .filter((o) => !clienteFiltro || String(o.cliente_id) === clienteFiltro)
+      .map((o) => {
       const itens = itensPorPedido[o.id] || [];
       const custoPecas = itens.reduce((s, i) => s + Number(i.custo_real || 0) * Number(i.qtd || 0), 0);
       const comissaoCadastrada = o.perfis?.comissao_percentual !== null && o.perfis?.comissao_percentual !== undefined;
@@ -152,7 +175,7 @@ export default function RelatorioResumoPage() {
         ...calc
       };
     });
-  }, [pedidos, itensPorPedido]);
+  }, [pedidos, itensPorPedido, clienteFiltro]);
 
   const totais = linhas.reduce(
     (acc, l) => ({
@@ -266,15 +289,24 @@ export default function RelatorioResumoPage() {
           )}
         </div>
 
-        {podeEscolherVendedor && (
-          <div className="max-w-xs">
-            <label className="field-label">Vendedor</label>
-            <select className="field-input" value={vendedorFiltro} onChange={(e) => setVendedorFiltro(e.target.value)}>
-              <option value="">Todos os vendedores</option>
-              {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}
+        <div className="flex flex-wrap gap-3">
+          {podeEscolherVendedor && (
+            <div className="w-full max-w-xs">
+              <label className="field-label">Vendedor</label>
+              <select className="field-input" value={vendedorFiltro} onChange={(e) => setVendedorFiltro(e.target.value)}>
+                <option value="">Todos os vendedores</option>
+                {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="w-full max-w-xs">
+            <label className="field-label">Cliente</label>
+            <select className="field-input" value={clienteFiltro} onChange={(e) => setClienteFiltro(e.target.value)}>
+              <option value="">Todos os clientes</option>
+              {clientesDoPeriodo.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
             </select>
           </div>
-        )}
+        </div>
       </div>
 
       {tipoPeriodo === "mensal" && (
