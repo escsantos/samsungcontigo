@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar, Wallet, Package, Landmark, TrendingUp, Percent, PiggyBank } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar, Wallet, Package, Landmark, TrendingUp, Percent, PiggyBank, Paperclip, FileText } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
@@ -56,6 +56,9 @@ export default function RelatorioResumoPage() {
   const [pedidos, setPedidos] = useState([]);
   const [itensPorPedido, setItensPorPedido] = useState({});
   const [pedidoAberto, setPedidoAberto] = useState(null);
+  // Pagamentos de cada pedido, com o comprovante anexado (pedido 14/10/2026).
+  const [pagamentosPorPedido, setPagamentosPorPedido] = useState({});
+  const [erroAnexo, setErroAnexo] = useState("");
 
   const ehVendedor = perfil?.cargo === "Vendedor";
   const podeEscolherVendedor = CARGOS_TODOS_VENDEDORES.includes(perfil?.cargo);
@@ -101,7 +104,7 @@ export default function RelatorioResumoPage() {
 
       let query = supabase
         .from("orcamentos")
-        .select("id, numero_unidade, valor_total, imposto_total, vendedor_id, entregue_em, nota_fiscal_numero, cliente_id, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome, comissao_percentual)")
+        .select("id, numero_unidade, valor_total, imposto_total, vendedor_id, entregue_em, nota_fiscal_numero, anexo_pagamento_url, cliente_id, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome, comissao_percentual)")
         .eq("unidade_id", unidadeAtiva.id)
         .eq("entregue", true)
         .gte("entregue_em", periodo.de.toISOString())
@@ -129,8 +132,20 @@ export default function RelatorioResumoPage() {
           mapa[i.orcamento_id] = [...(mapa[i.orcamento_id] || []), i];
         });
         setItensPorPedido(mapa);
+
+        const { data: pags } = await supabase
+          .from("pagamentos_orcamento")
+          .select("id, orcamento_id, forma_pagamento, valor, data_pagamento, anexo_url, bandeira_cartao, parcelas")
+          .in("orcamento_id", ids)
+          .order("data_pagamento", { ascending: true });
+        const mapaPag = {};
+        (pags || []).forEach((pg) => {
+          mapaPag[pg.orcamento_id] = [...(mapaPag[pg.orcamento_id] || []), pg];
+        });
+        setPagamentosPorPedido(mapaPag);
       } else {
         setItensPorPedido({});
+        setPagamentosPorPedido({});
       }
       setCarregando(false);
     })();
@@ -166,8 +181,16 @@ export default function RelatorioResumoPage() {
         impostoPct: o.imposto_total,
         comissaoPct: o.perfis?.comissao_percentual
       });
+      const pagamentos = pagamentosPorPedido[o.id] || [];
+      // anexos: um por pagamento + o anexo antigo direto no pedido (se houver)
+      const anexos = [
+        ...pagamentos.filter((pg) => pg.anexo_url).map((pg) => pg.anexo_url),
+        ...(o.anexo_pagamento_url && !pagamentos.some((pg) => pg.anexo_url === o.anexo_pagamento_url) ? [o.anexo_pagamento_url] : [])
+      ];
       return {
         ...o,
+        pagamentos,
+        anexos,
         valorPago: Number(o.valor_total || 0),
         custoPecas,
         comissaoCadastrada,
@@ -175,7 +198,14 @@ export default function RelatorioResumoPage() {
         ...calc
       };
     });
-  }, [pedidos, itensPorPedido, clienteFiltro]);
+  }, [pedidos, itensPorPedido, pagamentosPorPedido, clienteFiltro]);
+
+  async function verComprovante(caminho) {
+    setErroAnexo("");
+    const { data, error } = await supabase.storage.from("comprovantes").createSignedUrl(caminho, 3600);
+    if (!error && data) window.open(data.signedUrl, "_blank");
+    else setErroAnexo("Não foi possível abrir o comprovante (sem permissão ou arquivo não encontrado).");
+  }
 
   const totais = linhas.reduce(
     (acc, l) => ({
@@ -386,9 +416,20 @@ export default function RelatorioResumoPage() {
                   <tr
                     key={l.id}
                     className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
-                    onClick={() => setPedidoAberto(l)}
+                    onClick={() => { setErroAnexo(""); setPedidoAberto(l); }}
                   >
-                    <td className="px-3 py-2.5 font-mono text-muted whitespace-nowrap">#{l.numero_unidade}</td>
+                    <td className="px-3 py-2.5 font-mono text-muted whitespace-nowrap">
+                      #{l.numero_unidade}
+                      {l.anexos.length > 0 && (
+                        <span
+                          className="ml-1.5 inline-flex items-center justify-center w-5 h-5 rounded-full align-middle"
+                          style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+                          title="Tem comprovante de pagamento anexado — clique para ver"
+                        >
+                          <Paperclip size={11} />
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-2.5 font-mono whitespace-nowrap">
                       {l.nota_fiscal_numero || <span className="text-muted">—</span>}
                     </td>
@@ -462,6 +503,46 @@ export default function RelatorioResumoPage() {
                 </table>
               </div>
             )}
+
+            <div className="mt-5 pt-4 border-t border-line">
+              <p className="text-xs font-medium mb-2 flex items-center gap-1.5">
+                <Paperclip size={13} /> Pagamentos e comprovantes
+              </p>
+              {pedidoAberto.pagamentos.length === 0 && pedidoAberto.anexos.length === 0 ? (
+                <p className="text-xs text-muted">Nenhum pagamento registrado nesse pedido.</p>
+              ) : (
+                <div className="space-y-2">
+                  {pedidoAberto.pagamentos.map((pg) => (
+                    <div key={pg.id} className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2 text-xs">
+                      <div>
+                        <span className="font-mono font-semibold">{fmtBRL(pg.valor)}</span>
+                        <span className="text-muted ml-2">
+                          {pg.forma_pagamento}
+                          {pg.bandeira_cartao ? ` — ${pg.bandeira_cartao} ${pg.parcelas || 1}x` : ""}
+                          {pg.data_pagamento ? ` · ${new Date(pg.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}` : ""}
+                        </span>
+                      </div>
+                      {pg.anexo_url ? (
+                        <button type="button" className="btn-primary text-xs py-1.5 px-3 shrink-0" onClick={() => verComprovante(pg.anexo_url)}>
+                          <FileText size={13} /> Ver comprovante
+                        </button>
+                      ) : (
+                        <span className="text-muted shrink-0">sem anexo</span>
+                      )}
+                    </div>
+                  ))}
+                  {pedidoAberto.anexo_pagamento_url && !pedidoAberto.pagamentos.some((pg) => pg.anexo_url === pedidoAberto.anexo_pagamento_url) && (
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2 text-xs">
+                      <span className="text-muted">Comprovante anexado ao pedido</span>
+                      <button type="button" className="btn-primary text-xs py-1.5 px-3 shrink-0" onClick={() => verComprovante(pedidoAberto.anexo_pagamento_url)}>
+                        <FileText size={13} /> Ver comprovante
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {erroAnexo && <p className="text-xs text-danger mt-2">{erroAnexo}</p>}
+            </div>
           </div>
         )}
       </Modal>

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ShieldAlert, Check, ArrowLeft, ExternalLink, Paperclip } from "lucide-react";
+import { ShieldAlert, Check, ArrowLeft, ExternalLink, Paperclip, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
@@ -49,15 +49,22 @@ export default function RecebimentosPage() {
     // valor pago de verdade: soma direto da tabela de pagamentos + herdado do pedido pai
     const idsPedidos = (orcs || []).map((o) => o.id);
     const { data: pagamentos } = idsPedidos.length
-      ? await supabase.from("pagamentos_orcamento").select("orcamento_id, valor").in("orcamento_id", idsPedidos)
+      ? await supabase.from("pagamentos_orcamento").select("orcamento_id, valor, anexo_url").in("orcamento_id", idsPedidos)
       : { data: [] };
     const pagoPorPedido = {};
+    const anexosPorPedido = {};
     (pagamentos || []).forEach((p) => {
       pagoPorPedido[p.orcamento_id] = (pagoPorPedido[p.orcamento_id] || 0) + Number(p.valor || 0);
+      if (p.anexo_url) anexosPorPedido[p.orcamento_id] = [...(anexosPorPedido[p.orcamento_id] || []), p.anexo_url];
     });
 
     const comValorReal = (orcs || [])
-      .map((o) => ({ ...o, valor_pago: (pagoPorPedido[o.id] || 0) + Number(o.valor_herdado_pai || 0) }))
+      .map((o) => {
+        // comprovantes: um por pagamento + o anexo antigo direto no pedido (se houver)
+        const anexos = [...(anexosPorPedido[o.id] || [])];
+        if (o.anexo_pagamento_url && !anexos.includes(o.anexo_pagamento_url)) anexos.push(o.anexo_pagamento_url);
+        return { ...o, anexos, valor_pago: (pagoPorPedido[o.id] || 0) + Number(o.valor_herdado_pai || 0) };
+      })
       .filter((o) => o.valor_pago > 0.004);
 
     setLista(comValorReal);
@@ -171,6 +178,7 @@ export default function RecebimentosPage() {
                 <th className="text-right px-4 py-2.5">Valor total</th>
                 <th className="text-right px-4 py-2.5">Valor pago</th>
                 <th className="text-left px-4 py-2.5">Data pagamento</th>
+                <th className="text-center px-4 py-2.5">Comprovante</th>
                 <th className="text-right px-4 py-2.5"></th>
               </tr>
             </thead>
@@ -187,6 +195,25 @@ export default function RecebimentosPage() {
                   <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(o.valor_total)}</td>
                   <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: "#2C7C6E" }}>{fmtBRL(o.valor_pago)}</td>
                   <td className="px-4 py-2.5 text-muted">{o.data_pagamento ? new Date(o.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR") : "—"}</td>
+                  <td className="px-4 py-2.5 text-center">
+                    {o.anexos.length === 0 ? (
+                      <span className="text-xs text-danger" title="Nenhum comprovante anexado">sem anexo</span>
+                    ) : (
+                      <button
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap hover:opacity-80"
+                        style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+                        title={o.anexos.length === 1 ? "Abrir o comprovante anexado" : "Ver os comprovantes no detalhe do pedido"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (o.anexos.length === 1) verComprovante(o.anexos[0]);
+                          else abrirDetalhe(o);
+                        }}
+                      >
+                        <FileText size={13} />
+                        {o.anexos.length === 1 ? "Ver comprovante" : `${o.anexos.length} comprovantes`}
+                      </button>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-right">
                     {aba === "pendentes" ? (
                       <button
@@ -332,12 +359,13 @@ export default function RecebimentosPage() {
                           <td className="px-3 py-2 text-right">
                             {p.anexo_url ? (
                               <button
-                                className="inline-flex items-center gap-1 text-muted hover:text-ink"
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg hover:opacity-80"
+                                style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
                                 onClick={() => verComprovante(p.anexo_url)}
                                 title="Ver comprovante"
                               >
                                 <Paperclip size={12} />
-                                Ver
+                                Ver comprovante
                               </button>
                             ) : (
                               <span className="text-muted">—</span>

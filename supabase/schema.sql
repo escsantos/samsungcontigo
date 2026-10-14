@@ -2875,3 +2875,23 @@ create policy "sobe comprovantes de comissao"
     and (storage.foldername(name))[1] = 'comissoes'
     and pode_pagar_comissao()
   );
+
+-- ================================================================
+-- VENDEDOR VÊ COMPROVANTE DOS PRÓPRIOS PEDIDOS (14/10/2026)
+-- Relatório Resumo > pop-up do pedido > "Ver comprovante". O caminho do
+-- anexo é sempre "<orcamento_id>/...", então pega o pedido pelo primeiro
+-- pedaço do caminho e confere se o vendedor do pedido é quem está logado
+-- (mesmo padrão da policy do JM3 Cliente). Só leitura.
+-- Rode este bloco inteiro no SQL Editor do Supabase
+-- ================================================================
+drop policy if exists "vendedor le comprovante do proprio pedido" on storage.objects;
+create policy "vendedor le comprovante do proprio pedido"
+  on storage.objects for select
+  using (
+    bucket_id = 'comprovantes'
+    and exists (
+      select 1 from orcamentos o
+      where o.id = (case when (storage.foldername(name))[1] ~ '^[0-9]+$' then ((storage.foldername(name))[1])::bigint else null end)
+      and o.vendedor_id = auth.uid()
+    )
+  );
