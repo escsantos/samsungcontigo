@@ -138,9 +138,21 @@ export default function RelatorioResumoPage() {
           .select("id, orcamento_id, forma_pagamento, valor, data_pagamento, anexo_url, bandeira_cartao, parcelas")
           .in("orcamento_id", ids)
           .order("data_pagamento", { ascending: true });
+        // Comprovantes também ficam na tabela pagamento_anexos (vários por
+        // pagamento — é onde a tela do Estoque grava). Junta os dois.
+        const idsPag = (pags || []).map((pg) => pg.id);
+        const extrasPorPag = {};
+        if (idsPag.length > 0) {
+          const { data: extras } = await supabase.from("pagamento_anexos").select("pagamento_id, anexo_url").in("pagamento_id", idsPag);
+          (extras || []).forEach((a) => {
+            if (a.anexo_url) extrasPorPag[a.pagamento_id] = [...(extrasPorPag[a.pagamento_id] || []), a.anexo_url];
+          });
+        }
         const mapaPag = {};
         (pags || []).forEach((pg) => {
-          mapaPag[pg.orcamento_id] = [...(mapaPag[pg.orcamento_id] || []), pg];
+          const anexosPg = [...(pg.anexo_url ? [pg.anexo_url] : []), ...(extrasPorPag[pg.id] || [])]
+            .filter((v, i, arr) => arr.indexOf(v) === i);
+          mapaPag[pg.orcamento_id] = [...(mapaPag[pg.orcamento_id] || []), { ...pg, anexos: anexosPg }];
         });
         setPagamentosPorPedido(mapaPag);
       } else {
@@ -184,8 +196,8 @@ export default function RelatorioResumoPage() {
       const pagamentos = pagamentosPorPedido[o.id] || [];
       // anexos: um por pagamento + o anexo antigo direto no pedido (se houver)
       const anexos = [
-        ...pagamentos.filter((pg) => pg.anexo_url).map((pg) => pg.anexo_url),
-        ...(o.anexo_pagamento_url && !pagamentos.some((pg) => pg.anexo_url === o.anexo_pagamento_url) ? [o.anexo_pagamento_url] : [])
+        ...pagamentos.flatMap((pg) => pg.anexos),
+        ...(o.anexo_pagamento_url && !pagamentos.some((pg) => pg.anexos.includes(o.anexo_pagamento_url)) ? [o.anexo_pagamento_url] : [])
       ];
       return {
         ...o,
@@ -522,16 +534,20 @@ export default function RelatorioResumoPage() {
                           {pg.data_pagamento ? ` · ${new Date(pg.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}` : ""}
                         </span>
                       </div>
-                      {pg.anexo_url ? (
-                        <button type="button" className="btn-primary text-xs py-1.5 px-3 shrink-0" onClick={() => verComprovante(pg.anexo_url)}>
-                          <FileText size={13} /> Ver comprovante
-                        </button>
+                      {pg.anexos.length > 0 ? (
+                        <div className="flex flex-wrap justify-end gap-1.5 shrink-0">
+                          {pg.anexos.map((a, idx) => (
+                            <button key={a} type="button" className="btn-primary text-xs py-1.5 px-3" onClick={() => verComprovante(a)}>
+                              <FileText size={13} /> {pg.anexos.length > 1 ? `Comprovante ${idx + 1}` : "Ver comprovante"}
+                            </button>
+                          ))}
+                        </div>
                       ) : (
                         <span className="text-muted shrink-0">sem anexo</span>
                       )}
                     </div>
                   ))}
-                  {pedidoAberto.anexo_pagamento_url && !pedidoAberto.pagamentos.some((pg) => pg.anexo_url === pedidoAberto.anexo_pagamento_url) && (
+                  {pedidoAberto.anexo_pagamento_url && !pedidoAberto.pagamentos.some((pg) => pg.anexos.includes(pedidoAberto.anexo_pagamento_url)) && (
                     <div className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2 text-xs">
                       <span className="text-muted">Comprovante anexado ao pedido</span>
                       <button type="button" className="btn-primary text-xs py-1.5 px-3 shrink-0" onClick={() => verComprovante(pedidoAberto.anexo_pagamento_url)}>

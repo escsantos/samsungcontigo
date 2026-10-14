@@ -49,13 +49,24 @@ export default function RecebimentosPage() {
     // valor pago de verdade: soma direto da tabela de pagamentos + herdado do pedido pai
     const idsPedidos = (orcs || []).map((o) => o.id);
     const { data: pagamentos } = idsPedidos.length
-      ? await supabase.from("pagamentos_orcamento").select("orcamento_id, valor, anexo_url").in("orcamento_id", idsPedidos)
+      ? await supabase.from("pagamentos_orcamento").select("id, orcamento_id, valor, anexo_url").in("orcamento_id", idsPedidos)
+      : { data: [] };
+    // comprovantes extras (vários por pagamento) ficam em pagamento_anexos — é onde a tela do Estoque grava
+    const idsPag = (pagamentos || []).map((p) => p.id);
+    const pedidoDoPagamento = {};
+    (pagamentos || []).forEach((p) => { pedidoDoPagamento[p.id] = p.orcamento_id; });
+    const { data: extras } = idsPag.length
+      ? await supabase.from("pagamento_anexos").select("pagamento_id, anexo_url").in("pagamento_id", idsPag)
       : { data: [] };
     const pagoPorPedido = {};
     const anexosPorPedido = {};
+    (extras || []).forEach((a) => {
+      const ped = pedidoDoPagamento[a.pagamento_id];
+      if (ped && a.anexo_url) anexosPorPedido[ped] = [...(anexosPorPedido[ped] || []), a.anexo_url];
+    });
     (pagamentos || []).forEach((p) => {
       pagoPorPedido[p.orcamento_id] = (pagoPorPedido[p.orcamento_id] || 0) + Number(p.valor || 0);
-      if (p.anexo_url) anexosPorPedido[p.orcamento_id] = [...(anexosPorPedido[p.orcamento_id] || []), p.anexo_url];
+      if (p.anexo_url && !(anexosPorPedido[p.orcamento_id] || []).includes(p.anexo_url)) anexosPorPedido[p.orcamento_id] = [...(anexosPorPedido[p.orcamento_id] || []), p.anexo_url];
     });
 
     const comValorReal = (orcs || [])
@@ -112,8 +123,18 @@ export default function RecebimentosPage() {
       supabase.from("orcamento_itens").select("*").eq("orcamento_id", pedido.id).order("id"),
       supabase.from("pagamentos_orcamento").select("*").eq("orcamento_id", pedido.id).order("registrado_em")
     ]);
+    // junta o anexo do próprio pagamento com os de pagamento_anexos (tela do Estoque)
+    const idsPag = (pags || []).map((p) => p.id);
+    const { data: extras } = idsPag.length
+      ? await supabase.from("pagamento_anexos").select("pagamento_id, anexo_url").in("pagamento_id", idsPag)
+      : { data: [] };
+    const comAnexos = (pags || []).map((p) => ({
+      ...p,
+      anexos: [...(p.anexo_url ? [p.anexo_url] : []), ...(extras || []).filter((a) => a.pagamento_id === p.id && a.anexo_url).map((a) => a.anexo_url)]
+        .filter((v, i, arr) => arr.indexOf(v) === i)
+    }));
     setItensDetalhe(its || []);
-    setPagamentosDetalhe(pags || []);
+    setPagamentosDetalhe(comAnexos);
     setCarregandoDetalhe(false);
   }
 
@@ -357,16 +378,21 @@ export default function RecebimentosPage() {
                           </td>
                           <td className="px-3 py-2 text-right font-mono font-semibold" style={{ color: "#2C7C6E" }}>{fmtBRL(p.valor)}</td>
                           <td className="px-3 py-2 text-right">
-                            {p.anexo_url ? (
-                              <button
-                                className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg hover:opacity-80"
-                                style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
-                                onClick={() => verComprovante(p.anexo_url)}
-                                title="Ver comprovante"
-                              >
-                                <Paperclip size={12} />
-                                Ver comprovante
-                              </button>
+                            {p.anexos.length > 0 ? (
+                              <div className="inline-flex flex-wrap justify-end gap-1.5">
+                                {p.anexos.map((a, idx) => (
+                                  <button
+                                    key={a}
+                                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg hover:opacity-80"
+                                    style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+                                    onClick={() => verComprovante(a)}
+                                    title="Ver comprovante"
+                                  >
+                                    <Paperclip size={12} />
+                                    {p.anexos.length > 1 ? `Comprovante ${idx + 1}` : "Ver comprovante"}
+                                  </button>
+                                ))}
+                              </div>
                             ) : (
                               <span className="text-muted">—</span>
                             )}

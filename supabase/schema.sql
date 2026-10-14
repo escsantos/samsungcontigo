@@ -2895,3 +2895,49 @@ create policy "vendedor le comprovante do proprio pedido"
       and o.vendedor_id = auth.uid()
     )
   );
+
+-- ================================================================
+-- ANEXOS DE PAGAMENTO — registro da tabela + leitura p/ Financeiro e
+-- Vendedor (14/10/2026)
+-- A tabela pagamento_anexos (vários comprovantes por pagamento, usada na
+-- tela do Estoque) foi criada direto no Supabase e não estava aqui. O
+-- "create table if not exists" abaixo só registra a estrutura — não
+-- altera nada no banco, que já tem a tabela e as policies
+-- "criar/excluir/ver anexos de pagamento".
+-- As duas policies novas SOMAM acesso de leitura (não tiram nada):
+--   * Financeiro lê os anexos dos pedidos das unidades dele (Recebimentos)
+--   * Vendedor lê os anexos dos pedidos em que é o vendedor (Resumo)
+-- Rode este bloco inteiro no SQL Editor do Supabase
+-- ================================================================
+create table if not exists pagamento_anexos (
+  id bigint generated always as identity primary key,
+  pagamento_id bigint not null references pagamentos_orcamento(id) on delete cascade,
+  anexo_url text not null,
+  enviado_por uuid references perfis(id),
+  criado_em timestamptz default now()
+);
+alter table pagamento_anexos enable row level security;
+
+drop policy if exists "financeiro le anexos de pagamento" on pagamento_anexos;
+create policy "financeiro le anexos de pagamento"
+  on pagamento_anexos for select
+  using (
+    eh_financeiro() and exists (
+      select 1 from pagamentos_orcamento p
+      join orcamentos o on o.id = p.orcamento_id
+      where p.id = pagamento_anexos.pagamento_id
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+    )
+  );
+
+drop policy if exists "vendedor le anexos do proprio pedido" on pagamento_anexos;
+create policy "vendedor le anexos do proprio pedido"
+  on pagamento_anexos for select
+  using (
+    exists (
+      select 1 from pagamentos_orcamento p
+      join orcamentos o on o.id = p.orcamento_id
+      where p.id = pagamento_anexos.pagamento_id
+      and o.vendedor_id = auth.uid()
+    )
+  );
