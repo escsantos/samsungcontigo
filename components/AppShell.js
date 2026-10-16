@@ -6,13 +6,13 @@ import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
   ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
   Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2, BarChart3, HandCoins, PackageOpen,
-  ShoppingBag, AlertTriangle, Sparkles
+  ShoppingBag, AlertTriangle, Sparkles, PackageSearch
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
 import { registrarAuditoria } from "../lib/auditoria";
 import { CARGOS_FISCAL, STATUS_POS_LIBERACAO, STATUS_LIBERADO } from "../lib/fiscal";
-import { CARGOS_RELATORIOS, CARGOS_COMISSOES, CARGOS_VISAO_360 } from "../lib/relatorios";
+import { CARGOS_RELATORIOS, CARGOS_COMISSOES, CARGOS_VISAO_360, CARGOS_RELATORIO_PECAS } from "../lib/relatorios";
 import { ORDEM_STATUS } from "../lib/estoque";
 import BotaoTema from "./BotaoTema";
 import SeletorCor, { aplicarAccent } from "./SeletorCor";
@@ -85,7 +85,8 @@ export const GRUPOS_MENU = [
       { href: "/dashboard", label: "Dashboard de Vendas", icone: LayoutDashboard, cor: "#3FA796", descricao: "Cards, gráficos e ranking de vendas por período.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor"] },
       { href: "/clientes", label: "Clientes", icone: Contact, cor: "#8B5CF6", descricao: "Cadastre e gerencie os clientes da loja.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor"] },
       { href: "/orcamentos", label: "Orçamentos", icone: ClipboardList, cor: "#4A90D9", descricao: "Acompanhe pedidos e revise carrinhos enviados pelos clientes.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Cliente"] },
-      { href: "/pagamentos", label: "Pagamentos", icone: Receipt, cor: "#E1614F", descricao: "Busque um pedido pelo número e registre ou ajuste o pagamento.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Estoque"] }
+      { href: "/pagamentos", label: "Pagamentos", icone: Receipt, cor: "#E1614F", descricao: "Busque um pedido pelo número e registre ou ajuste o pagamento.", cargos: ["Administrador", "Diretor", "Gerente", "Supervisor", "Vendedor", "Estoque"] },
+      { href: "/relatorio-pecas", label: "Relatório de Peças", icone: PackageSearch, cor: "#2E7F97", descricao: "Todas as peças dos pedidos, filtradas por vendedor, cliente e status. Exporta para Excel.", cargos: CARGOS_RELATORIO_PECAS }
     ]
   },
   {
