@@ -356,3 +356,16 @@ body {
   50% { opacity: 0; }
 }
 
+
+/* Linha "dando baixa" (16/10/2026): fundo e borda verdes e sai deslizando
+   para a direita — usado em Confirmar Recebimentos e nas validações. */
+@keyframes linha-baixa-saindo {
+  0%   { background: rgba(63,167,150,0.16); outline: 2px solid #3FA796; outline-offset: -2px; transform: translateX(0); opacity: 1; }
+  40%  { background: rgba(63,167,150,0.30); outline: 2px solid #3FA796; outline-offset: -2px; transform: translateX(0); opacity: 1; }
+  100% { background: rgba(63,167,150,0.30); outline: 2px solid #3FA796; outline-offset: -2px; transform: translateX(110%); opacity: 0; }
+}
+.linha-baixa-saindo { animation: linha-baixa-saindo 0.9s ease-in forwards; pointer-events: none; }
+
+/* Validação do gerente no Resumo (16/10/2026) */
+.linha-validada { background: rgba(63,167,150,0.10); outline: 2px solid #3FA796; outline-offset: -2px; }
+.linha-nao-validada { background: rgba(225,97,79,0.10); outline: 2px solid #E1614F; outline-offset: -2px; }

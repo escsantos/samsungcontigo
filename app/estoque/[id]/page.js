@@ -14,7 +14,7 @@ import LinhaDoTempo from "../../../components/LinhaDoTempo";
 import CancelarPedidoModal from "../../../components/CancelarPedidoModal";
 import { registrarAuditoria } from "../../../lib/auditoria";
 import { corCategoria, iconeCategoria } from "../../../lib/categorias";
-import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, BANDEIRAS_CARTAO, PARCELAS_CARTAO, rotuloPagamentoPendente } from "../../../lib/estoque";
+import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, BANDEIRAS_CARTAO, PARCELAS_CARTAO, rotuloPagamentoPendente, textoDataPagamento, pagamentoTravado } from "../../../lib/estoque";
 import { STATUS_ELEGIVEIS_NF, statusNotaFiscal, RESUMO_STATUS_NF } from "../../../lib/fiscal";
 import { parseBRDate } from "../../../lib/classificacao";
 
@@ -1126,7 +1126,7 @@ function EstoquePedidoPageInner() {
 
   async function adicionarPagamentoModal() {
     const valor = parseFloat(valorPagamento);
-    if (!valor || valor <= 0 || !dataPagamento) return;
+    if (!valor || valor <= 0) return;
     const jaPago = pagamentos.reduce((s, p) => s + Number(p.valor), 0) + Number(orcamento?.valor_herdado_pai || 0);
     const restante = Number(orcamento.valor_total) - jaPago;
     if (valor > restante + 0.004) {
@@ -1148,7 +1148,7 @@ function EstoquePedidoPageInner() {
         orcamento_id: id,
         forma_pagamento: formaPagamento,
         valor,
-        data_pagamento: dataPagamento,
+        data_pagamento: null, // a data do pagamento é informada pelo Financeiro na confirmação do recebimento
         bandeira_cartao: ehCartaoCredito ? bandeiraCartao : null,
         parcelas: ehCartaoCredito ? parcelasCartao : null,
         registrado_por: user.id
@@ -1184,7 +1184,6 @@ function EstoquePedidoPageInner() {
         .from("orcamentos")
         .update({
           valor_pago: totalPago,
-          data_pagamento: dataPagamento,
           pagamento_validado_por: user.id,
           pagamento_validado_em: new Date().toISOString(),
           status: "Faturamento Efetuado",
@@ -1235,7 +1234,7 @@ function EstoquePedidoPageInner() {
 
   async function salvarEdicaoPagamento(pagamentoId) {
     const valor = parseFloat(edicaoPagamento.valor);
-    if (!valor || valor <= 0 || !edicaoPagamento.data_pagamento) return;
+    if (!valor || valor <= 0) return;
     setProcessando(true);
     const ehCartaoCredito = edicaoPagamento.forma_pagamento === "Cartão de Crédito";
     await supabase
@@ -1243,7 +1242,6 @@ function EstoquePedidoPageInner() {
       .update({
         forma_pagamento: edicaoPagamento.forma_pagamento,
         valor,
-        data_pagamento: edicaoPagamento.data_pagamento,
         bandeira_cartao: ehCartaoCredito ? edicaoPagamento.bandeira_cartao : null,
         parcelas: ehCartaoCredito ? edicaoPagamento.parcelas : null
       })
@@ -2118,7 +2116,7 @@ function EstoquePedidoPageInner() {
                       <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
                         <th className="text-left px-3 py-2">Forma</th>
                         <th className="text-left px-3 py-2">Cartão</th>
-                        <th className="text-left px-3 py-2">Data</th>
+                        <th className="text-left px-3 py-2">Data pagamento</th>
                         <th className="text-right px-3 py-2">Valor</th>
                         <th className="px-3 py-2"></th>
                       </tr>
@@ -2155,11 +2153,7 @@ function EstoquePedidoPageInner() {
                               )}
                             </td>
                             <td className="px-3 py-2 text-muted">
-                              {emEdicao ? (
-                                <input type="date" className="field-input py-1 text-xs" value={edicaoPagamento.data_pagamento} onChange={(e) => setEdicaoPagamento((a) => ({ ...a, data_pagamento: e.target.value }))} />
-                              ) : (
-                                new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")
-                              )}
+                              {textoDataPagamento(p)}
                             </td>
                             <td className="px-3 py-2 text-right font-mono">
                               {emEdicao ? (
@@ -2175,9 +2169,13 @@ function EstoquePedidoPageInner() {
                                     <Save size={13} />
                                   </button>
                                 ) : (
-                                  <button onClick={() => iniciarEdicaoPagamento(p)} className="text-muted hover:text-ink" title="Editar">
-                                    <Pencil size={13} />
-                                  </button>
+                                  pagamentoTravado(orcamento, perfil) ? (
+                                <span className="text-[10px] text-muted whitespace-nowrap" title="Recebimento já confirmado pelo Financeiro — só Administrador ou Financeiro podem alterar.">🔒 confirmado</span>
+                              ) : (
+                                <button onClick={() => iniciarEdicaoPagamento(p)} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap hover:opacity-80" style={{ background: "var(--accent-soft)", color: "var(--accent)" }} title="Corrigir forma de pagamento / valor">
+                                  <Pencil size={12} /> Editar forma
+                                </button>
+                              )
                                 )}
                                 {(p.anexo_url || (anexosPagamentos[p.id] || []).length > 0) && (
                                   <button onClick={() => setAnexosPagamentoAberto(p)} className="text-muted hover:text-ink inline-flex items-center gap-0.5" title="Ver comprovantes">
@@ -2187,9 +2185,9 @@ function EstoquePedidoPageInner() {
                                     </span>
                                   </button>
                                 )}
-                                <button onClick={() => excluirPagamento(p.id)} className="text-muted hover:text-danger" title="Excluir">
+                                {!pagamentoTravado(orcamento, perfil) && (<button onClick={() => excluirPagamento(p.id)} className="text-muted hover:text-danger" title="Excluir">
                                   <Trash2 size={13} />
-                                </button>
+                                </button>)}
                               </div>
                             </td>
                           </tr>
@@ -2222,10 +2220,6 @@ function EstoquePedidoPageInner() {
                     <div>
                       <label className="field-label">Valor</label>
                       <input type="number" step="0.01" max={faltando > 0 ? faltando.toFixed(2) : undefined} className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="field-label">Data do pagamento</label>
-                      <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
                     </div>
                     <div>
                       <label className="field-label">Comprovante(s) *</label>
@@ -2261,7 +2255,7 @@ function EstoquePedidoPageInner() {
                   </div>
                   <button
                     className="btn-primary mt-5"
-                    disabled={processandoPagamento || !valorPagamento || !dataPagamento || arquivosAnexo.length === 0}
+                    disabled={processandoPagamento || !valorPagamento || arquivosAnexo.length === 0}
                     onClick={adicionarPagamentoModal}
                   >
                     <Plus size={15} />

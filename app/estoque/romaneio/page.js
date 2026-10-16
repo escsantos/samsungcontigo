@@ -134,7 +134,7 @@ function RomaneioConteudo() {
               <p style={{ fontSize: 10.5, fontWeight: 700, color: "#6B7482", margin: "0 0 3px" }}>Pagamento</p>
               {p.pagamentos.map((pag) => (
                 <p key={pag.id} style={{ fontSize: 11, margin: "1px 0" }}>
-                  {pag.forma_pagamento} — {fmtBRL(pag.valor)} em {new Date(pag.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}
+                  {pag.forma_pagamento} — {fmtBRL(pag.valor)}{pag.data_pagamento ? ` em ${new Date(pag.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")}` : ""}
                 </p>
               ))}
             </div>

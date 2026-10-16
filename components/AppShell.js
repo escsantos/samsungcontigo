@@ -6,7 +6,7 @@ import {
   Search, UploadCloud, LogOut, Home, Settings, Users, Bell, Percent, Contact,
   ShoppingCart, ClipboardList, Warehouse, FileBarChart, Briefcase, ChevronDown, LayoutDashboard, Menu, X, Receipt,
   Wallet, ClipboardCheck, Truck, Building2, Database, RotateCcw, ScrollText, FileCheck2, BarChart3, HandCoins, PackageOpen,
-  ShoppingBag, AlertTriangle, Sparkles, PackageSearch
+  ShoppingBag, AlertTriangle, Sparkles, PackageSearch, PanelLeftClose, PanelLeftOpen
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../lib/supabaseClient";
 import { getUnidadeAtiva, setUnidadeAtiva, buscarUnidadesDoUsuario, limparUnidadeAtiva } from "../lib/unidade";
@@ -108,7 +108,8 @@ export const GRUPOS_MENU = [
     itens: [
       { href: "/financeiro", label: "Dashboard Financeiro", icone: Wallet, cor: "#2C7C6E", descricao: "Recebido, pago ao fabricante e margem, com filtro por período.", cargos: ["Administrador", "Financeiro"] },
       { href: "/financeiro/recebimentos", label: "Confirmar Recebimentos", icone: ClipboardCheck, cor: "#3FA796", descricao: "Confirme se o pagamento do cliente realmente entrou.", cargos: ["Administrador", "Financeiro"] },
-      { href: "/financeiro/fornecedor", label: "Pagamento ao Fabricante", icone: Truck, cor: "#E1614F", descricao: "Confirme o pagamento do custo das peças à Samsung, por semana/cliente/data.", cargos: ["Administrador", "Financeiro"] },
+      { href: "/financeiro/fornecedor", label: "Pagamento ao Fabricante", icone: Truck, cor: "#E1614F", descricao: "Semanas validadas pelo gerente, prontas para confirmar o pagamento à Samsung.", cargos: ["Administrador", "Financeiro"] },
+      { href: "/financeiro/fornecedor/confirmados", label: "Fabricante — Confirmados", icone: ClipboardCheck, cor: "#2C7C6E", descricao: "Histórico dos pagamentos ao fabricante, com o selo de quem confirmou.", cargos: ["Administrador", "Financeiro"] },
       { href: "/financeiro/estornos", label: "Estornos", icone: RotateCcw, cor: "#9C5A34", descricao: "Processe solicitações de estorno de pedidos cancelados.", cargos: ["Administrador", "Financeiro"] },
       { href: "/financeiro/contas-a-receber", label: "Contas a Receber", icone: HandCoins, cor: "#B0553B", descricao: "Pedidos já entregues com pagamento em aberto — total e parcial.", cargos: ["Administrador", "Financeiro"] }
     ]
@@ -157,6 +158,18 @@ export default function AppShell({ titulo, children }) {
   const [perfil, setPerfil] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
+  // Menu lateral recolhido (só ícones) no computador — lembrado no navegador (16/10/2026)
+  const [menuRecolhido, setMenuRecolhido] = useState(false);
+  useEffect(() => {
+    try { setMenuRecolhido(localStorage.getItem("menu-recolhido") === "1"); } catch (e) {}
+  }, []);
+  function alternarMenuRecolhido() {
+    setMenuRecolhido((v) => {
+      const novo = !v;
+      try { localStorage.setItem("menu-recolhido", novo ? "1" : "0"); } catch (e) {}
+      return novo;
+    });
+  }
   const [unidadeAtiva, setUnidadeAtivaState] = useState(null);
   const [unidadesDoUsuario, setUnidadesDoUsuario] = useState([]);
   const [alertasFiscais, setAlertasFiscais] = useState(0);
@@ -411,6 +424,9 @@ export default function AppShell({ titulo, children }) {
   }
 
   const podeComprar = ["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente", "Vendedor", "Cliente"].includes(perfil?.cargo);
+  // quando recolhido, esconde os textos só no computador (no celular o menu abre inteiro)
+  const rot = menuRecolhido ? "md:hidden" : "";
+  const centro = menuRecolhido ? "md:justify-center md:px-0" : "";
 
   return (
     <div className="h-screen flex bg-canvas">
@@ -419,14 +435,14 @@ export default function AppShell({ titulo, children }) {
       )}
 
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-64 md:w-60 shrink-0 flex flex-col text-white no-print transform transition-transform duration-200 ${
+        className={`fixed md:static inset-y-0 left-0 z-50 w-64 ${menuRecolhido ? "md:w-16" : "md:w-60"} shrink-0 flex flex-col text-white no-print transform transition-all duration-200 ${
           menuMobileAberto ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0`}
         style={{ background: "var(--sidebar-grad, linear-gradient(180deg, var(--accent-dark), var(--accent)))" }}
       >
-        <div className="px-5 py-6 flex items-center justify-between gap-3">
+        <div className={`px-5 py-6 flex items-center justify-between gap-3 ${menuRecolhido ? "md:px-0 md:justify-center" : ""}`}>
           <div className="flex items-center gap-3">
-            <img src="/logos/grupo-jmacedo.png" alt="Grupo J.Macedo" className="h-9 w-auto brightness-0 invert opacity-90" />
+            <img src="/logos/grupo-jmacedo.png" alt="Grupo J.Macedo" className={`h-9 w-auto brightness-0 invert opacity-90 ${rot}`} />
             <Link
               href="/inicio"
               aria-label="Início"
@@ -445,7 +461,7 @@ export default function AppShell({ titulo, children }) {
           </button>
         </div>
 
-        <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
+        <nav className={`flex-1 px-3 space-y-1 overflow-y-auto ${menuRecolhido ? "md:px-2" : ""}`}>
           {ITENS_TOPO.filter((item) => !item.cargos || item.cargos.includes(perfil?.cargo)).map((item) => {
             const Icone = item.icone;
             const ativo = pathname === item.href;
@@ -453,12 +469,13 @@ export default function AppShell({ titulo, children }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
+                title={item.label}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${centro} ${
                   ativo ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                <Icone size={17} />
-                {item.label}
+                <Icone size={17} className="shrink-0" />
+                <span className={rot}>{item.label}</span>
               </Link>
             );
           })}
@@ -474,22 +491,23 @@ export default function AppShell({ titulo, children }) {
               <div key={grupo.id} className="pt-1">
                 <Link
                   href={grupo.href}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
+                  title={grupo.label}
+                  className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${centro} ${
                     grupoAtivo ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
                   }`}
                 >
-                  <GrupoIcone size={17} />
-                  <span className="flex-1 text-left">{grupo.label}</span>
+                  <GrupoIcone size={17} className="shrink-0" />
+                  <span className={`flex-1 text-left ${rot}`}>{grupo.label}</span>
                   {grupo.id === "fiscal" && alertasFiscais > 0 && (
-                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                    <span className={`min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center shrink-0 ${menuRecolhido ? "md:absolute md:top-0.5 md:right-0.5" : ""}`}>
                       {alertasFiscais > 9 ? "9+" : alertasFiscais}
                     </span>
                   )}
-                  <ChevronDown size={14} className="transition-transform" style={{ transform: aberto ? "rotate(180deg)" : "rotate(0deg)" }} />
+                  <ChevronDown size={14} className={`transition-transform ${rot}`} style={{ transform: aberto ? "rotate(180deg)" : "rotate(0deg)" }} />
                 </Link>
 
                 {aberto && (
-                  <div className="mt-0.5 space-y-0.5">
+                  <div className={`mt-0.5 space-y-0.5 ${rot}`}>
                     {itensVisiveis.map((item) => {
                       const Icone = item.icone;
                       const ativo = pathname === item.href;
@@ -515,10 +533,11 @@ export default function AppShell({ titulo, children }) {
 
         <button
           onClick={sair}
-          className="mx-3 mb-5 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition"
+          title="Sair"
+          className={`mx-3 mb-5 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition ${menuRecolhido ? "md:mx-2 md:justify-center md:px-0" : ""}`}
         >
-          <LogOut size={17} />
-          Sair
+          <LogOut size={17} className="shrink-0" />
+          <span className={rot}>Sair</span>
         </button>
       </aside>
 
@@ -531,6 +550,14 @@ export default function AppShell({ titulo, children }) {
               aria-label="Abrir menu"
             >
               <Menu size={17} />
+            </button>
+            <button
+              onClick={alternarMenuRecolhido}
+              className="hidden md:flex w-9 h-9 shrink-0 items-center justify-center rounded-full border border-line text-muted hover:text-ink"
+              aria-label={menuRecolhido ? "Expandir menu" : "Recolher menu"}
+              title={menuRecolhido ? "Expandir menu" : "Recolher menu (mais espaço para a tela)"}
+            >
+              {menuRecolhido ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
             </button>
             <SininhoNotificacoes visivel={["Administrador", "Diretor", "Gerente", "Supervisor", "JM3 Cliente"].includes(perfil?.cargo)} />
             <h1 className="font-display font-semibold text-[15px] text-ink truncate">{titulo}</h1>

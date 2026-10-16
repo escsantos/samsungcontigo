@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, ShieldAlert, Receipt, Plus, Trash2, Pencil, Save, ExternalLink, Paperclip, Check, RefreshCw, Hash, Contact, Wrench, X, ChevronRight } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
-import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, BANDEIRAS_CARTAO, PARCELAS_CARTAO } from "../../lib/estoque";
+import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, BANDEIRAS_CARTAO, PARCELAS_CARTAO, textoDataPagamento, pagamentoTravado } from "../../lib/estoque";
 import { getUnidadeAtiva } from "../../lib/unidade";
 import { registrarAuditoria } from "../../lib/auditoria";
 
@@ -146,7 +146,7 @@ export default function PagamentosPage() {
 
   async function adicionarPagamento() {
     const valor = parseFloat(valorPagamento);
-    if (!valor || valor <= 0 || !dataPagamento || !orcamento) return;
+    if (!valor || valor <= 0 || !orcamento) return;
     if (valor > faltando + 0.004) {
       setErro(`O valor não pode ser maior que o restante do pedido (${fmtBRL(faltando)}).`);
       return;
@@ -173,7 +173,7 @@ export default function PagamentosPage() {
       orcamento_id: orcamento.id,
       forma_pagamento: formaPagamento,
       valor,
-      data_pagamento: dataPagamento,
+      data_pagamento: null, // a data do pagamento é informada pelo Financeiro na confirmação do recebimento
       anexo_url: anexoPath,
       bandeira_cartao: ehCartaoCredito ? bandeiraCartao : null,
       parcelas: ehCartaoCredito ? parcelasCartao : null,
@@ -200,7 +200,7 @@ export default function PagamentosPage() {
       entidadeId: orcamento.id,
       descricao: `Pagamento registrado no pedido #${orcamento.numero_unidade}: ${formaPagamento} — ${fmtBRL(valor)}.`
     });
-    setPagamentoConfirmado({ forma: formaPagamento, valor, data: dataPagamento });
+    setPagamentoConfirmado({ forma: formaPagamento, valor });
     recarregarPedido();
   }
 
@@ -240,7 +240,7 @@ export default function PagamentosPage() {
 
   async function salvarEdicaoPagamento(pagamentoId) {
     const valor = parseFloat(edicaoPagamento.valor);
-    if (!valor || valor <= 0 || !edicaoPagamento.data_pagamento) return;
+    if (!valor || valor <= 0) return;
     setProcessando(true);
     const ehCartaoCredito = edicaoPagamento.forma_pagamento === "Cartão de Crédito";
     await supabase
@@ -248,7 +248,6 @@ export default function PagamentosPage() {
       .update({
         forma_pagamento: edicaoPagamento.forma_pagamento,
         valor,
-        data_pagamento: edicaoPagamento.data_pagamento,
         bandeira_cartao: ehCartaoCredito ? edicaoPagamento.bandeira_cartao : null,
         parcelas: ehCartaoCredito ? edicaoPagamento.parcelas : null
       })
@@ -454,7 +453,7 @@ export default function PagamentosPage() {
                     <tr className="bg-canvas border-b border-line text-[10px] uppercase tracking-wide text-muted font-mono">
                       <th className="text-left px-3 py-2">Forma</th>
                       <th className="text-left px-3 py-2">Cartão</th>
-                      <th className="text-left px-3 py-2">Data</th>
+                      <th className="text-left px-3 py-2">Data pagamento</th>
                       <th className="text-right px-3 py-2">Valor</th>
                       <th className="px-3 py-2"></th>
                     </tr>
@@ -491,11 +490,7 @@ export default function PagamentosPage() {
                             )}
                           </td>
                           <td className="px-3 py-2 text-muted">
-                            {emEdicao ? (
-                              <input type="date" className="field-input py-1 text-xs" value={edicaoPagamento.data_pagamento} onChange={(e) => setEdicaoPagamento((a) => ({ ...a, data_pagamento: e.target.value }))} />
-                            ) : (
-                              new Date(p.data_pagamento + "T00:00:00").toLocaleDateString("pt-BR")
-                            )}
+                            {textoDataPagamento(p)}
                           </td>
                           <td className="px-3 py-2 text-right font-mono">
                             {emEdicao ? (
@@ -511,18 +506,22 @@ export default function PagamentosPage() {
                                   <Save size={13} />
                                 </button>
                               ) : (
-                                <button onClick={() => iniciarEdicaoPagamento(p)} className="text-muted hover:text-ink" title="Editar">
-                                  <Pencil size={13} />
+                                pagamentoTravado(orcamento, perfil) ? (
+                                <span className="text-[10px] text-muted whitespace-nowrap" title="Recebimento já confirmado pelo Financeiro — só Administrador ou Financeiro podem alterar.">🔒 confirmado</span>
+                              ) : (
+                                <button onClick={() => iniciarEdicaoPagamento(p)} className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap hover:opacity-80" style={{ background: "var(--accent-soft)", color: "var(--accent)" }} title="Corrigir forma de pagamento / valor">
+                                  <Pencil size={12} /> Editar forma
                                 </button>
+                              )
                               )}
                               {p.anexo_url && (
                                 <button onClick={() => verComprovante(p.anexo_url)} className="text-muted hover:text-ink" title="Ver comprovante">
                                   <ExternalLink size={13} />
                                 </button>
                               )}
-                              <button onClick={() => excluirPagamento(p.id)} className="text-muted hover:text-danger" title="Excluir">
+                              {!pagamentoTravado(orcamento, perfil) && (<button onClick={() => excluirPagamento(p.id)} className="text-muted hover:text-danger" title="Excluir">
                                 <Trash2 size={13} />
-                              </button>
+                              </button>)}
                             </div>
                           </td>
                         </tr>
@@ -539,7 +538,7 @@ export default function PagamentosPage() {
                 <div className="flex items-center gap-2 text-sm">
                   <Check size={16} className="shrink-0" />
                   <span>
-                    Pagamento confirmado: <b>{pagamentoConfirmado.forma}</b> — {fmtBRL(pagamentoConfirmado.valor)} em {new Date(pagamentoConfirmado.data + "T00:00:00").toLocaleDateString("pt-BR")}
+                    Pagamento confirmado: <b>{pagamentoConfirmado.forma}</b> — {fmtBRL(pagamentoConfirmado.valor)} — a data do pagamento será informada pelo Financeiro na confirmação do recebimento.
                   </span>
                 </div>
                 <button className="btn-secondary text-xs py-1.5 px-3 shrink-0" onClick={novoLancamento}>
@@ -566,10 +565,6 @@ export default function PagamentosPage() {
                     <input type="number" step="0.01" max={faltando > 0 ? faltando.toFixed(2) : undefined} className="field-input" value={valorPagamento} onChange={(e) => setValorPagamento(e.target.value)} />
                   </div>
                   <div>
-                    <label className="field-label">Data</label>
-                    <input type="date" className="field-input" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
-                  </div>
-                  <div>
                     <label className="field-label">Anexo *</label>
                     <label className={`flex items-center gap-2 border rounded-[10px] px-3.5 py-2.5 cursor-pointer text-sm truncate ${arquivoAnexo ? "border-line text-muted hover:border-brand-400" : "border-danger text-danger"}`}>
                       <Paperclip size={14} className="shrink-0" />
@@ -594,7 +589,7 @@ export default function PagamentosPage() {
                     </>
                   )}
                 </div>
-                <button className="btn-primary mt-4" disabled={processando || !valorPagamento || !dataPagamento || !arquivoAnexo} onClick={adicionarPagamento}>
+                <button className="btn-primary mt-4" disabled={processando || !valorPagamento || !arquivoAnexo} onClick={adicionarPagamento}>
                   <Plus size={15} />
                   {processando ? "Salvando..." : "Confirmar lançamento"}
                 </button>

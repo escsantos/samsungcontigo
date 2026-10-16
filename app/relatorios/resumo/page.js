@@ -1,15 +1,18 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar, Wallet, Package, Landmark, TrendingUp, Percent, PiggyBank, Paperclip, FileText } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, ShieldAlert, Calendar, Wallet, Package, Landmark, TrendingUp, Percent, PiggyBank, Paperclip, FileText, CheckCircle2, XCircle, RotateCcw, ShieldCheck, Lock } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import CardStat from "../../../components/CardStat";
+import MultiSelect from "../../../components/MultiSelect";
+import { registrarAuditoria } from "../../../lib/auditoria";
 import { getUnidadeAtiva } from "../../../lib/unidade";
 import {
   CARGOS_RELATORIOS,
   CARGOS_TODOS_VENDEDORES,
+  CARGOS_VALIDAR_RESUMO,
   inicioSemana,
   fimSemana,
   rotuloSemana,
@@ -48,11 +51,18 @@ export default function RelatorioResumoPage() {
   const [mesSelecionado, setMesSelecionado] = useState(mesAtualStr());
   const [semanaRef, setSemanaRef] = useState(() => new Date());
   const [vendedores, setVendedores] = useState([]);
-  const [vendedorFiltro, setVendedorFiltro] = useState("");
+  // Filtros com várias opções (16/10/2026) — vazio = todos
+  const [vendedoresSel, setVendedoresSel] = useState([]);
   // Filtro por cliente (pedido 13/10/2026). Feito aqui no navegador, em
   // cima dos pedidos já carregados do período/vendedor — a lista só mostra
   // clientes que têm pedido entregue no período escolhido.
-  const [clienteFiltro, setClienteFiltro] = useState("");
+  const [clientesSel, setClientesSel] = useState([]);
+  // Validação do gerente (16/10/2026)
+  const [recarregar, setRecarregar] = useState(0);
+  const [processandoValidacao, setProcessandoValidacao] = useState(false);
+  const [erroValidacao, setErroValidacao] = useState("");
+  const [modalNaoValidar, setModalNaoValidar] = useState(null); // { ids, rotulo }
+  const [justificativa, setJustificativa] = useState("");
   const [pedidos, setPedidos] = useState([]);
   const [itensPorPedido, setItensPorPedido] = useState({});
   const [pedidoAberto, setPedidoAberto] = useState(null);
@@ -62,6 +72,7 @@ export default function RelatorioResumoPage() {
 
   const ehVendedor = perfil?.cargo === "Vendedor";
   const podeEscolherVendedor = CARGOS_TODOS_VENDEDORES.includes(perfil?.cargo);
+  const podeValidar = CARGOS_VALIDAR_RESUMO.includes(perfil?.cargo);
 
   useEffect(() => {
     getPerfilAtual().then(setPerfil);
@@ -104,7 +115,7 @@ export default function RelatorioResumoPage() {
 
       let query = supabase
         .from("orcamentos")
-        .select("id, numero_unidade, valor_total, imposto_total, vendedor_id, entregue_em, nota_fiscal_numero, anexo_pagamento_url, cliente_id, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome, comissao_percentual)")
+        .select("id, numero_unidade, valor_total, imposto_total, vendedor_id, entregue_em, nota_fiscal_numero, anexo_pagamento_url, cliente_id, validacao_gerente, validacao_gerente_justificativa, validacao_gerente_em, validador:perfis!orcamentos_validacao_gerente_por_fkey(nome), clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome, comissao_percentual)")
         .eq("unidade_id", unidadeAtiva.id)
         .eq("entregue", true)
         .gte("entregue_em", periodo.de.toISOString())
@@ -113,8 +124,6 @@ export default function RelatorioResumoPage() {
 
       if (ehVendedor) {
         query = query.eq("vendedor_id", perfil.id);
-      } else if (vendedorFiltro) {
-        query = query.eq("vendedor_id", vendedorFiltro);
       }
 
       const { data } = await query;
@@ -125,7 +134,7 @@ export default function RelatorioResumoPage() {
       if (ids.length > 0) {
         const { data: itens } = await supabase
           .from("orcamento_itens")
-          .select("orcamento_id, codigo, descricao_resumida, categoria, qtd, custo_real, venda_total")
+          .select("orcamento_id, codigo, descricao_resumida, categoria, qtd, custo_real, venda_total, custo_pago_fabricante")
           .in("orcamento_id", ids);
         const mapa = {};
         (itens || []).forEach((i) => {
@@ -161,28 +170,38 @@ export default function RelatorioResumoPage() {
       }
       setCarregando(false);
     })();
-  }, [perfil, periodo, vendedorFiltro, ehVendedor]);
+  }, [perfil, periodo, ehVendedor, recarregar]);
+
+  const vendedoresDoPeriodo = useMemo(() => {
+    const mapa = new Map();
+    pedidos.forEach((o) => {
+      if (o.vendedor_id && !mapa.has(o.vendedor_id)) mapa.set(o.vendedor_id, o.perfis?.nome || "—");
+    });
+    return [...mapa.entries()].map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [pedidos]);
 
   const clientesDoPeriodo = useMemo(() => {
     const mapa = new Map();
     pedidos.forEach((o) => {
+      if (vendedoresSel.length > 0 && !vendedoresSel.includes(o.vendedor_id)) return;
       if (o.cliente_id != null && !mapa.has(String(o.cliente_id))) mapa.set(String(o.cliente_id), o.clientes?.nome || "—");
     });
     return [...mapa.entries()]
       .map(([id, nome]) => ({ id, nome }))
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [pedidos]);
+  }, [pedidos, vendedoresSel]);
 
-  // Se trocar o período/vendedor e o cliente escolhido não tiver pedido
-  // nele, volta pra "Todos os clientes" em vez de mostrar a tela vazia.
+  // Ao trocar o período, tira da seleção quem não tem pedido nele.
   useEffect(() => {
-    if (carregando || !clienteFiltro) return;
-    if (!clientesDoPeriodo.some((c) => c.id === clienteFiltro)) setClienteFiltro("");
-  }, [clientesDoPeriodo, clienteFiltro, carregando]);
+    if (carregando) return;
+    setVendedoresSel((sel) => { const n = sel.filter((id) => vendedoresDoPeriodo.some((v) => v.id === id)); return n.length === sel.length ? sel : n; });
+    setClientesSel((sel) => { const n = sel.filter((id) => clientesDoPeriodo.some((c) => c.id === id)); return n.length === sel.length ? sel : n; });
+  }, [vendedoresDoPeriodo, clientesDoPeriodo, carregando]);
 
   const linhas = useMemo(() => {
     return pedidos
-      .filter((o) => !clienteFiltro || String(o.cliente_id) === clienteFiltro)
+      .filter((o) => vendedoresSel.length === 0 || vendedoresSel.includes(o.vendedor_id))
+      .filter((o) => clientesSel.length === 0 || clientesSel.includes(String(o.cliente_id)))
       .map((o) => {
       const itens = itensPorPedido[o.id] || [];
       const custoPecas = itens.reduce((s, i) => s + Number(i.custo_real || 0) * Number(i.qtd || 0), 0);
@@ -201,6 +220,7 @@ export default function RelatorioResumoPage() {
       ];
       return {
         ...o,
+        pagoFabricante: itens.some((i) => i.custo_pago_fabricante),
         pagamentos,
         anexos,
         valorPago: Number(o.valor_total || 0),
@@ -210,7 +230,48 @@ export default function RelatorioResumoPage() {
         ...calc
       };
     });
-  }, [pedidos, itensPorPedido, pagamentosPorPedido, clienteFiltro]);
+  }, [pedidos, itensPorPedido, pagamentosPorPedido, vendedoresSel, clientesSel]);
+
+  // ---- Validação do gerente (só no modo Semanal) ----
+  const statusSemana = useMemo(() => {
+    const total = pedidos.length; // todos os pedidos entregues da semana (sem filtro)
+    const validados = pedidos.filter((o) => o.validacao_gerente === "validado").length;
+    const naoValidados = pedidos.filter((o) => o.validacao_gerente === "nao_validado").length;
+    const pendentes = total - validados - naoValidados;
+    const paga = pedidos.some((o) => (itensPorPedido[o.id] || []).some((i) => i.custo_pago_fabricante));
+    return { total, validados, naoValidados, pendentes, fechada: total > 0 && pendentes === 0, paga };
+  }, [pedidos, itensPorPedido]);
+  const pendentesDoFiltro = linhas.filter((l) => !l.validacao_gerente && !l.pagoFabricante);
+  const filtroAtivo = vendedoresSel.length > 0 || clientesSel.length > 0;
+
+  async function aplicarValidacao(ids, acao, justif = null) {
+    if (!ids.length) return false;
+    setProcessandoValidacao(true);
+    setErroValidacao("");
+    const { error } = await supabase.rpc("validar_pedidos_resumo", { p_ids: ids, p_acao: acao, p_justificativa: justif });
+    if (error) {
+      setProcessandoValidacao(false);
+      setErroValidacao("Não foi possível salvar a validação: " + error.message);
+      return false;
+    }
+    const nums = pedidos.filter((o) => ids.includes(o.id)).map((o) => `#${o.numero_unidade}`).join(", ");
+    const textoAcao = acao === "validado" ? "validado(s)" : acao === "nao_validado" ? "NÃO validado(s)" : "com validação desfeita";
+    await registrarAuditoria({
+      tipoEvento: "status",
+      entidade: "orcamentos",
+      entidadeId: ids.length === 1 ? ids[0] : null,
+      descricao: `Resumo ${rotuloSemana(semanaRef)}: pedido(s) ${nums} ${textoAcao} pelo gerente${justif ? ` — justificativa: ${justif}` : ""}.`
+    });
+    setProcessandoValidacao(false);
+    setRecarregar((n) => n + 1);
+    return true;
+  }
+
+  async function confirmarNaoValidar() {
+    if (!justificativa.trim()) { setErroValidacao("Escreva a justificativa."); return; }
+    const ok = await aplicarValidacao(modalNaoValidar.ids, "nao_validado", justificativa.trim());
+    if (ok) { setModalNaoValidar(null); setJustificativa(""); }
+  }
 
   async function verComprovante(caminho) {
     setErroAnexo("");
@@ -252,7 +313,9 @@ export default function RelatorioResumoPage() {
       "Margem Bruta (R$)": Number(l.margemBruta.toFixed(2)),
       "Comissão Vendedor (R$)": Number(l.comissaoVendedor.toFixed(2)),
       "Margem Líquida (R$)": Number(l.margemLiquida.toFixed(2)),
-      "Lucro Líquido (%)": Number(l.lucroLiquidoPct.toFixed(1))
+      "Lucro Líquido (%)": Number(l.lucroLiquidoPct.toFixed(1)),
+      "Validação gerente": l.validacao_gerente === "validado" ? "Validado" : l.validacao_gerente === "nao_validado" ? "Não validado" : "Pendente",
+      "Justificativa": l.validacao_gerente_justificativa || ""
     }));
     const ws = XLSX.utils.json_to_sheet(linhasExport);
     ws["!cols"] = [{ wch: 10 }, { wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 13 }, { wch: 15 }, { wch: 15 }, { wch: 13 }, { wch: 15 }, { wch: 17 }, { wch: 15 }, { wch: 13 }];
@@ -291,7 +354,7 @@ export default function RelatorioResumoPage() {
       </div>
 
       <div className="card p-4 mb-4">
-        <div className="flex items-center gap-2 flex-wrap mb-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <button className={`chip ${tipoPeriodo === "mensal" ? "chip-active" : ""}`} onClick={() => setTipoPeriodo("mensal")}>Mensal</button>
           <button className={`chip ${tipoPeriodo === "semanal" ? "chip-active" : ""}`} onClick={() => setTipoPeriodo("semanal")}>Semanal</button>
 
@@ -329,26 +392,27 @@ export default function RelatorioResumoPage() {
               </button>
             </div>
           )}
+
+          <span className="hidden md:block w-px h-6 bg-line mx-1" />
+          {podeEscolherVendedor && (
+            <MultiSelect
+              opcoes={vendedoresDoPeriodo}
+              valor={vendedoresSel}
+              onChange={setVendedoresSel}
+              rotuloTodos="Todos os vendedores"
+              rotuloItem="vendedores"
+            />
+          )}
+          <MultiSelect
+            opcoes={clientesDoPeriodo}
+            valor={clientesSel}
+            onChange={setClientesSel}
+            rotuloTodos="Todos os clientes"
+            rotuloItem="clientes"
+            largura="w-64"
+          />
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          {podeEscolherVendedor && (
-            <div className="w-full max-w-xs">
-              <label className="field-label">Vendedor</label>
-              <select className="field-input" value={vendedorFiltro} onChange={(e) => setVendedorFiltro(e.target.value)}>
-                <option value="">Todos os vendedores</option>
-                {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}
-              </select>
-            </div>
-          )}
-          <div className="w-full max-w-xs">
-            <label className="field-label">Cliente</label>
-            <select className="field-input" value={clienteFiltro} onChange={(e) => setClienteFiltro(e.target.value)}>
-              <option value="">Todos os clientes</option>
-              {clientesDoPeriodo.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
-          </div>
-        </div>
       </div>
 
       {tipoPeriodo === "mensal" && (
@@ -400,6 +464,42 @@ export default function RelatorioResumoPage() {
         />
       </div>
 
+      {tipoPeriodo === "semanal" && !carregando && statusSemana.total > 0 && (
+        <div
+          className="card p-4 mb-4 flex flex-wrap items-center justify-between gap-3"
+          style={statusSemana.fechada ? { outline: "2px solid #3FA796", outlineOffset: "-2px" } : undefined}
+        >
+          <div className="flex items-center gap-3">
+            <ShieldCheck size={20} style={{ color: statusSemana.fechada ? "#3FA796" : "#C2801F" }} />
+            <div>
+              <p className="text-sm font-semibold">
+                Validação do gerente — {rotuloSemana(semanaRef)}
+                {statusSemana.paga ? (
+                  <span className="ml-2 text-[11px] font-mono px-2 py-0.5 rounded" style={{ background: "rgba(63,167,150,0.14)", color: "#2C7C6E" }}><Lock size={10} className="inline -mt-0.5" /> paga ao fabricante</span>
+                ) : statusSemana.fechada ? (
+                  <span className="ml-2 text-[11px] font-mono px-2 py-0.5 rounded" style={{ background: "rgba(63,167,150,0.14)", color: "#2C7C6E" }}>semana fechada — liberada para o Pagamento ao Fabricante</span>
+                ) : (
+                  <span className="ml-2 text-[11px] font-mono px-2 py-0.5 rounded" style={{ background: "rgba(232,163,61,0.16)", color: "#B5771C" }}>faltam {statusSemana.pendentes} pedido(s)</span>
+                )}
+              </p>
+              <p className="text-xs text-muted">
+                {statusSemana.total} pedido(s) na semana · <span style={{ color: "#2C7C6E" }}>{statusSemana.validados} validado(s)</span> · <span style={{ color: "#E1614F" }}>{statusSemana.naoValidados} não validado(s)</span> · {statusSemana.pendentes} pendente(s)
+              </p>
+            </div>
+          </div>
+          {podeValidar && pendentesDoFiltro.length > 0 && (
+            <button className="btn-primary text-xs py-2" disabled={processandoValidacao} onClick={() => aplicarValidacao(pendentesDoFiltro.map((l) => l.id), "validado")}>
+              <CheckCircle2 size={14} />
+              {filtroAtivo ? `Validar os ${pendentesDoFiltro.length} do filtro` : `Validar todos da semana (${pendentesDoFiltro.length})`}
+            </button>
+          )}
+          {erroValidacao && !modalNaoValidar && <p className="w-full text-xs text-danger">{erroValidacao}</p>}
+        </div>
+      )}
+      {tipoPeriodo === "mensal" && podeValidar && (
+        <p className="text-xs text-muted mb-3">Para validar os pedidos, use o modo <b>Semanal</b>.</p>
+      )}
+
       <div className="card overflow-hidden">
         {carregando ? (
           <p className="text-sm text-muted p-6">Carregando...</p>
@@ -421,13 +521,14 @@ export default function RelatorioResumoPage() {
                   <th className="text-right px-3 py-2.5 whitespace-nowrap">Comissão Vendedor</th>
                   <th className="text-right px-3 py-2.5 whitespace-nowrap">Margem Líquida</th>
                   <th className="text-right px-3 py-2.5 whitespace-nowrap">Lucro Líquido</th>
+                  <th className="text-center px-3 py-2.5 whitespace-nowrap">Validação</th>
                 </tr>
               </thead>
               <tbody>
                 {linhas.map((l) => (
                   <tr
                     key={l.id}
-                    className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
+                    className={`border-b border-line last:border-0 cursor-pointer ${l.validacao_gerente === "validado" ? "linha-validada" : l.validacao_gerente === "nao_validado" ? "linha-nao-validada" : "hover:bg-canvas"}`}
                     onClick={() => { setErroAnexo(""); setPedidoAberto(l); }}
                   >
                     <td className="px-3 py-2.5 font-mono text-muted whitespace-nowrap">
@@ -445,7 +546,14 @@ export default function RelatorioResumoPage() {
                     <td className="px-3 py-2.5 font-mono whitespace-nowrap">
                       {l.nota_fiscal_numero || <span className="text-muted">—</span>}
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">{l.clientes?.nome || "—"}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {l.clientes?.nome || "—"}
+                      {l.validacao_gerente === "nao_validado" && l.validacao_gerente_justificativa && (
+                        <span className="block text-[11px] whitespace-normal max-w-[280px]" style={{ color: "#E1614F" }} title={l.validacao_gerente_justificativa}>
+                          Não validado: {l.validacao_gerente_justificativa}
+                        </span>
+                      )}
+                    </td>
                     {podeEscolherVendedor && (
                       <td className="px-3 py-2.5 whitespace-nowrap text-muted">
                         {l.perfis?.nome || "—"}
@@ -463,6 +571,35 @@ export default function RelatorioResumoPage() {
                     <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap">{fmtBRL(l.comissaoVendedor)}</td>
                     <td className="px-3 py-2.5 text-right font-mono font-semibold whitespace-nowrap" style={{ color: "#2C7C6E" }}>{fmtBRL(l.margemLiquida)}</td>
                     <td className="px-3 py-2.5 text-right font-mono whitespace-nowrap">{fmtPct(l.lucroLiquidoPct)}</td>
+                    <td className="px-3 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {l.validacao_gerente === "validado" ? (
+                        <span className="text-[10px] font-mono font-bold" style={{ color: "#2C7C6E" }} title={`${l.validador?.nome ? `por ${l.validador.nome}` : ""}${l.validacao_gerente_em ? ` em ${new Date(l.validacao_gerente_em).toLocaleString("pt-BR")}` : ""}`}>✓ VALIDADO</span>
+                      ) : l.validacao_gerente === "nao_validado" ? (
+                        <span className="text-[10px] font-mono font-bold" style={{ color: "#E1614F" }} title={`${l.validador?.nome ? `por ${l.validador.nome}` : ""}${l.validacao_gerente_em ? ` em ${new Date(l.validacao_gerente_em).toLocaleString("pt-BR")}` : ""}`}>✗ NÃO VALIDADO</span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-muted">pendente</span>
+                      )}
+                      {podeValidar && tipoPeriodo === "semanal" && !l.pagoFabricante && (
+                        <span className="ml-2 inline-flex items-center gap-1 align-middle">
+                          {l.validacao_gerente !== "validado" && (
+                            <button title="Validar" disabled={processandoValidacao} onClick={() => aplicarValidacao([l.id], "validado")} className="hover:opacity-70" style={{ color: "#2C7C6E" }}>
+                              <CheckCircle2 size={16} />
+                            </button>
+                          )}
+                          {l.validacao_gerente !== "nao_validado" && (
+                            <button title="Não validar (com justificativa)" disabled={processandoValidacao} onClick={() => { setErroValidacao(""); setJustificativa(""); setModalNaoValidar({ ids: [l.id], rotulo: `#${l.numero_unidade} — ${l.clientes?.nome || ""}` }); }} className="hover:opacity-70" style={{ color: "#E1614F" }}>
+                              <XCircle size={16} />
+                            </button>
+                          )}
+                          {l.validacao_gerente && (
+                            <button title="Desfazer (volta para pendente)" disabled={processandoValidacao} onClick={() => aplicarValidacao([l.id], "limpar")} className="text-muted hover:text-ink">
+                              <RotateCcw size={14} />
+                            </button>
+                          )}
+                        </span>
+                      )}
+                      {l.pagoFabricante && <span title="Já pago ao fabricante"><Lock size={12} className="inline ml-1.5 text-muted" /></span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -558,6 +695,30 @@ export default function RelatorioResumoPage() {
                 </div>
               )}
               {erroAnexo && <p className="text-xs text-danger mt-2">{erroAnexo}</p>}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!modalNaoValidar}
+        onClose={() => !processandoValidacao && setModalNaoValidar(null)}
+        title="Não validar pedido"
+      >
+        {modalNaoValidar && (
+          <div className="space-y-3">
+            <p className="text-sm">O pedido <b>{modalNaoValidar.rotulo}</b> ficará marcado em vermelho e <b>não</b> vai para o Pagamento ao Fabricante.</p>
+            <div>
+              <label className="field-label">Justificativa *</label>
+              <textarea className="field-input" rows={3} value={justificativa} onChange={(e) => setJustificativa(e.target.value)} placeholder="Explique por que este pedido não foi validado" />
+            </div>
+            {erroValidacao && <p className="text-sm text-danger">{erroValidacao}</p>}
+            <div className="flex justify-end gap-2">
+              <button className="btn-secondary" onClick={() => setModalNaoValidar(null)} disabled={processandoValidacao}>Cancelar</button>
+              <button className="btn-primary" style={{ background: "#E1614F" }} onClick={confirmarNaoValidar} disabled={processandoValidacao}>
+                <XCircle size={15} />
+                {processandoValidacao ? "Salvando..." : "Confirmar não validação"}
+              </button>
             </div>
           </div>
         )}
