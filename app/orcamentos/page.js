@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, ChevronRight, X, Hash, Contact, Wrench } from "lucide-react";
+import { Search, ChevronRight, X, Hash, Contact, Wrench, Paperclip, FileText } from "lucide-react";
 import { getPerfilAtual, supabase } from "../../lib/supabaseClient";
 import AppShell from "../../components/AppShell";
+import Modal from "../../components/Modal";
 import { CORES_STATUS, ICONES_STATUS, rotuloPagamentoPendente } from "../../lib/estoque";
 import { getUnidadeAtiva } from "../../lib/unidade";
 
@@ -24,6 +25,10 @@ export default function OrcamentosPage() {
   const [perfil, setPerfil] = useState(undefined);
   const [lista, setLista] = useState([]);
   const [pagosPorPedido, setPagosPorPedido] = useState({});
+  // Comprovantes anexados em cada pedido (16/10/2026)
+  const [anexosPorPedido, setAnexosPorPedido] = useState({});
+  const [anexosAbertos, setAnexosAbertos] = useState(null); // { pedido, anexos }
+  const [erroAnexo, setErroAnexo] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [numeroBusca, setNumeroBusca] = useState("");
   const [resultadoBusca, setResultadoBusca] = useState(undefined); // undefined = não buscou ainda
@@ -58,8 +63,59 @@ export default function OrcamentosPage() {
         setPagosPorPedido(soma);
       }
       setCarregando(false);
+      carregarAnexos(data || []);
     })();
   }, []);
+
+  // Junta os comprovantes de cada pedido: anexo do próprio pagamento,
+  // anexos extras (pagamento_anexos, tela do Estoque) e o anexo antigo do pedido.
+  async function carregarAnexos(pedidos) {
+    const ids = pedidos.map((o) => o.id);
+    const mapa = {};
+    const add = (pedidoId, item) => {
+      const lista = mapa[pedidoId] || (mapa[pedidoId] = []);
+      if (!lista.some((x) => x.caminho === item.caminho)) lista.push(item);
+    };
+    for (let k = 0; k < ids.length; k += 150) {
+      const lote = ids.slice(k, k + 150);
+      const { data: pags } = await supabase
+        .from("pagamentos_orcamento")
+        .select("id, orcamento_id, forma_pagamento, valor, anexo_url")
+        .in("orcamento_id", lote);
+      const pedidoDoPag = {};
+      const infoPag = {};
+      (pags || []).forEach((pg) => {
+        pedidoDoPag[pg.id] = pg.orcamento_id;
+        infoPag[pg.id] = `${pg.forma_pagamento} — ${fmtBRL(pg.valor)}`;
+        if (pg.anexo_url) add(pg.orcamento_id, { caminho: pg.anexo_url, rotulo: infoPag[pg.id] });
+      });
+      const idsPag = Object.keys(pedidoDoPag);
+      if (idsPag.length > 0) {
+        const { data: extras } = await supabase.from("pagamento_anexos").select("pagamento_id, anexo_url").in("pagamento_id", idsPag);
+        (extras || []).forEach((a) => {
+          if (a.anexo_url && pedidoDoPag[a.pagamento_id]) add(pedidoDoPag[a.pagamento_id], { caminho: a.anexo_url, rotulo: infoPag[a.pagamento_id] });
+        });
+      }
+    }
+    pedidos.forEach((o) => {
+      if (o.anexo_pagamento_url) add(o.id, { caminho: o.anexo_pagamento_url, rotulo: "Comprovante do pedido" });
+    });
+    setAnexosPorPedido(mapa);
+  }
+
+  async function abrirAnexo(caminho) {
+    setErroAnexo("");
+    const { data, error } = await supabase.storage.from("comprovantes").createSignedUrl(caminho, 3600);
+    if (!error && data) window.open(data.signedUrl, "_blank");
+    else setErroAnexo("Não foi possível abrir o anexo (sem permissão ou arquivo não encontrado).");
+  }
+
+  function clicarAnexo(e, o) {
+    e.stopPropagation();
+    const anexos = anexosPorPedido[o.id] || [];
+    if (anexos.length === 1) abrirAnexo(anexos[0].caminho);
+    else setAnexosAbertos({ pedido: o, anexos });
+  }
 
   async function buscarPorNumero(e) {
     e.preventDefault();
@@ -273,7 +329,21 @@ export default function OrcamentosPage() {
                     className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer"
                     onClick={() => router.push(`/orcamentos/${o.id}`)}
                   >
-                    <td className="px-4 py-2.5 font-mono text-muted">#{o.numero_unidade}</td>
+                    <td className="px-4 py-2.5 font-mono text-muted whitespace-nowrap">
+                      #{o.numero_unidade}
+                      {(anexosPorPedido[o.id] || []).length > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => clicarAnexo(e, o)}
+                          className="ml-1.5 inline-flex items-center justify-center gap-0.5 h-5 min-w-[20px] px-1 rounded-full align-middle hover:opacity-80"
+                          style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+                          title={(anexosPorPedido[o.id] || []).length === 1 ? "Ver o comprovante anexado" : `${anexosPorPedido[o.id].length} comprovantes anexados`}
+                        >
+                          <Paperclip size={11} />
+                          {(anexosPorPedido[o.id] || []).length > 1 && <span className="text-[9.5px] font-bold">{anexosPorPedido[o.id].length}</span>}
+                        </button>
+                      )}
+                    </td>
                     {!ehCliente && (
                       <td className="px-4 py-2.5 font-medium">
                         {o.clientes?.nome || "—"}
@@ -307,6 +377,29 @@ export default function OrcamentosPage() {
           </table>
         )}
       </div>
+      {erroAnexo && !anexosAbertos && (
+        <p className="text-sm text-danger mt-3">{erroAnexo}</p>
+      )}
+
+      <Modal
+        open={!!anexosAbertos}
+        onClose={() => { setAnexosAbertos(null); setErroAnexo(""); }}
+        title={anexosAbertos ? `Comprovantes do pedido #${anexosAbertos.pedido.numero_unidade}` : ""}
+      >
+        {anexosAbertos && (
+          <div className="space-y-2">
+            {anexosAbertos.anexos.map((a, idx) => (
+              <div key={a.caminho} className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2 text-sm">
+                <span className="text-muted">{idx + 1}. {a.rotulo}</span>
+                <button type="button" className="btn-primary text-xs py-1.5 px-3 shrink-0" onClick={() => abrirAnexo(a.caminho)}>
+                  <FileText size={13} /> Ver
+                </button>
+              </div>
+            ))}
+            {erroAnexo && <p className="text-sm text-danger">{erroAnexo}</p>}
+          </div>
+        )}
+      </Modal>
     </AppShell>
   );
 }
