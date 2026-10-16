@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ShieldAlert, ArrowLeft, ArrowRight, AlertTriangle, HandCoins } from "lucide-react";
+import { ShieldAlert, ArrowLeft, ArrowRight, AlertTriangle, HandCoins, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import AppShell from "../../../components/AppShell";
 import { getUnidadeAtiva } from "../../../lib/unidade";
+import MultiSelect from "../../../components/MultiSelect";
+import { ehClienteCustoZero } from "../../../lib/clientes";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -21,6 +23,9 @@ export default function ContasAReceberPage() {
   const [lista, setLista] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [aba, setAba] = useState("aberto");
+  // Filtros com várias opções (16/10/2026) — vazio = todos
+  const [vendedoresSel, setVendedoresSel] = useState([]);
+  const [clientesSel, setClientesSel] = useState([]);
 
   useEffect(() => {
     (async () => {
@@ -36,7 +41,7 @@ export default function ContasAReceberPage() {
     let query = supabase
       .from("orcamentos")
       .select(
-        "id, numero_unidade, valor_total, valor_herdado_pai, entregue_em, sem_pagamento, liberado_sem_pagamento_motivo, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome), liberador:perfis!orcamentos_liberado_sem_pagamento_por_fkey(nome)"
+        "id, numero_unidade, valor_total, valor_herdado_pai, entregue_em, sem_pagamento, liberado_sem_pagamento_motivo, cliente_id, vendedor_id, validacao_gerente, validacao_gerente_em, clientes(nome, cnpj), perfis!orcamentos_vendedor_id_fkey(nome), liberador:perfis!orcamentos_liberado_sem_pagamento_por_fkey(nome)"
       )
       .eq("entregue", true)
       .order("entregue_em", { ascending: true });
@@ -46,7 +51,7 @@ export default function ContasAReceberPage() {
       // fallback sem o join do liberador, caso a FK ainda não exista nesse ambiente
       let q2 = supabase
         .from("orcamentos")
-        .select("id, numero_unidade, valor_total, valor_herdado_pai, entregue_em, sem_pagamento, liberado_sem_pagamento_motivo, clientes(nome), perfis!orcamentos_vendedor_id_fkey(nome)")
+        .select("id, numero_unidade, valor_total, valor_herdado_pai, entregue_em, sem_pagamento, liberado_sem_pagamento_motivo, cliente_id, vendedor_id, validacao_gerente, validacao_gerente_em, clientes(nome, cnpj), perfis!orcamentos_vendedor_id_fkey(nome)")
         .eq("entregue", true)
         .order("entregue_em", { ascending: true });
       if (unidadeAtiva) q2 = q2.eq("unidade_id", unidadeAtiva.id);
@@ -70,7 +75,10 @@ export default function ContasAReceberPage() {
     const comValorReal = orcs.map((o) => {
       const valorPago = (pagoPorPedido[o.id] || 0) + Number(o.valor_herdado_pai || 0);
       const valorAberto = Number(o.valor_total || 0) - valorPago;
-      return { ...o, valor_pago: valorPago, valor_aberto: valorAberto };
+      // J MACEDO ELETRONICA (JM3): o pedido validado pelo gerente no Relatório
+      // Resumo sai do "em aberto" (o acerto é feito no fechamento da semana).
+      const jm3Validado = ehClienteCustoZero(o.clientes?.cnpj) && o.validacao_gerente === "validado";
+      return { ...o, valor_pago: valorPago, valor_aberto: valorAberto, jm3Validado };
     });
 
     setLista(comValorReal);
@@ -93,9 +101,22 @@ export default function ContasAReceberPage() {
     );
   }
 
-  const emAberto = lista.filter((o) => o.valor_aberto > 0.004);
-  const quitados = lista.filter((o) => o.valor_aberto <= 0.004);
-  const filtrados = aba === "aberto" ? emAberto : quitados;
+  // listas dos filtros (de todos os pedidos carregados)
+  const vendedoresLista = [...new Map(lista.filter((o) => o.vendedor_id).map((o) => [o.vendedor_id, o.perfis?.nome || "—"])).entries()]
+    .map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const clientesLista = [...new Map(lista
+    .filter((o) => o.cliente_id != null && (vendedoresSel.length === 0 || vendedoresSel.includes(o.vendedor_id)))
+    .map((o) => [String(o.cliente_id), o.clientes?.nome || "—"])).entries()]
+    .map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const daSelecao = lista.filter((o) =>
+    (vendedoresSel.length === 0 || vendedoresSel.includes(o.vendedor_id)) &&
+    (clientesSel.length === 0 || clientesSel.includes(String(o.cliente_id)))
+  );
+
+  const emAberto = daSelecao.filter((o) => o.valor_aberto > 0.004 && !o.jm3Validado);
+  const jm3Validados = daSelecao.filter((o) => o.valor_aberto > 0.004 && o.jm3Validado);
+  const quitados = daSelecao.filter((o) => o.valor_aberto <= 0.004);
+  const filtrados = aba === "aberto" ? emAberto : aba === "jm3" ? jm3Validados : quitados;
   const totalEmAberto = emAberto.reduce((s, o) => s + o.valor_aberto, 0);
 
   return (
@@ -120,14 +141,28 @@ export default function ContasAReceberPage() {
         </div>
       </div>
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 flex-wrap items-center">
         <button className={`chip ${aba === "aberto" ? "chip-active" : ""}`} onClick={() => setAba("aberto")}>
           Em aberto ({emAberto.length})
         </button>
         <button className={`chip ${aba === "quitados" ? "chip-active" : ""}`} onClick={() => setAba("quitados")}>
           Quitados ({quitados.length})
         </button>
+        {jm3Validados.length > 0 && (
+          <button className={`chip ${aba === "jm3" ? "chip-active" : ""}`} onClick={() => setAba("jm3")} title="Pedidos da J MACEDO ELETRONICA validados pelo gerente no Relatório Resumo — saem do em aberto">
+            J Macedo validados ({jm3Validados.length})
+          </button>
+        )}
+        <span className="hidden md:block w-px h-6 bg-line mx-1" />
+        <MultiSelect opcoes={vendedoresLista} valor={vendedoresSel} onChange={setVendedoresSel} rotuloTodos="Todos os vendedores" rotuloItem="vendedores" />
+        <MultiSelect opcoes={clientesLista} valor={clientesSel} onChange={setClientesSel} rotuloTodos="Todos os clientes" rotuloItem="clientes" largura="w-64" />
       </div>
+      {aba === "jm3" && (
+        <p className="text-xs text-muted mb-3 flex items-center gap-1.5">
+          <ShieldCheck size={13} style={{ color: "#2C7C6E" }} />
+          Pedidos da J MACEDO ELETRONICA LTDA validados pelo gerente no Relatório Resumo. Eles não contam no total em aberto.
+        </p>
+      )}
 
       <div className="card overflow-hidden">
         {carregando ? (
@@ -159,7 +194,11 @@ export default function ContasAReceberPage() {
                     <td className="px-4 py-2.5 text-right font-mono">{fmtBRL(o.valor_total)}</td>
                     <td className="px-4 py-2.5 text-right font-mono" style={{ color: "#2C7C6E" }}>{fmtBRL(o.valor_pago)}</td>
                     <td className="px-4 py-2.5 text-right">
-                      {o.valor_aberto > 0.004 ? (
+                      {o.jm3Validado ? (
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded" style={{ background: "rgba(63,167,150,0.14)", color: "#2C7C6E" }} title={o.validacao_gerente_em ? `Validado em ${new Date(o.validacao_gerente_em).toLocaleString("pt-BR")}` : ""}>
+                          VALIDADO PELO GERENTE
+                        </span>
+                      ) : o.valor_aberto > 0.004 ? (
                         <div>
                           <span className="font-mono font-semibold text-danger">{fmtBRL(o.valor_aberto)}</span>
                           {o.sem_pagamento && o.liberado_sem_pagamento_motivo && (
@@ -175,7 +214,7 @@ export default function ContasAReceberPage() {
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {o.valor_aberto > 0.004 && (
+                        {o.valor_aberto > 0.004 && !o.jm3Validado && (
                           <button
                             className="btn-primary py-1.5 px-3 text-xs whitespace-nowrap"
                             onClick={() => router.push(`/estoque/${o.id}?pagamento=1`)}
