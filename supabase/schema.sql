@@ -3161,3 +3161,26 @@ end;
 $$;
 
 grant execute on function confirmar_pagamento_fabricante(bigint, date, text, date, text, bigint[]) to authenticated;
+
+-- ================================================================
+-- CORREÇÃO 26/10/2026 — Vendedor não conseguia subir o comprovante
+-- ("new row violates row-level security policy" ao anexar na tela
+-- Pagamentos). O bucket "comprovantes" só aceitava upload de cargos do
+-- Estoque/gestão, Financeiro e JM3. Esta policy libera o upload para
+-- quem pode registrar pagamento (pode_gerenciar_clientes: Adm, Diretor,
+-- Gerente, Supervisor e Vendedor), só em pedidos da unidade do usuário.
+-- O caminho do arquivo é sempre "<orcamento_id>/...".
+-- Rode este bloco inteiro no SQL Editor do Supabase
+-- ================================================================
+drop policy if exists "vendas sobe comprovante de pedido da unidade" on storage.objects;
+create policy "vendas sobe comprovante de pedido da unidade"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'comprovantes'
+    and pode_gerenciar_clientes()
+    and exists (
+      select 1 from orcamentos o
+      where o.id = (case when (storage.foldername(name))[1] ~ '^[0-9]+$' then ((storage.foldername(name))[1])::bigint else null end)
+      and exists (select 1 from perfis_unidades pu where pu.unidade_id = o.unidade_id and pu.perfil_id = auth.uid())
+    )
+  );

@@ -3,6 +3,14 @@ setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
 
+rem --- Modo automatico (agendado no Windows, 02/11/2026) ---------------------
+rem  "backup.bat auto" -> roda sem pausas, grava log no OneDrive, abre o
+rem  Docker Desktop sozinho se estiver fechado, avisa se falhar e apaga
+rem  backups com mais de 30 dias.
+set "MODO_AUTO="
+if /I "%~1"=="auto" set "MODO_AUTO=1"
+if defined MODO_AUTO if /I not "%~2"=="__log__" goto :modo_auto
+
 echo ==========================================
 echo   Sistema Consulta de Pecas (SSG) - Backup (banco + storage)
 echo ==========================================
@@ -17,19 +25,32 @@ if errorlevel 1 (
     echo   https://www.docker.com/products/docker-desktop/
     echo Depois abra o Docker Desktop uma vez e rode este arquivo de novo.
     echo.
-    pause
+    call :pausar
     exit /b 1
 )
 
+docker info >nul 2>&1
+if not errorlevel 1 goto :docker_ok
+if not defined MODO_AUTO goto :docker_verifica
+echo Docker Desktop fechado - abrindo automaticamente e aguardando...
+start "" "%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
+for /l %%i in (1,1,30) do (
+    ping -n 11 127.0.0.1 >nul
+    docker info >nul 2>&1
+    if not errorlevel 1 goto :docker_ok
+)
+:docker_verifica
 docker info >nul 2>&1
 if errorlevel 1 (
     echo O Docker Desktop nao esta aberto/rodando agora.
     echo Abra o Docker Desktop, espere ele terminar de iniciar e rode este
     echo arquivo de novo.
     echo.
-    pause
+    call :pausar
     exit /b 1
 )
+
+:docker_ok
 
 rem --- 2) Verifica Supabase CLI --------------------------------------------
 where supabase >nul 2>&1
@@ -44,7 +65,7 @@ if errorlevel 1 (
     echo.
     echo Depois de instalar, rode este arquivo de novo.
     echo.
-    pause
+    call :pausar
     exit /b 1
 )
 
@@ -55,7 +76,7 @@ if errorlevel 1 (
     echo baixar os arquivos do Storage^). Instale em https://nodejs.org e
     echo rode este arquivo de novo.
     echo.
-    pause
+    call :pausar
     exit /b 1
 )
 
@@ -79,7 +100,7 @@ if not exist %CONFIG% (
     ) > %CONFIG%
     notepad %CONFIG%
     echo.
-    pause
+    call :pausar
     exit /b 1
 )
 
@@ -92,7 +113,7 @@ if "!DB_URL!"=="" (
     echo O arquivo %CONFIG% existe mas a linha DB_URL esta vazia.
     echo Abra o arquivo, cole a Connection String do banco e rode de novo.
     echo.
-    pause
+    call :pausar
     exit /b 1
 )
 
@@ -101,7 +122,7 @@ if not errorlevel 1 (
     echo O arquivo %CONFIG% ainda esta com o modelo ^(SUA-SENHA^).
     echo Abra o arquivo e cole a Connection String real do banco antes de continuar.
     echo.
-    pause
+    call :pausar
     exit /b 1
 )
 
@@ -150,7 +171,7 @@ if errorlevel 1 (
     echo   %DESTINO%\banco
     echo esta ok mesmo assim.
     echo.
-    pause
+    call :pausar
     exit /b 1
 )
 
@@ -165,7 +186,7 @@ echo   Recomendado: de tempos em tempos, copie a pasta
 echo   "Backups-Sistema-SSG" tambem pra um HD externo.
 echo ==========================================
 echo.
-pause
+call :pausar
 exit /b 0
 
 :erro_dump
@@ -174,5 +195,32 @@ echo Algo deu errado ao baixar o banco ^(veja a mensagem da Supabase CLI
 echo acima - geralmente e senha/connection string errada no %CONFIG%,
 echo ou o Docker Desktop fechou no meio do processo^).
 echo.
-pause
+call :pausar
 exit /b 1
+
+:pausar
+if not defined MODO_AUTO pause
+exit /b 0
+
+rem ============================================================================
+rem  MODO AUTOMATICO: roda o backup completo gravando tudo num log no OneDrive
+rem ============================================================================
+:modo_auto
+set "PASTA_BK=%OneDrive%"
+if "%PASTA_BK%"=="" set "PASTA_BK=%OneDriveCommercial%"
+if "%PASTA_BK%"=="" set "PASTA_BK=%USERPROFILE%\Documents"
+set "PASTA_BK=%PASTA_BK%\Backups-Sistema-SSG"
+mkdir "%PASTA_BK%" 2>nul
+
+echo Backup automatico do Sistema SSG em andamento - nao feche esta janela...
+call "%~f0" auto __log__ > "%PASTA_BK%\ultimo-backup.log" 2>&1
+if errorlevel 1 (
+    > "%PASTA_BK%\STATUS-ULTIMO-BACKUP.txt" echo ERRO no backup automatico de %date% %time% - veja o arquivo ultimo-backup.log nesta pasta.
+    msg "%USERNAME%" /TIME:0 "ATENCAO: o backup automatico do Sistema SSG FALHOU. Veja OneDrive\Backups-Sistema-SSG\ultimo-backup.log" 2>nul
+    exit /b 1
+)
+> "%PASTA_BK%\STATUS-ULTIMO-BACKUP.txt" echo OK - backup automatico concluido em %date% %time%
+
+rem Guarda so os ultimos 30 dias (apaga apenas pastas de backup no formato AAAA-MM-DD_HH-MM)
+powershell -NoProfile -Command "$lim=(Get-Date).AddDays(-30); Get-ChildItem -LiteralPath $env:PASTA_BK -Directory | Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}$' -and [datetime]::ParseExact($_.Name.Substring(0,10),'yyyy-MM-dd',$null) -lt $lim } | Remove-Item -Recurse -Force" 2>nul
+exit /b 0
