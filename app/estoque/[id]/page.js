@@ -4,7 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, ShieldAlert, Search, Check, AlertTriangle, Package,
   Receipt, Paperclip, PackageCheck, Send, ExternalLink, RefreshCw, Plus, Trash2, Copy, ArrowRight, Pencil, Save, XCircle,
-  FileCheck2, Clock, Ban, Printer
+  FileCheck2, Clock, Ban, Printer, Minus, Repeat
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
 import { getUnidadeAtiva } from "../../../lib/unidade";
@@ -17,6 +17,7 @@ import { corCategoria, iconeCategoria } from "../../../lib/categorias";
 import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, BANDEIRAS_CARTAO, PARCELAS_CARTAO, rotuloPagamentoPendente, textoDataPagamento, pagamentoTravado } from "../../../lib/estoque";
 import { STATUS_ELEGIVEIS_NF, statusNotaFiscal, RESUMO_STATUS_NF } from "../../../lib/fiscal";
 import { parseBRDate } from "../../../lib/classificacao";
+import { calcularPreco } from "../../../lib/precos";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -84,6 +85,21 @@ function EstoquePedidoPageInner() {
   // trocar o Part Number de um item ainda sem Delivery confirmada (ex:
   // Samsung manda um código substituto do que foi pedido originalmente)
   const [trocandoPeca, setTrocandoPeca] = useState(null); // item sendo editado, ou null
+  // Ajuste do pedido pelo Estoque (03/11/2026): quantidade, remover e incluir peça
+  const [editandoItem, setEditandoItem] = useState(null);
+  const [novaQtd, setNovaQtd] = useState("");
+  const [motivoAjuste, setMotivoAjuste] = useState("");
+  const [cienteExcesso, setCienteExcesso] = useState(false);
+  const [confirmandoRemocao, setConfirmandoRemocao] = useState(false);
+  const [salvandoAjuste, setSalvandoAjuste] = useState(false);
+  const [erroAjuste, setErroAjuste] = useState("");
+  const [incluindoPeca, setIncluindoPeca] = useState(false);
+  const [termoInclusao, setTermoInclusao] = useState("");
+  const [resultadosInclusao, setResultadosInclusao] = useState([]);
+  const [buscandoInclusao, setBuscandoInclusao] = useState(false);
+  const [pecaInclusao, setPecaInclusao] = useState(null);
+  const [qtdInclusao, setQtdInclusao] = useState("1");
+  const [ajustesPedido, setAjustesPedido] = useState([]);
   const [divisaoIdxTroca, setDivisaoIdxTroca] = useState(null); // != null: troca é de UMA linha da divisão de delivery (estado local, só grava ao "Confirmar divisão")
   const [termoTrocaPeca, setTermoTrocaPeca] = useState("");
   const [resultadosTrocaPeca, setResultadosTrocaPeca] = useState([]);
@@ -179,6 +195,73 @@ function EstoquePedidoPageInner() {
     }, 300);
     return () => clearTimeout(t);
   }, [termoTrocaPeca, trocandoPeca]);
+
+  // ---------- ajuste do pedido (quantidade / remover / incluir) ----------
+  useEffect(() => {
+    if (!incluindoPeca) return;
+    const termo = termoInclusao.trim();
+    if (!termo) { setResultadosInclusao([]); return; }
+    const unidadeAtiva = getUnidadeAtiva();
+    if (!unidadeAtiva) return;
+    setBuscandoInclusao(true);
+    const t = setTimeout(async () => {
+      const like = `%${termo}%`;
+      const { data } = await supabase
+        .rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id })
+        .or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`)
+        .limit(30);
+      setResultadosInclusao(data || []);
+      setBuscandoInclusao(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [termoInclusao, incluindoPeca]);
+
+  function abrirEdicaoItem(item) {
+    setEditandoItem(item);
+    setNovaQtd(String(item.qtd));
+    setMotivoAjuste("");
+    setCienteExcesso(false);
+    setConfirmandoRemocao(false);
+    setErroAjuste("");
+  }
+
+  function abrirInclusao() {
+    setIncluindoPeca(true);
+    setTermoInclusao("");
+    setResultadosInclusao([]);
+    setPecaInclusao(null);
+    setQtdInclusao("1");
+    setMotivoAjuste("");
+    setCienteExcesso(false);
+    setErroAjuste("");
+  }
+
+  async function executarAjuste(parametros, aoTerminar) {
+    setSalvandoAjuste(true);
+    setErroAjuste("");
+    const { data, error } = await supabase.rpc("ajustar_item_pedido", {
+      p_orcamento_id: Number(id),
+      p_item_id: null,
+      p_qtd: null,
+      p_peca: null,
+      p_motivo: motivoAjuste.trim() || null,
+      ...parametros
+    });
+    if (error) {
+      setSalvandoAjuste(false);
+      setErroAjuste("Não foi possível ajustar: " + error.message);
+      return;
+    }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Pedido #${orcamento.numero_unidade} ajustado pelo estoque: ${data?.descricao}. Total ${fmtBRL(data?.valor_antes)} → ${fmtBRL(data?.valor_depois)}${motivoAjuste.trim() ? `. Motivo: ${motivoAjuste.trim()}` : ""}.`
+    });
+    setSalvandoAjuste(false);
+    aoTerminar && aoTerminar();
+    await carregar();
+  }
 
   function abrirTrocaPeca(item, divisaoIdx = null) {
     setTrocandoPeca(item);
@@ -419,6 +502,8 @@ function EstoquePedidoPageInner() {
       .eq("orcamento_id", id)
       .order("id");
     setItens(its || []);
+    const { data: ajs } = await supabase.from("orcamento_ajustes").select("*").eq("orcamento_id", id).order("criado_em");
+    setAjustesPedido(ajs || []);
     const { data: pags } = await supabase
       .from("pagamentos_orcamento")
       .select("*, registrador:perfis!pagamentos_orcamento_registrado_por_fkey(nome)")
@@ -1628,6 +1713,14 @@ function EstoquePedidoPageInner() {
         </div>
       )}
 
+      {podeTrocarPeca && podeInformarDelivery && (
+        <div className="flex justify-end mb-2">
+          <button className="btn-secondary text-xs py-1.5" onClick={abrirInclusao} title="Incluir uma peça que não estava no pedido do vendedor">
+            <Plus size={13} /> Incluir peça no pedido
+          </button>
+        </div>
+      )}
+
       <div className="card overflow-hidden mb-4">
         <table className="w-full text-sm table-fixed">
           <thead>
@@ -1662,8 +1755,8 @@ function EstoquePedidoPageInner() {
                       </button>
                       {podeTrocarPeca && podeInformarDelivery && !i.liberado && (
                         <button
-                          onClick={() => abrirTrocaPeca(i)}
-                          title="Trocar Part Number (só antes de confirmar a Delivery)"
+                          onClick={() => abrirEdicaoItem(i)}
+                          title="Ajustar peça: quantidade, trocar Part Number ou remover (só antes de confirmar a Delivery)"
                           className="text-muted hover:text-ink"
                         >
                           <Pencil size={11} />
@@ -2486,7 +2579,7 @@ function EstoquePedidoPageInner() {
 
       {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2 mb-4">{erro}</div>}
 
-      <LinhaDoTempo orcamento={orcamento} itens={itens} pagamentos={pagamentos} numeroPedidoPai={pedidoPai?.numero_unidade} />
+      <LinhaDoTempo orcamento={orcamento} itens={itens} pagamentos={pagamentos} numeroPedidoPai={pedidoPai?.numero_unidade} ajustes={ajustesPedido} />
 
       <Modal
         open={!!confirmarAvanco}
@@ -2521,6 +2614,197 @@ function EstoquePedidoPageInner() {
             </p>
           </>
         )}
+      </Modal>
+
+      {/* ---------- Ajustar peça (quantidade / trocar PN / remover) ---------- */}
+      <Modal
+        open={!!editandoItem}
+        onClose={() => !salvandoAjuste && setEditandoItem(null)}
+        title="Ajustar peça do pedido"
+      >
+        {editandoItem && (() => {
+          const it = editandoItem;
+          const qAtual = Number(it.qtd || 0);
+          const vendaUnit = Number(it.venda_unitario ?? (qAtual > 0 ? Number(it.venda_total || 0) / qAtual : 0));
+          const descAtual = Number(it.desconto_item || 0);
+          const liquidoAtual = Number(it.venda_total || 0) - descAtual;
+          const q = Math.max(0, parseInt(novaQtd, 10) || 0);
+          const liquidoNovo = q > 0 ? vendaUnit * q - (qAtual > 0 ? descAtual * q / qAtual : 0) : 0;
+          const totalAtual = Number(orcamento.valor_total || 0);
+          const totalComQtd = totalAtual - liquidoAtual + liquidoNovo;
+          const totalSemPeca = totalAtual - liquidoAtual;
+          const qtdMudou = q >= 1 && q !== qAtual;
+          const excessoQtd = qtdMudou ? totalPagoGeral - totalComQtd : 0;
+          const excessoRemocao = totalPagoGeral - totalSemPeca;
+          const ultimaPeca = itens.length <= 1;
+          return (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-line p-3 text-sm">
+                <p className="font-mono text-xs" style={{ color: "var(--accent)" }}>{it.codigo}</p>
+                <p className="text-xs text-muted">{it.descricao_resumida}</p>
+                <p className="text-xs mt-1">Pedido do vendedor: <b>{qAtual} un.</b> × {fmtBRL(vendaUnit)} = <b>{fmtBRL(liquidoAtual)}</b>{descAtual > 0 ? ` (com desconto de ${fmtBRL(descAtual)})` : ""}</p>
+              </div>
+
+              <div>
+                <label className="field-label">Nova quantidade</label>
+                <div className="flex items-center gap-2">
+                  <button type="button" className="btn-secondary px-2.5 py-2" onClick={() => setNovaQtd(String(Math.max(1, q - 1)))}><Minus size={14} /></button>
+                  <input type="number" min="1" className="field-input w-24 text-center" value={novaQtd} onChange={(e) => { setNovaQtd(e.target.value); setCienteExcesso(false); }} />
+                  <button type="button" className="btn-secondary px-2.5 py-2" onClick={() => setNovaQtd(String(q + 1))}><Plus size={14} /></button>
+                  {qtdMudou && (
+                    <span className="text-xs text-muted">
+                      Peça: <b className="text-ink">{fmtBRL(liquidoNovo)}</b> · Novo total do pedido: <b className="text-ink">{fmtBRL(totalComQtd)}</b> <span className="text-[11px]">(era {fmtBRL(totalAtual)})</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="field-label">Motivo (opcional)</label>
+                <input className="field-input" value={motivoAjuste} onChange={(e) => setMotivoAjuste(e.target.value)} placeholder="Ex.: Samsung liberou só 2 unidades" />
+              </div>
+
+              {((qtdMudou && excessoQtd > 0.004) || (confirmandoRemocao && excessoRemocao > 0.004)) && (
+                <label className="flex items-start gap-2 text-sm rounded-lg p-3" style={{ background: "var(--danger-soft)", color: "var(--danger)" }}>
+                  <input type="checkbox" className="mt-1" checked={cienteExcesso} onChange={(e) => setCienteExcesso(e.target.checked)} />
+                  <span>
+                    O cliente já pagou {fmtBRL(totalPagoGeral)} e o novo total fica menor: <b>pagou {fmtBRL(confirmandoRemocao ? excessoRemocao : excessoQtd)} a mais</b>.
+                    Estou ciente — a diferença fica registrada na linha do tempo para o Financeiro tratar (estorno ou crédito).
+                  </span>
+                </label>
+              )}
+
+              {erroAjuste && <p className="text-sm text-danger">{erroAjuste}</p>}
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs py-2"
+                    disabled={salvandoAjuste}
+                    onClick={() => { const item = it; setEditandoItem(null); abrirTrocaPeca(item); }}
+                  >
+                    <Repeat size={13} /> Trocar Part Number
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs py-2"
+                    style={{ color: "var(--danger)", borderColor: confirmandoRemocao ? "var(--danger)" : undefined }}
+                    disabled={salvandoAjuste || ultimaPeca || (confirmandoRemocao && excessoRemocao > 0.004 && !cienteExcesso)}
+                    title={ultimaPeca ? "O pedido precisa ter pelo menos 1 peça — use Cancelar pedido" : "Remover esta peça do pedido"}
+                    onClick={() => {
+                      if (!confirmandoRemocao) { setConfirmandoRemocao(true); setCienteExcesso(false); return; }
+                      executarAjuste({ p_acao: "remover", p_item_id: it.id }, () => setEditandoItem(null));
+                    }}
+                  >
+                    <Trash2 size={13} /> {confirmandoRemocao ? `Confirmar remoção (novo total ${fmtBRL(totalSemPeca)})` : "Remover peça"}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={salvandoAjuste || !qtdMudou || (excessoQtd > 0.004 && !cienteExcesso)}
+                  onClick={() => executarAjuste({ p_acao: "qtd", p_item_id: it.id, p_qtd: q }, () => setEditandoItem(null))}
+                >
+                  <Save size={14} /> {salvandoAjuste ? "Salvando..." : "Salvar quantidade"}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* ---------- Incluir peça no pedido ---------- */}
+      <Modal
+        open={incluindoPeca}
+        onClose={() => !salvandoAjuste && setIncluindoPeca(false)}
+        title="Incluir peça no pedido"
+      >
+        {incluindoPeca && (() => {
+          const q = Math.max(0, parseInt(qtdInclusao, 10) || 0);
+          const venda = pecaInclusao ? calcularPreco(Number(pecaInclusao.valor_unitario), Number(orcamento.margem || 0), Number(orcamento.imposto_total || 0)).venda : null;
+          const vendaUnit = venda !== null && venda !== undefined ? Math.round(venda * 100) / 100 : null;
+          const totalNovo = Number(orcamento.valor_total || 0) + (vendaUnit || 0) * q;
+          return (
+            <div className="space-y-3">
+              {!pecaInclusao ? (
+                <>
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+                    <input autoFocus className="field-input pl-9" placeholder="Buscar por modelo, código ou descrição..." value={termoInclusao} onChange={(e) => setTermoInclusao(e.target.value)} />
+                  </div>
+                  <div className="max-h-72 overflow-auto space-y-1.5">
+                    {buscandoInclusao ? (
+                      <p className="text-sm text-muted px-2 py-3">Buscando...</p>
+                    ) : resultadosInclusao.length === 0 ? (
+                      <p className="text-sm text-muted px-2 py-3">{termoInclusao.trim() ? "Nenhuma peça encontrada." : "Digite para buscar."}</p>
+                    ) : (
+                      resultadosInclusao.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => setPecaInclusao(p)}
+                          disabled={p.valor_unitario === null || p.valor_unitario === undefined}
+                          className="w-full text-left flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-canvas border border-line disabled:opacity-50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block font-mono text-xs" style={{ color: "var(--accent)" }}>{p.codigo}</span>
+                            <span className="block text-xs text-muted truncate">{p.modelo} — {p.descricao_resumida}</span>
+                          </span>
+                          <span className="text-[11px] font-mono shrink-0">{p.valor_unitario !== null && p.valor_unitario !== undefined ? `custo ${fmtBRL(p.valor_unitario)}` : "sem custo"}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-lg border border-line p-3 text-sm flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-xs" style={{ color: "var(--accent)" }}>{pecaInclusao.codigo}</p>
+                      <p className="text-xs text-muted">{pecaInclusao.modelo} — {pecaInclusao.descricao_resumida}</p>
+                      <p className="text-xs mt-1">Custo {fmtBRL(pecaInclusao.valor_unitario)} · Venda unitária <b>{fmtBRL(vendaUnit)}</b> <span className="text-muted">(margem/imposto do pedido)</span></p>
+                    </div>
+                    <button className="text-xs text-muted hover:text-ink shrink-0" onClick={() => setPecaInclusao(null)}>trocar</button>
+                  </div>
+                  <div className="flex items-end gap-3">
+                    <div>
+                      <label className="field-label">Quantidade</label>
+                      <input type="number" min="1" className="field-input w-24 text-center" value={qtdInclusao} onChange={(e) => setQtdInclusao(e.target.value)} />
+                    </div>
+                    <p className="text-xs text-muted pb-2.5">Peça: <b className="text-ink">{fmtBRL((vendaUnit || 0) * q)}</b> · Novo total do pedido: <b className="text-ink">{fmtBRL(totalNovo)}</b></p>
+                  </div>
+                  <div>
+                    <label className="field-label">Motivo (opcional)</label>
+                    <input className="field-input" value={motivoAjuste} onChange={(e) => setMotivoAjuste(e.target.value)} placeholder="Ex.: cliente pediu mais uma peça" />
+                  </div>
+                </>
+              )}
+              {erroAjuste && <p className="text-sm text-danger">{erroAjuste}</p>}
+              <div className="flex justify-end gap-2">
+                <button className="btn-secondary" onClick={() => setIncluindoPeca(false)} disabled={salvandoAjuste}>Cancelar</button>
+                <button
+                  className="btn-primary"
+                  disabled={salvandoAjuste || !pecaInclusao || q < 1 || vendaUnit === null}
+                  onClick={() => executarAjuste({
+                    p_acao: "incluir",
+                    p_qtd: q,
+                    p_peca: {
+                      peca_id: pecaInclusao.id,
+                      modelo: pecaInclusao.modelo,
+                      categoria: pecaInclusao.categoria,
+                      codigo: pecaInclusao.codigo,
+                      descricao_resumida: pecaInclusao.descricao_resumida,
+                      descricao_peca: pecaInclusao.descricao_peca,
+                      valor_unitario: pecaInclusao.valor_unitario
+                    }
+                  }, () => setIncluindoPeca(false))}
+                >
+                  <Plus size={14} /> {salvandoAjuste ? "Incluindo..." : "Incluir peça"}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       <Modal

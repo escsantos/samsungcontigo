@@ -1,5 +1,5 @@
 "use client";
-import { FileText, Send, Clock, CheckCircle2, XCircle, Receipt, PackageCheck, PackageOpen, DollarSign, AlertTriangle, Wrench, Ban } from "lucide-react";
+import { FileText, Send, Clock, CheckCircle2, XCircle, Receipt, PackageCheck, PackageOpen, DollarSign, AlertTriangle, Wrench, Ban, PencilLine } from "lucide-react";
 
 function fmtDataHora(iso) {
   if (!iso) return "";
@@ -13,7 +13,7 @@ function porNome(nome) {
   return nome ? ` — por ${nome}` : "";
 }
 
-export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [], numeroPedidoPai = null }) {
+export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [], numeroPedidoPai = null, ajustes = [] }) {
   if (!orcamento) return null;
 
   const eventos = [];
@@ -163,6 +163,23 @@ export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [], n
       data: orcamento.entregue_em
     });
   }
+
+  // Ajustes do pedido feitos pelo Estoque (03/11/2026): quantidade, peça
+  // removida ou incluída — com o total antes/depois e, se o cliente já
+  // tinha pago mais que o novo total, o valor a mais para o Financeiro tratar.
+  (ajustes || []).forEach((a) => {
+    const aMais = Number(a.pago_a_mais || 0);
+    eventos.push({
+      icone: aMais > 0.004 ? AlertTriangle : PencilLine,
+      cor: aMais > 0.004 ? "#E1614F" : "#7A4FB0",
+      titulo:
+        `Pedido ajustado: ${a.descricao} — total ${fmtBRL(a.valor_antes)} → ${fmtBRL(a.valor_depois)}` +
+        (a.motivo ? ` (motivo: ${a.motivo})` : "") +
+        (aMais > 0.004 ? ` · ATENÇÃO: cliente pagou ${fmtBRL(aMais)} a mais` : "") +
+        porNome(a.criado_por_nome),
+      data: a.criado_em
+    });
+  });
 
   eventos.push({
     icone: Clock,
