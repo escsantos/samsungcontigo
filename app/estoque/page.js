@@ -35,6 +35,31 @@ export default function EstoquePage() {
   const [ateEscolhido, setAteEscolhido] = useState("");
   const [buscaCliente, setBuscaCliente] = useState("");
 
+  // Mantém os filtros ao abrir um pedido e clicar em "Voltar para Estoque"
+  // (03/11/2026) — guardados só nesta aba do navegador (sessionStorage).
+  const [filtrosRestaurados, setFiltrosRestaurados] = useState(false);
+  useEffect(() => {
+    try {
+      const salvo = JSON.parse(sessionStorage.getItem("estoque-filtros") || "null");
+      if (salvo) {
+        if (salvo.buscaCliente !== undefined) setBuscaCliente(salvo.buscaCliente);
+        if (salvo.filtro !== undefined) setFiltro(salvo.filtro);
+        if (salvo.periodo) setPeriodo(salvo.periodo);
+        if (salvo.semanaEscolhida) setSemanaEscolhida(salvo.semanaEscolhida);
+        if (salvo.mesEscolhido) setMesEscolhido(salvo.mesEscolhido);
+        if (salvo.deEscolhido !== undefined) setDeEscolhido(salvo.deEscolhido);
+        if (salvo.ateEscolhido !== undefined) setAteEscolhido(salvo.ateEscolhido);
+      }
+    } catch (e) {}
+    setFiltrosRestaurados(true);
+  }, []);
+  useEffect(() => {
+    if (!filtrosRestaurados) return;
+    try {
+      sessionStorage.setItem("estoque-filtros", JSON.stringify({ buscaCliente, filtro, periodo, semanaEscolhida, mesEscolhido, deEscolhido, ateEscolhido }));
+    } catch (e) {}
+  }, [filtrosRestaurados, buscaCliente, filtro, periodo, semanaEscolhida, mesEscolhido, deEscolhido, ateEscolhido]);
+
   useEffect(() => {
     (async () => {
       setPerfil(await getPerfilAtual());
