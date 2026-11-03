@@ -1,0 +1,27 @@
+ROBÔ DE BASES — Sistema Consulta de Peças (SSG)
+================================================
+
+O que faz
+---------
+O Robô GSPN salva no OneDrive, para a MSC CIDADE DUTRA:
+  AUTOMAÇÃO\ROBÔ - 395086 - MSC CIDADE DUTRA\PEÇAS\base_pecas.xlsx
+  AUTOMAÇÃO\ROBÔ - 395086 - MSC CIDADE DUTRA\BASE DE DADOS\base_ordens_servico.xlsx
+Este robô confere essas pastas a cada 2 minutos. Quando o arquivo consolidado muda
+(ULTIMA_ATUALIZACAO.json), ele processa igual à tela Carregar Bases e grava no sistema:
+catálogo, preços e Deliveries. A tela Carregar Bases mostra quando o arquivo foi salvo,
+quando o sistema atualizou e a última verificação do robô.
+
+Instalar (uma vez, neste PC)
+----------------------------
+1. Rode o SQL de 03/11/2026 (bases automáticas) no Supabase.
+2. Confira o config.ini (PASTA e ASC_COD).
+3. Dois cliques em INSTALAR ROBO.bat (cria a tarefa e já faz a primeira atualização).
+
+No dia a dia
+------------
+- Não precisa fazer nada. O PC precisa estar ligado, com o usuário logado e o OneDrive ligado.
+- Botão "Forçar atualização" na tela Carregar Bases = o robô atualiza em até 2 minutos.
+- ENVIAR AGORA.bat = atualiza na hora, direto no PC.
+- robo.log = histórico e erros.
+- DESINSTALAR ROBO.bat = remove a tarefa.
+- As chaves do Supabase vêm do .env.local do projeto (não ficam nesta pasta).

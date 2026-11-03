@@ -6,3 +6,7 @@ node_modules
 BASES SSG/
 pecas-jmacedo/
 *.rar
+robo-bases/robo.log
+robo-bases/robo.log.antigo
+robo-bases/robo.lock
+robo-bases/.cache/
