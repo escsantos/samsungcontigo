@@ -369,3 +369,29 @@ body {
 /* Validação do gerente no Resumo (16/10/2026) */
 .linha-validada { background: rgba(63,167,150,0.10); outline: 2px solid #3FA796; outline-offset: -2px; }
 .linha-nao-validada { background: rgba(225,97,79,0.10); outline: 2px solid #E1614F; outline-offset: -2px; }
+
+/* ===== Seleção de unidade (10/11/2026) — mesmas animações do Sistema de Inventário ===== */
+@keyframes inv-gira { to { transform: rotate(360deg); } }
+@keyframes inv-pula {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  30% { transform: translateY(-14px) rotate(-6deg); }
+  55% { transform: translateY(0) rotate(0deg); }
+  70% { transform: translateY(-5px) rotate(3deg); }
+}
+@keyframes inv-surge { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes inv-caminhao { 0% { transform: translateX(-6%); } 50% { transform: translateX(6%); } 100% { transform: translateX(-6%); } }
+@keyframes inv-flutua { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes inv-balanco { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(10deg); } }
+@keyframes inv-voo { 0% { transform: translate(-3px, 2px) rotate(-6deg); } 50% { transform: translate(3px, -3px) rotate(4deg); } 100% { transform: translate(-3px, 2px) rotate(-6deg); } }
+@keyframes inv-onda-card { 0% { transform: translateX(-120%) skewX(-18deg); } 100% { transform: translateX(260%) skewX(-18deg); } }
+.inv-pula { animation: inv-pula 1.4s ease-in-out infinite; }
+.inv-surge { animation: inv-surge 0.35s ease-out both; }
+.inv-caminhao { animation: inv-caminhao 3.2s ease-in-out infinite; }
+.inv-flutua { animation: inv-flutua 2s ease-in-out infinite; }
+.inv-balanco { animation: inv-balanco 2.2s ease-in-out infinite; transform-origin: 50% 20%; }
+.inv-gira-lento { animation: inv-gira 6s linear infinite; }
+.inv-voo { animation: inv-voo 2.6s ease-in-out infinite; }
+.inv-onda-card { animation: inv-onda-card 3.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .inv-pula, .inv-surge, .inv-caminhao, .inv-flutua, .inv-balanco, .inv-gira-lento, .inv-voo, .inv-onda-card { animation: none; }
+}

@@ -17,6 +17,7 @@ export default function UnidadesPage() {
   const [nome, setNome] = useState("");
   const [ascCod, setAscCod] = useState("");
   const [obrigaNotaFiscal, setObrigaNotaFiscal] = useState(true);
+  const [cidade, setCidade] = useState(""); // aparece no card da tela "Selecione a unidade" (10/11/2026)
   const [salvando, setSalvando] = useState(false);
 
   const [confirmarExclusao, setConfirmarExclusao] = useState(null);
@@ -39,6 +40,7 @@ export default function UnidadesPage() {
     setEditando(null);
     setNome("");
     setAscCod("");
+    setCidade("");
     setObrigaNotaFiscal(true);
     setErro("");
     setModalAberto(true);
@@ -48,6 +50,7 @@ export default function UnidadesPage() {
     setEditando(u);
     setNome(u.nome);
     setAscCod(u.asc_cod);
+    setCidade(u.cidade || "");
     setObrigaNotaFiscal(u.obriga_nota_fiscal !== false);
     setErro("");
     setModalAberto(true);
@@ -67,13 +70,13 @@ export default function UnidadesPage() {
     setSalvando(true);
 
     if (editando) {
-      const { error } = await supabase.from("unidades").update({ nome: nome.trim(), asc_cod: codLimpo, obriga_nota_fiscal: obrigaNotaFiscal }).eq("id", editando.id);
+      const { error } = await supabase.from("unidades").update({ nome: nome.trim(), asc_cod: codLimpo, cidade: cidade.trim() || null, obriga_nota_fiscal: obrigaNotaFiscal }).eq("id", editando.id);
       setSalvando(false);
       if (error) { setErro("Falha ao salvar: " + (error.code === "23505" ? "já existe uma unidade com esse ASC COD." : error.message)); return; }
     } else {
       const { data: novaUnidade, error } = await supabase
         .from("unidades")
-        .insert({ nome: nome.trim(), asc_cod: codLimpo, obriga_nota_fiscal: obrigaNotaFiscal })
+        .insert({ nome: nome.trim(), asc_cod: codLimpo, cidade: cidade.trim() || null, obriga_nota_fiscal: obrigaNotaFiscal })
         .select()
         .single();
       if (error) {
@@ -176,7 +179,10 @@ export default function UnidadesPage() {
                       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
                         <Building2 size={15} />
                       </div>
-                      {u.nome}
+                      <span>
+                        {u.nome}
+                        {u.cidade && <span className="block text-[11px] text-muted">{u.cidade}</span>}
+                      </span>
                     </div>
                   </td>
                   <td className="px-4 py-2.5 font-mono text-muted">{u.asc_cod}</td>
@@ -250,6 +256,11 @@ export default function UnidadesPage() {
               inputMode="numeric"
             />
             <p className="text-[11px] text-muted mt-1">7 números — usado pra identificar essa unidade nas planilhas de Carregar Bases.</p>
+          </div>
+          <div>
+            <label className="field-label">Cidade</label>
+            <input className="field-input" value={cidade} onChange={(e) => setCidade(e.target.value)} placeholder="Ex: Campinas - SP" />
+            <p className="text-[11px] text-muted mt-1">Aparece no card da tela de seleção de unidade.</p>
           </div>
           <div>
             <label className="field-label">Essa unidade é obrigada a emitir Nota Fiscal de venda?</label>
