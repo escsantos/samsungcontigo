@@ -1,7 +1,8 @@
 // =====================================================================
 // Robô de Bases — Sistema Consulta de Peças (SSG) | Grupo J.Macedo
-// (03/11/2026) Atualiza sozinho a Base Peças e a Base GSPN a partir das
-// planilhas que o Robô GSPN salva no OneDrive:
+// (03/11/2026; várias unidades em 10/11/2026) Atualiza sozinho a Base Peças
+// e a Base GSPN de cada unidade do config.ini a partir das planilhas que o
+// Robô GSPN salva no OneDrive:
 //   <PASTA>\PEÇAS\base_pecas.xlsx                  (+ ULTIMA_ATUALIZACAO.json)
 //   <PASTA>\BASE DE DADOS\base_ordens_servico.xlsx (+ ULTIMA_ATUALIZACAO.json)
 // Roda a cada 2 minutos pelo Agendador de Tarefas (INSTALAR ROBO.bat).
@@ -81,33 +82,30 @@ async function carregarProcessamento() {
   return mod.processarBases;
 }
 
-async function main() {
-  // trava: não deixa duas execuções ao mesmo tempo (uma base grande pode levar minutos)
-  if (fs.existsSync(ARQ_LOCK)) {
-    const idade = Date.now() - fs.statSync(ARQ_LOCK).mtimeMs;
-    if (idade < 40 * 60 * 1000) return;
+// lê as unidades do config.ini:
+//   UNIDADE = <nome da pasta dentro de AUTOMACAO> | <ASC COD no sistema>
+// (compatível com o formato antigo PASTA / ASC_COD de uma unidade só)
+function lerUnidades(arquivoIni) {
+  const lista = [];
+  const cfg = lerIni(arquivoIni);
+  const base = cfg.AUTOMACAO || "";
+  if (fs.existsSync(arquivoIni)) {
+    for (const bruta of fs.readFileSync(arquivoIni, "utf8").replace(/^\uFEFF/, "").split(/\r?\n/)) {
+      const m = bruta.trim().match(/^UNIDADE\s*=\s*(.+?)\s*\|\s*(\d+)\s*$/i);
+      if (m) lista.push({ pasta: path.isAbsolute(m[1]) ? m[1] : path.join(base, m[1]), ascCod: m[2] });
+    }
   }
-  fs.writeFileSync(ARQ_LOCK, String(process.pid));
+  if (lista.length === 0 && cfg.PASTA && cfg.ASC_COD) lista.push({ pasta: cfg.PASTA, ascCod: cfg.ASC_COD });
+  return lista;
+}
 
-  let sb = null;
+async function processarUnidade(sb, XLSX, alvo) {
   let unidade = null;
   try {
-    const cfg = lerIni(path.join(__dirname, "config.ini"));
-    const env = lerIni(path.join(RAIZ, ".env.local"));
-    const url = env.NEXT_PUBLIC_SUPABASE_URL;
-    const chave = env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !chave) throw new Error("Não encontrei NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY no .env.local do projeto.");
-    const pasta = cfg.PASTA;
-    const ascCod = cfg.ASC_COD;
-    if (!pasta || !ascCod) throw new Error("Preencha PASTA e ASC_COD no config.ini do robô.");
-
-    const { createClient } = require("@supabase/supabase-js");
-    const XLSX = require("xlsx");
-    sb = createClient(url, chave, { auth: { persistSession: false, autoRefreshToken: false } });
-
+    const { pasta, ascCod } = alvo;
     const { data: u, error: eU } = await sb.from("unidades").select("id, nome, asc_cod").eq("asc_cod", ascCod).maybeSingle();
     if (eU) throw new Error("Falha ao ler a unidade: " + eU.message);
-    if (!u) throw new Error(`Nenhuma unidade com ASC COD ${ascCod} em Configurações > Unidades.`);
+    if (!u) throw new Error(`Nenhuma unidade com ASC COD ${ascCod} em Configurações > Unidades (pasta: ${path.basename(pasta)}).`);
     unidade = u;
 
     const { data: status } = await sb.from("bases_robo_status").select("*").eq("unidade_id", unidade.id).maybeSingle();
@@ -133,7 +131,7 @@ async function main() {
 
     // o Robô GSPN pode estar gravando o arquivo agora: espera assentar
     const recente = (a) => Date.now() - fs.statSync(a).mtimeMs < 60 * 1000;
-    if (recente(arqPecas) || recente(arqGspn)) { log("Arquivo sendo gravado pelo Robô GSPN — tento de novo na próxima volta."); return; }
+    if (recente(arqPecas) || recente(arqGspn)) { log(`[${unidade.nome}] Arquivo sendo gravado pelo Robô GSPN — tento de novo na próxima volta.`); return; }
 
     const motivo = [forcar ? (FORCAR_ARG ? "ENVIAR AGORA" : `pedido na tela por ${status?.forcar_pedido_por_nome || "?"}`) : null, mudouPecas ? "Base Peças nova" : null, mudouGspn ? "Base GSPN nova" : null].filter(Boolean).join(", ");
     log(`[${unidade.nome}] Atualizando (${motivo})...`);
@@ -183,10 +181,39 @@ async function main() {
     await sb.from("bases_robo_status").update(upd).eq("unidade_id", unidade.id);
     log(`[${unidade.nome}] Concluído em ${Math.round((Date.now() - inicio) / 1000)}s.`);
   } catch (e) {
-    log("ERRO: " + (e?.message || e));
-    if (sb && unidade) {
+    log(`ERRO${unidade ? ` [${unidade.nome}]` : ""}: ` + (e?.message || e));
+    if (unidade) {
       await sb.from("bases_robo_status").update({ em_processamento: false, ultimo_erro: String(e?.message || e).slice(0, 500), ultimo_erro_em: new Date().toISOString() }).eq("unidade_id", unidade.id);
     }
+    process.exitCode = 1;
+  }
+}
+
+async function main() {
+  // trava: não deixa duas execuções ao mesmo tempo (uma base grande pode levar minutos)
+  if (fs.existsSync(ARQ_LOCK)) {
+    const idade = Date.now() - fs.statSync(ARQ_LOCK).mtimeMs;
+    if (idade < 40 * 60 * 1000) return;
+  }
+  fs.writeFileSync(ARQ_LOCK, String(process.pid));
+  try {
+    const env = lerIni(path.join(RAIZ, ".env.local"));
+    const url = env.NEXT_PUBLIC_SUPABASE_URL;
+    const chave = env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !chave) throw new Error("Não encontrei NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY no .env.local do projeto.");
+    const unidades = lerUnidades(path.join(__dirname, "config.ini"));
+    if (unidades.length === 0) throw new Error("Nenhuma UNIDADE configurada no config.ini do robô.");
+
+    const { createClient } = require("@supabase/supabase-js");
+    const XLSX = require("xlsx");
+    const sb = createClient(url, chave, { auth: { persistSession: false, autoRefreshToken: false } });
+
+    // uma unidade de cada vez; erro numa não impede as outras
+    for (const alvo of unidades) {
+      await processarUnidade(sb, XLSX, alvo);
+    }
+  } catch (e) {
+    log("ERRO: " + (e?.message || e));
     process.exitCode = 1;
   } finally {
     try { fs.unlinkSync(ARQ_LOCK); } catch (e) {}

@@ -3,7 +3,8 @@ ROBÔ DE BASES — Sistema Consulta de Peças (SSG)
 
 O que faz
 ---------
-O Robô GSPN salva no OneDrive, para a MSC CIDADE DUTRA:
+O Robô GSPN salva no OneDrive, para cada unidade do config.ini (MSC CIDADE DUTRA,
+CSP SÃO MIGUEL, ESC SANTOS e ESC TABOÃO), por exemplo:
   AUTOMAÇÃO\ROBÔ - 395086 - MSC CIDADE DUTRA\PEÇAS\base_pecas.xlsx
   AUTOMAÇÃO\ROBÔ - 395086 - MSC CIDADE DUTRA\BASE DE DADOS\base_ordens_servico.xlsx
 Este robô confere essas pastas a cada 2 minutos. Quando o arquivo consolidado muda
@@ -14,7 +15,7 @@ quando o sistema atualizou e a última verificação do robô.
 Instalar (uma vez, neste PC)
 ----------------------------
 1. Rode o SQL de 03/11/2026 (bases automáticas) no Supabase.
-2. Confira o config.ini (PASTA e ASC_COD).
+2. Confira o config.ini (AUTOMACAO e uma linha UNIDADE = pasta | ASC COD por unidade).
 3. Dois cliques em INSTALAR ROBO.bat (cria a tarefa e já faz a primeira atualização).
 
 No dia a dia
