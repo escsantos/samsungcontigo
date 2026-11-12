@@ -13,7 +13,7 @@ function porNome(nome) {
   return nome ? ` — por ${nome}` : "";
 }
 
-export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [], numeroPedidoPai = null, ajustes = [] }) {
+export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [], numeroPedidoPai = null, ajustes = [], alteracoesEntrega = [] }) {
   if (!orcamento) return null;
 
   const eventos = [];
@@ -177,6 +177,20 @@ export default function LinhaDoTempo({ orcamento, itens = [], pagamentos = [], n
         (a.motivo ? ` (motivo: ${a.motivo})` : "") +
         (aMais > 0.004 ? ` · ATENÇÃO: cliente pagou ${fmtBRL(aMais)} a mais` : "") +
         porNome(a.criado_por_nome),
+      data: a.criado_em
+    });
+  });
+
+  // Data da entrega corrigida (12/11/2026)
+  (alteracoesEntrega || []).forEach((a) => {
+    eventos.push({
+      icone: PencilLine,
+      cor: "#2E6DA8",
+      titulo:
+        `Data da entrega alterada: ${a.data_antes ? new Date(a.data_antes).toLocaleDateString("pt-BR") : "—"} → ${a.data_depois ? new Date(a.data_depois).toLocaleDateString("pt-BR") : "—"}` +
+        ` (justificativa: ${a.justificativa})` +
+        (a.validacao_resetada ? " · validação do gerente voltou para pendente" : "") +
+        porNome(a.alterado_por_nome),
       data: a.criado_em
     });
   });

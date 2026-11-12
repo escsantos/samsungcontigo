@@ -18,6 +18,7 @@ import { CORES_STATUS, ICONES_STATUS, FORMAS_PAGAMENTO, BANDEIRAS_CARTAO, PARCEL
 import { STATUS_ELEGIVEIS_NF, statusNotaFiscal, RESUMO_STATUS_NF } from "../../../lib/fiscal";
 import { parseBRDate } from "../../../lib/classificacao";
 import { calcularPreco } from "../../../lib/precos";
+import { rotuloSemana } from "../../../lib/relatorios";
 
 function fmtBRL(v) {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -100,6 +101,13 @@ function EstoquePedidoPageInner() {
   const [pecaInclusao, setPecaInclusao] = useState(null);
   const [qtdInclusao, setQtdInclusao] = useState("1");
   const [ajustesPedido, setAjustesPedido] = useState([]);
+  // Alterar a data da entrega/retirada (12/11/2026)
+  const [alteracoesEntrega, setAlteracoesEntrega] = useState([]);
+  const [modalDataEntrega, setModalDataEntrega] = useState(false);
+  const [novaDataEntrega, setNovaDataEntrega] = useState("");
+  const [justificativaEntrega, setJustificativaEntrega] = useState("");
+  const [salvandoDataEntrega, setSalvandoDataEntrega] = useState(false);
+  const [erroDataEntrega, setErroDataEntrega] = useState("");
   const [divisaoIdxTroca, setDivisaoIdxTroca] = useState(null); // != null: troca é de UMA linha da divisão de delivery (estado local, só grava ao "Confirmar divisão")
   const [termoTrocaPeca, setTermoTrocaPeca] = useState("");
   const [resultadosTrocaPeca, setResultadosTrocaPeca] = useState([]);
@@ -260,6 +268,43 @@ function EstoquePedidoPageInner() {
     });
     setSalvandoAjuste(false);
     aoTerminar && aoTerminar();
+    await carregar();
+  }
+
+  // ---------- alterar a data da entrega/retirada ----------
+  function isoDiaLocal(d) {
+    const x = new Date(d);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+  }
+  function abrirDataEntrega() {
+    setNovaDataEntrega(orcamento?.entregue_em ? isoDiaLocal(orcamento.entregue_em) : "");
+    setJustificativaEntrega("");
+    setErroDataEntrega("");
+    setModalDataEntrega(true);
+  }
+  async function salvarDataEntrega() {
+    if (!novaDataEntrega) { setErroDataEntrega("Informe a nova data."); return; }
+    if (!justificativaEntrega.trim()) { setErroDataEntrega("Escreva a justificativa."); return; }
+    setSalvandoDataEntrega(true);
+    setErroDataEntrega("");
+    const { data, error } = await supabase.rpc("alterar_data_entrega", {
+      p_orcamento_id: Number(id),
+      p_nova_data: novaDataEntrega,
+      p_justificativa: justificativaEntrega.trim()
+    });
+    if (error) {
+      setSalvandoDataEntrega(false);
+      setErroDataEntrega("Não foi possível alterar: " + error.message);
+      return;
+    }
+    await registrarAuditoria({
+      tipoEvento: "edicao",
+      entidade: "orcamentos",
+      entidadeId: id,
+      descricao: `Data da entrega do pedido #${orcamento.numero_unidade} alterada: ${new Date(data.data_antes).toLocaleDateString("pt-BR")} → ${new Date(data.data_depois).toLocaleDateString("pt-BR")}${data.mudou_semana ? " (mudou de semana)" : ""}${data.validacao_resetada ? " — validação do gerente voltou para pendente" : ""}. Justificativa: ${justificativaEntrega.trim()}.`
+    });
+    setSalvandoDataEntrega(false);
+    setModalDataEntrega(false);
     await carregar();
   }
 
@@ -504,6 +549,8 @@ function EstoquePedidoPageInner() {
     setItens(its || []);
     const { data: ajs } = await supabase.from("orcamento_ajustes").select("*").eq("orcamento_id", id).order("criado_em");
     setAjustesPedido(ajs || []);
+    const { data: altEnt } = await supabase.from("orcamento_entrega_alteracoes").select("*").eq("orcamento_id", id).order("criado_em");
+    setAlteracoesEntrega(altEnt || []);
     const { data: pags } = await supabase
       .from("pagamentos_orcamento")
       .select("*, registrador:perfis!pagamentos_orcamento_registrado_por_fkey(nome)")
@@ -1621,9 +1668,24 @@ function EstoquePedidoPageInner() {
           </p>
         )}
         {orcamento.entregue && (
-          <p className="text-xs mt-2 font-medium" style={{ color: "#2C7C6E" }}>
-            ✓ Entregue em {new Date(orcamento.entregue_em).toLocaleDateString("pt-BR")}
-          </p>
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <p className="text-xs font-medium" style={{ color: "#2C7C6E" }}>
+              ✓ Entregue em {new Date(orcamento.entregue_em).toLocaleDateString("pt-BR")}
+              <span className="ml-1.5 font-mono text-[10.5px] text-muted">({rotuloSemana(new Date(orcamento.entregue_em))})</span>
+              {alteracoesEntrega.length > 0 && <span className="ml-1.5 text-[10.5px] text-muted">· data alterada</span>}
+            </p>
+            {["Administrador", "Diretor", "Gerente", "Supervisor"].includes(perfil?.cargo) && (
+              <button
+                type="button"
+                onClick={abrirDataEntrega}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md hover:opacity-80"
+                style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+                title="Corrigir a data em que o produto foi entregue/retirado"
+              >
+                <Pencil size={11} /> Alterar data da entrega
+              </button>
+            )}
+          </div>
         )}
         {orcamento.status === "Cancelado" && (
           <div className="mt-3 rounded-lg bg-danger-soft text-danger text-sm px-3 py-2">
@@ -2579,7 +2641,7 @@ function EstoquePedidoPageInner() {
 
       {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2 mb-4">{erro}</div>}
 
-      <LinhaDoTempo orcamento={orcamento} itens={itens} pagamentos={pagamentos} numeroPedidoPai={pedidoPai?.numero_unidade} ajustes={ajustesPedido} />
+      <LinhaDoTempo orcamento={orcamento} itens={itens} pagamentos={pagamentos} numeroPedidoPai={pedidoPai?.numero_unidade} ajustes={ajustesPedido} alteracoesEntrega={alteracoesEntrega} />
 
       <Modal
         open={!!confirmarAvanco}
@@ -2614,6 +2676,54 @@ function EstoquePedidoPageInner() {
             </p>
           </>
         )}
+      </Modal>
+
+      {/* ---------- Alterar a data da entrega/retirada ---------- */}
+      <Modal open={modalDataEntrega} onClose={() => !salvandoDataEntrega && setModalDataEntrega(false)} title="Alterar data da entrega">
+        {modalDataEntrega && orcamento?.entregue_em && (() => {
+          const semanaAtual = rotuloSemana(new Date(orcamento.entregue_em));
+          const novaSemana = novaDataEntrega ? rotuloSemana(new Date(novaDataEntrega + "T12:00:00")) : null;
+          const mudaSemana = novaSemana && novaSemana !== semanaAtual;
+          const pagoFabricante = itens.some((i) => i.custo_pago_fabricante);
+          return (
+            <div className="space-y-3">
+              <p className="text-sm">
+                Hoje: <b>{new Date(orcamento.entregue_em).toLocaleDateString("pt-BR")}</b> <span className="font-mono text-xs text-muted">({semanaAtual})</span>
+              </p>
+              {pagoFabricante ? (
+                <p className="text-sm rounded-lg px-3 py-2 bg-danger-soft text-danger">
+                  Este pedido já foi pago ao fabricante — a data da entrega não pode mais ser alterada.
+                </p>
+              ) : (
+                <>
+                  <div>
+                    <label className="field-label">Nova data da entrega/retirada *</label>
+                    <input type="date" className="field-input w-auto" max={isoDiaLocal(new Date())} value={novaDataEntrega} onChange={(e) => setNovaDataEntrega(e.target.value)} />
+                  </div>
+                  {mudaSemana && (
+                    <p className="text-xs rounded-lg px-3 py-2" style={{ background: "rgba(232,163,61,0.16)", color: "#B5771C" }}>
+                      O pedido sai da semana <b>{semanaAtual}</b> e vai para a <b>{novaSemana}</b>: os valores das duas semanas (Resumo, Comissões, Fabricante) são recalculados
+                      {orcamento.validacao_gerente ? " e a validação do gerente volta para pendente" : ""}.
+                    </p>
+                  )}
+                  <div>
+                    <label className="field-label">Justificativa *</label>
+                    <textarea className="field-input" rows={3} value={justificativaEntrega} onChange={(e) => setJustificativaEntrega(e.target.value)} placeholder="Ex.: cliente retirou no sábado, mas a baixa foi dada na segunda" />
+                  </div>
+                </>
+              )}
+              {erroDataEntrega && <p className="text-sm text-danger">{erroDataEntrega}</p>}
+              <div className="flex justify-end gap-2">
+                <button className="btn-secondary" onClick={() => setModalDataEntrega(false)} disabled={salvandoDataEntrega}>Cancelar</button>
+                {!pagoFabricante && (
+                  <button className="btn-primary" onClick={salvarDataEntrega} disabled={salvandoDataEntrega}>
+                    <Save size={14} /> {salvandoDataEntrega ? "Salvando..." : "Salvar nova data"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* ---------- Ajustar peça (quantidade / trocar PN / remover) ---------- */}

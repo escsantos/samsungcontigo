@@ -31,6 +31,7 @@ export default function DetalheOrcamentoPage() {
   const [orcamento, setOrcamento] = useState(undefined);
   const [itens, setItens] = useState([]);
   const [ajustesPedido, setAjustesPedido] = useState([]); // ajustes feitos pelo Estoque (03/11/2026)
+  const [alteracoesEntrega, setAlteracoesEntrega] = useState([]); // data da entrega corrigida (12/11/2026)
   const [ajustando, setAjustando] = useState(false);
   const [confirmarRejeitar, setConfirmarRejeitar] = useState(false);
   const [motivoRejeicao, setMotivoRejeicao] = useState("");
@@ -108,6 +109,7 @@ export default function DetalheOrcamentoPage() {
       .order("id");
     setItens(its || []);
     supabase.from("orcamento_ajustes").select("*").eq("orcamento_id", id).order("criado_em").then(({ data }) => setAjustesPedido(data || []));
+    supabase.from("orcamento_entrega_alteracoes").select("*").eq("orcamento_id", id).order("criado_em").then(({ data }) => setAlteracoesEntrega(data || []));
     const { data: pags } = await supabase
       .from("pagamentos_orcamento")
       .select("*, registrador:perfis!pagamentos_orcamento_registrado_por_fkey(nome)")
@@ -1098,7 +1100,7 @@ export default function DetalheOrcamentoPage() {
 
       {erro && <div className="rounded-lg bg-danger-soft text-danger text-sm px-3 py-2 mb-4">{erro}</div>}
 
-      <LinhaDoTempo orcamento={orcamento} itens={itens} pagamentos={pagamentos} ajustes={ajustesPedido} />
+      <LinhaDoTempo orcamento={orcamento} itens={itens} pagamentos={pagamentos} ajustes={ajustesPedido} alteracoesEntrega={alteracoesEntrega} />
 
       <Modal
         open={pagamentoModalAberto}
