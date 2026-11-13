@@ -7,6 +7,7 @@ import {
   FileCheck2, Clock, Ban, Printer, Minus, Repeat
 } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
+import { buscarPecas } from "../../../lib/buscaPecas";
 import { getUnidadeAtiva } from "../../../lib/unidade";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
@@ -193,11 +194,7 @@ function EstoquePedidoPageInner() {
     if (!unidadeAtiva) return;
     setBuscandoTrocaPeca(true);
     const t = setTimeout(async () => {
-      const like = `%${termo}%`;
-      const { data } = await supabase
-        .rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id })
-        .or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`)
-        .limit(30);
+      const { data } = await buscarPecas(supabase, { unidadeId: unidadeAtiva.id, termos: [termo], limite: 30 });
       setResultadosTrocaPeca(data || []);
       setBuscandoTrocaPeca(false);
     }, 300);
@@ -213,11 +210,7 @@ function EstoquePedidoPageInner() {
     if (!unidadeAtiva) return;
     setBuscandoInclusao(true);
     const t = setTimeout(async () => {
-      const like = `%${termo}%`;
-      const { data } = await supabase
-        .rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id })
-        .or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`)
-        .limit(30);
+      const { data } = await buscarPecas(supabase, { unidadeId: unidadeAtiva.id, termos: [termo], limite: 30 });
       setResultadosInclusao(data || []);
       setBuscandoInclusao(false);
     }, 300);

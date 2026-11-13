@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Check, X, Pencil, Save, Trash2, Plus, Search, CheckCircle2, Receipt, Paperclip, ExternalLink, AlertTriangle, XCircle, FileCheck2, Clock, Ban } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../../lib/supabaseClient";
+import { buscarPecas } from "../../../lib/buscaPecas";
 import AppShell from "../../../components/AppShell";
 import Modal from "../../../components/Modal";
 import CancelarPedidoModal from "../../../components/CancelarPedidoModal";
@@ -252,11 +253,7 @@ export default function DetalheOrcamentoPage() {
     if (!unidadeAtiva) return;
     setBuscando(true);
     const t = setTimeout(async () => {
-      const like = `%${termo}%`;
-      const { data } = await supabase
-        .rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id })
-        .or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`)
-        .limit(30);
+      const { data } = await buscarPecas(supabase, { unidadeId: unidadeAtiva.id, termos: [termo], limite: 30 });
       setResultadosBusca(data || []);
       setBuscando(false);
     }, 300);
@@ -321,11 +318,7 @@ export default function DetalheOrcamentoPage() {
     if (!unidadeAtiva) return;
     setBuscandoAlternativa(true);
     const t = setTimeout(async () => {
-      const like = `%${termo}%`;
-      const { data } = await supabase
-        .rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id })
-        .or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`)
-        .limit(30);
+      const { data } = await buscarPecas(supabase, { unidadeId: unidadeAtiva.id, termos: [termo], limite: 30 });
       setResultadosBuscaAlternativa(data || []);
       setBuscandoAlternativa(false);
     }, 300);

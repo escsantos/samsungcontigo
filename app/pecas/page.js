@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Info, X, ShoppingCart, User2, Check, Plus, PackagePlus } from "lucide-react";
 import { supabase, getPerfilAtual } from "../../lib/supabaseClient";
+import { buscarPecas } from "../../lib/buscaPecas";
 import AppShell from "../../components/AppShell";
 import { corCategoria, iconeCategoria, CORES_CATEGORIA } from "../../lib/categorias";
 import { calcularPreco, corMargem } from "../../lib/precos";
@@ -149,10 +150,17 @@ export default function ConsultaPecasPage() {
       const { count } = await supabase.from("pecas_catalogo").select("*", { count: "exact", head: true });
       setTotalGeral(count || 0);
 
-      const linhas = await buscarColunaCompleta("pecas_catalogo", "categoria");
-      const contagem = {};
-      linhas.forEach((r) => { contagem[r.categoria] = (contagem[r.categoria] || 0) + 1; });
-      setCategorias(Object.entries(contagem).sort((a, b) => a[0].localeCompare(b[0])));
+      // contagem por categoria direto no banco (13/11/2026); se a função ainda não
+      // existir, conta baixando a coluna como antes
+      const { data: cats, error: errCats } = await supabase.rpc("contar_categorias_catalogo");
+      if (!errCats && cats) {
+        setCategorias(cats.map((c) => [c.categoria, Number(c.total)]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
+      } else {
+        const linhas = await buscarColunaCompleta("pecas_catalogo", "categoria");
+        const contagem = {};
+        linhas.forEach((r) => { contagem[r.categoria] = (contagem[r.categoria] || 0) + 1; });
+        setCategorias(Object.entries(contagem).sort((a, b) => a[0].localeCompare(b[0])));
+      }
 
       const { data: log } = await supabase
         .from("pecas_processamentos")
@@ -172,13 +180,7 @@ export default function ConsultaPecasPage() {
   async function executarBusca(termos, categoria) {
     if (!unidadeAtiva) return;
     setBuscando(true);
-    let query = supabase.rpc("buscar_pecas", { p_unidade_id: unidadeAtiva.id }).order("modelo").limit(300);
-    if (categoria) query = query.eq("categoria", categoria);
-    termos.forEach((t) => {
-      const like = `%${t}%`;
-      query = query.or(`modelo.ilike.${like},codigo.ilike.${like},descricao_resumida.ilike.${like},descricao_peca.ilike.${like}`);
-    });
-    const { data, error } = await query;
+    const { data, error } = await buscarPecas(supabase, { unidadeId: unidadeAtiva.id, termos, categoria, limite: 300 });
     setResultados(error ? [] : data);
     setBuscando(false);
   }
