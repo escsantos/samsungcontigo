@@ -54,7 +54,7 @@ export default function RelatorioCustoPage() {
 
       const { data: liberados } = await supabase
         .from("orcamento_itens")
-        .select("*, orcamentos!inner(id, margem, imposto_total, criado_em, valor_total, desconto, valor_herdado_pai, clientes(nome))")
+        .select("*, orcamentos!inner(id, numero_unidade, margem, imposto_total, criado_em, valor_total, desconto, valor_herdado_pai, clientes(nome))")
         .eq("liberado", true)
         .eq("orcamentos.unidade_id", unidadeAtiva.id)
         .order("liberado_em", { ascending: false });
@@ -133,7 +133,7 @@ export default function RelatorioCustoPage() {
 
   function exportarExcel() {
     const linhasExport = calculadas.map((l) => ({
-      Pedido: l.orcamentos?.id,
+      Pedido: l.orcamentos?.numero_unidade,
       Cliente: l.orcamentos?.clientes?.nome || "",
       "Data liberação": l.liberado_em ? new Date(l.liberado_em).toLocaleDateString("pt-BR") : "",
       Código: l.codigo,

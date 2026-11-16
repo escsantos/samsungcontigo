@@ -117,7 +117,7 @@ export default function RelatorioPedidosPage() {
 
   function exportarExcel() {
     const linhas = filtrados.map((o) => ({
-      Pedido: o.id,
+      Pedido: o.numero_unidade,
       Cliente: o.clientes?.nome || "",
       Vendedor: o.perfis?.nome || "",
       "Data criação": new Date(o.criado_em).toLocaleDateString("pt-BR"),
