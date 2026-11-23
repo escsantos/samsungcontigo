@@ -700,7 +700,7 @@ function EstoquePedidoPageInner() {
   }
 
   async function buscarDeliveryItem(item, valorOverride) {
-    const valor = (valorOverride || deliveries[item.id] || "").trim();
+    const valor = String(valorOverride || deliveries[item.id] || "").replace(/\s+/g, "");
     if (!valor) return;
     setBuscandoItem((b) => ({ ...b, [item.id]: true }));
     setErroItem((e) => ({ ...e, [item.id]: "" }));
@@ -709,7 +709,7 @@ function EstoquePedidoPageInner() {
     const { data: lote } = await supabase
       .from("lotes_pecas")
       .select("*")
-      .eq("codigo", item.codigo)
+      .eq("codigo", String(item.codigo || "").trim().toUpperCase())
       .eq("no_entrega", valor)
       .eq("asc_cod_origem", unidadeAtiva?.asc_cod)
       .maybeSingle();
@@ -718,7 +718,7 @@ function EstoquePedidoPageInner() {
       setBuscandoItem((b) => ({ ...b, [item.id]: false }));
       setErroItem((e) => ({
         ...e,
-        [item.id]: `Delivery "${valor}" não encontrada pro código ${item.codigo} nesta unidade (${unidadeAtiva?.nome}). Peça pro Administrador atualizar a Base Peças, ou confira se a Delivery é de outra unidade.`
+        [item.id]: `Delivery "${valor}" não encontrada pro código ${item.codigo} nesta unidade (${unidadeAtiva?.nome}). A Delivery entra no sistema quando aparece na Base Peças da Samsung (atualizada 1x por dia, à tarde) — se ela é de hoje, tente de novo mais tarde ou peça para "Forçar atualização" em Carregar Bases. Confira também se a Delivery é de outra unidade.`
       }));
       return;
     }
@@ -780,13 +780,14 @@ function EstoquePedidoPageInner() {
   // pra esse código de peça, da mais recente pra mais antiga (por Data NF,
   // caindo pra data de cadastro quando a Data NF não existir/não for válida).
   async function carregarSugestoesPorCodigo(codigo) {
-    if (sugestoesPorCodigo[codigo]) return sugestoesPorCodigo[codigo];
+    // sem cache (23/11/2026): sempre busca de novo, pra já mostrar as Deliveries
+    // que o robô gravou depois que a tela foi aberta
     setCarregandoSugestao(true);
     const unidadeAtiva = getUnidadeAtiva();
     const { data } = await supabase
       .from("lotes_pecas")
       .select("no_entrega, valor_unitario, qtd, data_nf, criado_em")
-      .eq("codigo", codigo)
+      .eq("codigo", String(codigo || "").trim().toUpperCase())
       .eq("asc_cod_origem", unidadeAtiva?.asc_cod);
     const ordenadas = (data || []).slice().sort((a, b) => {
       const ta = parseBRDate(a.data_nf);
@@ -923,7 +924,7 @@ function EstoquePedidoPageInner() {
 
   async function buscarLinhaDivisao(item, idx, valorOverride) {
     const linha = (linhasDivisao[item.id] || [])[idx];
-    const valor = (valorOverride || linha?.delivery || "").trim();
+    const valor = String(valorOverride || linha?.delivery || "").replace(/\s+/g, "");
     if (!valor) return;
     setLinhasDivisao((a) => ({
       ...a,
@@ -935,7 +936,7 @@ function EstoquePedidoPageInner() {
     const { data: lote } = await supabase
       .from("lotes_pecas")
       .select("*")
-      .eq("codigo", codigoLinha)
+      .eq("codigo", String(codigoLinha || "").trim().toUpperCase())
       .eq("no_entrega", valor)
       .eq("asc_cod_origem", unidadeAtiva?.asc_cod)
       .maybeSingle();

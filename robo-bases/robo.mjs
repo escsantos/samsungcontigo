@@ -22,6 +22,15 @@ const require = createRequire(path.join(RAIZ, "package.json"));
 const ARQ_LOG = path.join(__dirname, "robo.log");
 const ARQ_LOCK = path.join(__dirname, "robo.lock");
 const FORCAR_ARG = process.argv.includes("--forcar");
+// (23/11/2026) Nenhuma chamada ao banco pode ficar pendurada pra sempre: se a
+// internet cair no meio, a requisição desiste em 2 minutos. E a execução
+// inteira tem limite de 35 minutos: se passar disso, o robô se encerra e libera
+// a trava, pra próxima volta (2 min depois) recomeçar normalmente.
+const TIMEOUT_REQUISICAO_MS = 2 * 60 * 1000;
+const LIMITE_EXECUCAO_MS = 35 * 60 * 1000;
+const fetchComTimeout = (url, opts = {}) => fetch(url, { ...opts, signal: opts.signal || AbortSignal.timeout(TIMEOUT_REQUISICAO_MS) });
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+const ehFalhaDeRede = (e) => /fetch failed|terminated|timeout|aborted|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket/i.test(String(e?.message || e));
 
 function agoraTxt() {
   return new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
@@ -99,7 +108,19 @@ function lerUnidades(arquivoIni) {
   return lista;
 }
 
+// tenta de novo (até 3 vezes, com 30s de intervalo) quando a falha foi de
+// internet/conexão — antes, uma queda rápida fazia a unidade esperar a
+// próxima versão da base ou alguém clicar em "Forçar atualização".
 async function processarUnidade(sb, XLSX, alvo) {
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    const erro = await processarUnidadeUmaVez(sb, XLSX, alvo, tentativa < 3);
+    if (!erro) return;
+    log(`Falha de conexão (${String(erro?.message || erro).slice(0, 120)}) — tentando de novo em 30s (tentativa ${tentativa + 1} de 3)...`);
+    await esperar(30 * 1000);
+  }
+}
+
+async function processarUnidadeUmaVez(sb, XLSX, alvo, podeRepetir) {
   let unidade = null;
   try {
     const { pasta, ascCod } = alvo;
@@ -145,18 +166,36 @@ async function processarUnidade(sb, XLSX, alvo) {
 
     log(`[${unidade.nome}] Lendo base_pecas.xlsx...`);
     const pecasRows = lerPlanilha(arqPecas, XLSX);
+
+    // 1ª passada (23/11/2026 — agora vem PRIMEIRO): Deliveries + preço de toda
+    // peça da Base Peças. É rápida e não depende da Base GSPN, então as
+    // Deliveries novas ficam disponíveis para seleção logo após a coleta, mesmo
+    // que a Base GSPN (mais pesada) demore ou falhe depois.
+    const gravarDeliveries = mudouPecas || forcar;
+    const r1 = await processarBases({ supabase: sb, unidadeAtiva: unidade, pecasRows, nomeArquivoPecas: "base_pecas.xlsx (robô)", extrasProcessamento: extras, gravarLotes: gravarDeliveries, lotesSomenteNovos: true });
+    log(`[${unidade.nome}] Deliveries e preços: ${r1.totalLotes} Delivery(s) gravada(s), ${r1.precosAtualizados} preço(s) atualizado(s).`);
+    if (gravarDeliveries) {
+      // já registra a Base Peças como processada (se a Base GSPN falhar a seguir,
+      // não precisa refazer as Deliveries)
+      const agoraPecas = new Date().toISOString();
+      await sb.from("bases_robo_status").update({
+        pecas_versao: versaoPecas,
+        pecas_salvo_em: pecasSalvoEm,
+        pecas_processado_em: agoraPecas,
+        pecas_total: jsonPecas?.total_linhas ?? Math.max(0, pecasRows.length - 1),
+        atualizado_em: agoraPecas
+      }).eq("unidade_id", unidade.id);
+    }
+
     let gspnRows = null;
     if (mudouGspn || forcar) {
       log(`[${unidade.nome}] Lendo base_ordens_servico.xlsx...`);
       gspnRows = lerPlanilha(arqGspn, XLSX);
-      // 1ª passada: catálogo (modelo/categoria/descrição) + preço das peças do GSPN + Deliveries
-      const r1 = await processarBases({ supabase: sb, unidadeAtiva: unidade, pecasRows, gspnRows, nomeArquivoPecas: "base_pecas.xlsx (robô)", nomeArquivoGspn: "base_ordens_servico.xlsx (robô)", extrasProcessamento: extras, lotesSomenteNovos: true });
-      log(`[${unidade.nome}] Catálogo: ${r1.totalRegistros} registro(s), ${r1.novasPecas} peça(s) nova(s), ${r1.totalLotes} Delivery(s) gravada(s).`);
+      // 2ª passada: catálogo (modelo/categoria/descrição) + preço das peças do GSPN
+      // (as Deliveries já foram gravadas na 1ª passada)
+      const r2 = await processarBases({ supabase: sb, unidadeAtiva: unidade, pecasRows, gspnRows, nomeArquivoPecas: "base_pecas.xlsx (robô)", nomeArquivoGspn: "base_ordens_servico.xlsx (robô)", extrasProcessamento: extras, gravarLotes: false, lotesSomenteNovos: true });
+      log(`[${unidade.nome}] Catálogo: ${r2.totalRegistros} registro(s), ${r2.novasPecas} peça(s) nova(s).`);
     }
-    // 2ª passada (sempre): preço de TODA peça da Base Peças, mesmo sem modelo no GSPN
-    // (as Deliveries só são gravadas aqui se a 1ª passada não rodou)
-    const r2 = await processarBases({ supabase: sb, unidadeAtiva: unidade, pecasRows, nomeArquivoPecas: "base_pecas.xlsx (robô)", extrasProcessamento: extras, gravarLotes: !gspnRows, lotesSomenteNovos: true });
-    log(`[${unidade.nome}] Preços: ${r2.precosAtualizados} atualizado(s), ${r2.totalLotes} Delivery(s) gravada(s).`);
 
     const agora = new Date().toISOString();
     const upd = {
@@ -181,12 +220,17 @@ async function processarUnidade(sb, XLSX, alvo) {
     await sb.from("bases_robo_status").update(upd).eq("unidade_id", unidade.id);
     log(`[${unidade.nome}] Concluído em ${Math.round((Date.now() - inicio) / 1000)}s.`);
   } catch (e) {
+    if (podeRepetir && ehFalhaDeRede(e)) {
+      if (unidade) { try { await sb.from("bases_robo_status").update({ em_processamento: false }).eq("unidade_id", unidade.id); } catch (e2) {} }
+      return e;
+    }
     log(`ERRO${unidade ? ` [${unidade.nome}]` : ""}: ` + (e?.message || e));
     if (unidade) {
       await sb.from("bases_robo_status").update({ em_processamento: false, ultimo_erro: String(e?.message || e).slice(0, 500), ultimo_erro_em: new Date().toISOString() }).eq("unidade_id", unidade.id);
     }
     process.exitCode = 1;
   }
+  return null;
 }
 
 async function main() {
@@ -196,6 +240,12 @@ async function main() {
     if (idade < 40 * 60 * 1000) return;
   }
   fs.writeFileSync(ARQ_LOCK, String(process.pid));
+  const vigia = setTimeout(() => {
+    log("ERRO: execução passou de 35 minutos (conexão travada?) — encerrando para a próxima volta recomeçar.");
+    try { fs.unlinkSync(ARQ_LOCK); } catch (e) {}
+    process.exit(2);
+  }, LIMITE_EXECUCAO_MS);
+  vigia.unref();
   try {
     const env = lerIni(path.join(RAIZ, ".env.local"));
     const url = env.NEXT_PUBLIC_SUPABASE_URL;
@@ -206,7 +256,7 @@ async function main() {
 
     const { createClient } = require("@supabase/supabase-js");
     const XLSX = require("xlsx");
-    const sb = createClient(url, chave, { auth: { persistSession: false, autoRefreshToken: false } });
+    const sb = createClient(url, chave, { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: fetchComTimeout } });
 
     // uma unidade de cada vez; erro numa não impede as outras
     for (const alvo of unidades) {
